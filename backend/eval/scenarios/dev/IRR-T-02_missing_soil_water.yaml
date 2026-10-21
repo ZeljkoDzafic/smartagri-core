@@ -1,0 +1,15 @@
+id: IRR-T-02
+stratum: missing_input
+note: Soil water unknown and it changes the decision. Low-risk type, so V5 gives a conditional answer with the question.
+context:
+  as_of: "2026-07-12T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", irrigation_available: "yes", irrigation_system_type: sprinkler, soil_texture: loam}
+  W: {origin: modeled, precip_past_7d_mm: 2.0, et0_past_7d_mm: 38.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 4.0, tmin_forecast_7d_c: 17.0, tmax_forecast_7d_c: 33.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-07-12T04:00:00", horizon_days: 7}
+  Q: {text: "Da li sutra da navodnjavam kukuruz?", advice_type: irrigation_timing}
+user_replies:
+  soil_water_status: "Suvo je, mrvi se."
+expect:
+  core_action: "?"
+  V4: {act: ask, sufficiency: insufficient, question: soil_water_status}
+  V5: {act: conditional, sufficiency: insufficient, question: soil_water_status}

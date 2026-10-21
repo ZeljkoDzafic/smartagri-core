@@ -1,0 +1,13 @@
+id: IRR-T-13
+stratum: missing_input
+note: The user has no irrigation. Soil water is unknown but cannot change the answer (irrigation is not possible), so nothing is asked. V5 answers conditionally (state that irrigation is not possible; no question).
+context:
+  as_of: "2026-07-20T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", bbch: 65, bbch_reported_on: "2026-07-19", irrigation_available: "no", soil_texture: loam}
+  W: {origin: modeled, precip_past_7d_mm: 0.0, et0_past_7d_mm: 40.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 2.0, tmin_forecast_7d_c: 19.0, tmax_forecast_7d_c: 35.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-07-20T04:00:00", horizon_days: 7}
+  Q: {text: "Kukuruz se uvija od suše, da li da zalivam?", advice_type: irrigation_timing}
+expect:
+  core_action: not_possible
+  V4: {act: recommend, sufficiency: insufficient, question: null}
+  V5: {act: conditional, sufficiency: insufficient, question: null, reason_code: decision_insensitive}

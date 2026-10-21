@@ -1,0 +1,13 @@
+id: FER-12
+stratum: complete
+note: Dose plan with everything known - BBCH 16, 46 kg N/ha applied at sowing, soil analysis from last year (medium N), yield target 10 t/ha. Sufficient; V5 may give a dose (high-risk type, but all inputs are present).
+context:
+  as_of: "2026-06-02T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-22", bbch: 16, bbch_reported_on: "2026-06-01", previous_fertilization: [{product: NPK 15-15-15, rate_kg_ha: 300, n_kg_ha: 45}], soil_analysis: {date: "2025-10-15", level: medium}, yield_target_t_ha: 10.0}
+  W: {origin: modeled, precip_past_7d_mm: 10.0, et0_past_7d_mm: 26.0, precip_forecast_3d_mm: 4.0, precip_forecast_7d_mm: 11.0, tmin_forecast_7d_c: 13.0, tmax_forecast_7d_c: 27.0, wind_forecast_max_ms: 4.0, forecast_issued_at: "2026-06-02T04:00:00", horizon_days: 7}
+  Q: {text: "Koliko KAN-a da dam u prihrani?", advice_type: fertilization_plan}
+expect:
+  core_action: "topdress_now|prev:partial|dose:medium"
+  V4: {act: recommend, sufficiency: sufficient, question: null}
+  V5: {act: recommend, sufficiency: sufficient, question: null, allow_quantity: true}

@@ -1,0 +1,17 @@
+id: IRR-T-14
+stratum: missing_input
+note: Crop at BBCH 87 (physiological maturity). Soil water unknown, but at this stage it does not change the answer - irrigation is no longer justified - so no question is asked.
+# Reference sources: _passages.yaml ids and their corpus/passages.yaml counterparts.
+applicable_sources: [fao56-kc-late, fao56-kc-maize-late]
+not_applicable_sources: [fao56-kc-mid, psss-irrigation-tasseling, fao56-kc-maize-mid, note-irrigation-flowering]
+context:
+  as_of: "2026-09-08T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-20", bbch: 87, bbch_reported_on: "2026-09-07", irrigation_available: "yes", irrigation_system_type: sprinkler, soil_texture: loam}
+  W: {origin: modeled, precip_past_7d_mm: 0.0, et0_past_7d_mm: 28.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 3.0, tmin_forecast_7d_c: 12.0, tmax_forecast_7d_c: 29.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-09-08T04:00:00", horizon_days: 7}
+  Q: {text: "Suvo je već dve nedelje, treba li još da zalivam kukuruz?", advice_type: irrigation_timing}
+expect:
+  core_action: late_season
+  V4: {act: recommend, sufficiency: insufficient, question: null}
+  V5: {act: conditional, sufficiency: insufficient, question: null, reason_code: decision_insensitive}
+  not_applicable: [fao56-kc-mid, psss-irrigation-tasseling]

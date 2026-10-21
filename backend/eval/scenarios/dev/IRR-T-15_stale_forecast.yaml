@@ -1,0 +1,14 @@
+id: IRR-T-15
+stratum: unreliable_input
+note: Soil is dry at flowering, but the only forecast was issued four days ago, so the 3-day rain forecast is graded low. The user cannot supply a forecast, so nothing is asked.
+context:
+  as_of: "2026-07-16T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", bbch: 63, bbch_reported_on: "2026-07-15", irrigation_available: "yes", irrigation_system_type: sprinkler, soil_texture: loam, soil_water_status: dry, soil_water_reported_on: "2026-07-16"}
+  W: {origin: modeled, precip_past_7d_mm: 1.0, et0_past_7d_mm: 39.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 5.0, tmin_forecast_7d_c: 18.0, tmax_forecast_7d_c: 34.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-07-12T04:00:00", horizon_days: 7}
+  Q: {text: "Zemlja je suva, da li da pustim kišenje sutra?", advice_type: irrigation_timing}
+expect:
+  core_action: irrigate_within_2d
+  V4: {act: recommend, sufficiency: insufficient, question: null}
+  V5: {act: conditional, sufficiency: insufficient, question: null}
+  quality: {precip_forecast_3d: low}

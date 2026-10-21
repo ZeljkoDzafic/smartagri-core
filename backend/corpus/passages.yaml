@@ -1,0 +1,106 @@
+- id: fao56-etc-definition
+  document_id: fao56
+  text: "Potreba useva za vodom procenjuje se kao evapotranspiracija useva ETc, proizvod koeficijenta kulture Kc i referentne evapotranspiracije ET0. ET0 opisuje uticaj vremena, a Kc osobine useva i fazu razvoja. ETc nije isto što i količina vode za navodnjavanje: od nje treba oduzeti padavine i uzeti u obzir vodu koja se već nalazi u zemljištu."
+  meta: {crop: [general, maize], advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: fao56-kc-maize-initial
+  document_id: fao56
+  verify: true
+  text: "U početnoj fazi, od setve do nekoliko razvijenih listova, kukuruz slabo pokriva zemljište i troši malo vode; koeficijent kulture je oko 0,3. Najveći deo gubitka vode u ovoj fazi je isparavanje sa površine zemljišta."
+  meta: {crop: [maize], bbch_min: 0, bbch_max: 15, advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: fao56-kc-maize-mid
+  document_id: fao56
+  verify: true
+  text: "U sredini sezone, od zatvaranja redova preko metličenja i svilanja do nalivanja zrna, kukuruz ima najveću potrošnju vode; koeficijent kulture je oko 1,2. U ovom periodu dnevna potreba useva prelazi referentnu evapotranspiraciju."
+  meta: {crop: [maize], bbch_min: 40, bbch_max: 79, advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: fao56-kc-maize-late
+  document_id: fao56
+  verify: true
+  text: "Pri kraju sezone, od voštane zrelosti do pune zrelosti, potrošnja vode kukuruza opada; koeficijent kulture pada na oko 0,6, a kod useva koji se suši na njivi i niže. Navodnjavanje u ovoj fazi retko je opravdano."
+  meta: {crop: [maize], bbch_min: 80, bbch_max: 89, advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: fao56-readily-available-water
+  document_id: fao56
+  verify: true
+  text: "Usev bez stresa koristi samo deo ukupno pristupačne vode u zoni korena. Kada se taj lako pristupačni deo potroši, usev počinje da trpi nedostatak vode. Za kukuruz se kao granica uzima približno polovina ukupno pristupačne vode. Zato se navodnjavanje planira pre nego što zemljište u zoni korena postane suvo."
+  meta: {crop: [maize], advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: fao-iwm-gross-net
+  document_id: fao_iwm
+  verify: true
+  text: "Bruto norma navodnjavanja dobija se deljenjem neto potrebe efikasnošću primene vode. Orijentacione efikasnosti su oko 60 % za površinsko navodnjavanje brazdama, oko 75 % za kišenje i oko 90 % za kap po kap. Jedan milimetar vode na jednom hektaru iznosi deset kubnih metara."
+  meta: {crop: [general, maize], advice_types: [irrigation_amount], region_scope: [global], irrigated: true}
+- id: fao-iwm-schedule-needs-soil
+  document_id: fao_iwm
+  text: "Raspored navodnjavanja zavisi od tri stvari: koliko vode usev troši, koliko vode zemljište može da zadrži u zoni korena i koliko je vode trenutno u zemljištu. Bez podatka o stanju vode u zemljištu može se proceniti samo približan termin, ne i količina."
+  meta: {crop: [general, maize], advice_types: [irrigation_timing, irrigation_amount], region_scope: [global], irrigated: true}
+- id: note-irrigation-flowering
+  document_id: dev_notes
+  verify: true
+  text: "Kukuruz je najosetljiviji na nedostatak vode u periodu metličenja i svilanja. Ako je zemljište u zoni korena suvo, a padavine nisu najavljene, navodnjavanje u ovoj fazi ne treba odlagati."
+  meta: {crop: [maize], bbch_min: 51, bbch_max: 69, advice_types: [irrigation_timing, irrigation_amount], region_scope: [pannonian], irrigated: true, requires_no_rain_3d: true}
+- id: note-irrigation-wait-for-rain
+  document_id: dev_notes
+  verify: true
+  text: "Kada su u naredna dva do tri dana najavljene značajne padavine, navodnjavanje se odlaže, a potreba se ponovo procenjuje prema stvarno paloj količini. Navodnjavanje neposredno pred kišu rasipa vodu i može dovesti do ispiranja hraniva."
+  meta: {crop: [general, maize], advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: note-soil-feel-method
+  document_id: dev_notes
+  verify: true
+  text: "Vlažnost zemljišta može se proceniti rukom. Uzorak sa dubine 20 do 30 cm stisne se u šaci: ako se mrvi i ne drži oblik, zemljište je suvo; ako se oblikuje u grudvu bez tragova vode, umereno je vlažno; ako ostavlja vlagu na dlanu, vlažno je. Proveru treba ponoviti na dva do tri mesta na parceli."
+  meta: {crop: [general], advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: ext-nonlocal-irrigation-grainfill
+  document_id: dev_notes
+  verify: true
+  text: "U fazi nalivanja zrna navodnjavanje se nastavlja u dužim razmacima dok zrno ne dostigne voštanu zrelost. Ovaj pasus je napisan za uslove van regiona i služi za proveru primenljivosti."
+  meta: {crop: [maize], bbch_min: 71, bbch_max: 85, advice_types: [irrigation_timing, irrigation_amount], region_scope: [non_local], irrigated: true}
+- id: note-topdress-window
+  document_id: dev_notes
+  verify: true
+  text: "Prihrana kukuruza azotom obavlja se najčešće u fazi od četiri do osam razvijenih listova, kada usev ulazi u period brzog porasta i usvajanja azota. Kasnija primena je teže izvodljiva i slabije se iskorišćava."
+  meta: {crop: [maize], bbch_min: 14, bbch_max: 18, advice_types: [fertilization_plan, fertilization_timing], region_scope: [pannonian]}
+- id: note-topdress-late
+  document_id: dev_notes
+  verify: true
+  text: "Posle faze osam listova prihrana je moguća samo uz oprez: prolazak mehanizacije oštećuje usev, a granulisano đubrivo koje ostane u lisnom levku može izazvati ožegotine."
+  meta: {crop: [maize], bbch_min: 19, bbch_max: 32, advice_types: [fertilization_plan, fertilization_timing], region_scope: [pannonian]}
+- id: note-n-dose-basis
+  document_id: dev_notes
+  verify: true
+  text: "Doza azota u prihrani određuje se bilansom: potreba useva prema realnom ciljnom prinosu, umanjena za azot koji obezbeđuje zemljište prema analizi i za azot koji je već primenjen. Doza se ne određuje na osnovu boje useva ili indeksa vegetacije. Bez analize zemljišta ili ciljnog prinosa i bez podatka o dosadašnjem đubrenju može se preporučiti samo termin, ne i doza."
+  meta: {crop: [maize], advice_types: [fertilization_plan], region_scope: [global]}
+- id: note-fertilizer-and-rain
+  document_id: dev_notes
+  verify: true
+  text: "Azotno đubrivo najbolje deluje kada ga umerena kiša ili međuredna obrada unese u zemljište ubrzo posle primene. Primenu treba izbegavati neposredno pred obilne padavine zbog ispiranja i oticanja, kao i na suvu površinu bez izgleda za kišu ili unošenje."
+  meta: {crop: [general, maize], advice_types: [fertilization_plan, fertilization_timing, field_ops_window], region_scope: [global]}
+- id: note-spraying-conditions
+  document_id: dev_notes
+  verify: true
+  text: "Prskanje se obavlja po mirnom vremenu, bez jakog vetra i bez padavina u satima posle primene. Vetar zanosi kapljice van parcele, a kiša spira sredstvo pre nego što deluje. Izbor sredstva i doze nije u obimu ovog sistema."
+  meta: {crop: [general, maize], advice_types: [field_ops_window], region_scope: [global]}
+- id: note-sowing-temperature
+  document_id: dev_notes
+  verify: true
+  text: "Kukuruz se seje kada se temperatura zemljišta na dubini setve ustali na oko 10 °C i kada u prognozi nema mraza. Setva u hladno zemljište usporava nicanje i proređuje sklop."
+  meta: {crop: [maize], bbch_min: 0, bbch_max: 9, advice_types: [field_ops_window], region_scope: [pannonian]}
+- id: note-field-traffic-wet-soil
+  document_id: dev_notes
+  verify: true
+  text: "Međurednu obradu i druge prohode mehanizacije treba izbegavati dok je zemljište prevlažno. Rad na mokrom zemljištu izaziva sabijanje, a posledice na ukorenjavanje i upijanje vode traju cele sezone."
+  meta: {crop: [general, maize], advice_types: [field_ops_window], region_scope: [global]}
+- id: s2-ndvi-what-it-shows
+  document_id: s2_docs
+  text: "Indeks NDVI računa se iz crvenog i bliskog infracrvenog kanala Sentinel-2 snimka rezolucije 10 m i pokazuje količinu i bujnost zelene vegetacije. Oblaci, senke oblaka i mešoviti pikseli na ivici parcele daju pogrešne vrednosti, pa se takvi pikseli isključuju. Što je manji udeo upotrebljivih piksela i što je snimak stariji, vrednost je manje pouzdana."
+  meta: {crop: [general], advice_types: [scouting], region_scope: [global]}
+- id: note-ndvi-not-a-diagnosis
+  document_id: dev_notes
+  text: "Niža ili opadajuća vrednost indeksa vegetacije na delu parcele znači da se taj deo razlikuje od ostatka, ali ne govori zašto. Isti pad mogu izazvati suša, zadržavanje vode, zbijenost, nedostatak hraniva, proređen sklop, korovi, štetočine ili bolesti. Snimak je povod za obilazak, a uzrok se utvrđuje na njivi."
+  meta: {crop: [general], advice_types: [scouting], region_scope: [global]}
+- id: note-ndvi-scouting-priority
+  document_id: dev_notes
+  verify: true
+  text: "Kada su razlike indeksa vegetacije unutar parcele izražene ili indeks na delu parcele opada, obilazak treba početi od tih delova. Na terenu se beleži vlažnost i zbijenost zemljišta, ujednačenost sklopa, boja i oštećenja listova i prisustvo korova, štetočina ili simptoma bolesti."
+  meta: {crop: [general, maize], advice_types: [scouting], region_scope: [global]}
+- id: note-ndvi-saturation
+  document_id: dev_notes
+  verify: true
+  text: "Kod potpuno razvijenog useva kukuruza indeks NDVI se približava gornjoj granici i slabo razlikuje dobar usev od vrlo dobrog. Male razlike u ovoj fazi imaju manji značaj nego iste razlike u ranom porastu."
+  meta: {crop: [maize], bbch_min: 40, bbch_max: 79, advice_types: [scouting], region_scope: [global]}

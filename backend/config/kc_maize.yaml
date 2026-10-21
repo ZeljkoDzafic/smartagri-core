@@ -1,0 +1,9 @@
+# Single crop coefficient Kc for maize by BBCH range.
+# Source: Allen et al. (1998), FAO Irrigation and Drainage Paper 56, Table 12 (maize, grain):
+# Kc ini 0.30, Kc mid 1.20, Kc end 0.60 (high grain moisture) to 0.35 (dried in field).
+# The development-stage value is a midpoint simplification. VERIFY against the source before locking.
+kc:
+  - {bbch_min: 0,  bbch_max: 15, kc: 0.30, stage: initial}
+  - {bbch_min: 16, bbch_max: 39, kc: 0.75, stage: development (midpoint)}
+  - {bbch_min: 40, bbch_max: 79, kc: 1.20, stage: mid-season}
+  - {bbch_min: 80, bbch_max: 89, kc: 0.60, stage: late season}

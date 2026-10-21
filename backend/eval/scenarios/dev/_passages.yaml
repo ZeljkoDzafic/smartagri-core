@@ -1,0 +1,38 @@
+# Small passage set shared by development scenarios (metadata only matters here; text is abbreviated).
+- id: fao56-kc-mid
+  document_id: fao56
+  text: "Kc mid for maize (grain) ..."
+  meta: {crop: [maize], bbch_min: 40, bbch_max: 79, advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: psss-irrigation-tasseling
+  document_id: psss_vuksanovic_2017
+  text: "Navodnjavanje kukuruza u fazi metličenja i svilanja ..."
+  meta: {crop: [maize], bbch_min: 51, bbch_max: 69, advice_types: [irrigation_timing, irrigation_amount], region_scope: [pannonian], irrigated: true, requires_no_rain_3d: true}
+- id: ext-irrigation-grainfill
+  document_id: extension_nonlocal
+  text: "Irrigation during grain fill ..."
+  meta: {crop: [maize], bbch_min: 71, bbch_max: 85, advice_types: [irrigation_timing, irrigation_amount], region_scope: [non_local]}
+- id: wheat-irrigation
+  document_id: wheat_guide
+  text: "Navodnjavanje pšenice ..."
+  meta: {crop: [wheat], advice_types: [irrigation_timing]}
+- id: topdress-n
+  document_id: regional_fert
+  text: "Prihrana kukuruza azotom u fazi 4-8 listova ..."
+  meta: {crop: [maize], bbch_min: 14, bbch_max: 18, advice_types: [fertilization_plan, fertilization_timing], region_scope: [pannonian]}
+- id: ndvi-scouting
+  document_id: ndvi_limits
+  text: "Pad indeksa vegetacije je povod za obilazak, ne dijagnoza ..."
+  meta: {crop: [general], advice_types: [scouting], region_scope: [global]}
+# Mirrors of corpus/passages.yaml entries needed by the late-season, fertilization-plan and field-operations scenarios.
+- id: fao56-kc-late
+  document_id: fao56
+  text: "Pri kraju sezone, od voštane do pune zrelosti, potrošnja vode kukuruza opada ..."
+  meta: {crop: [maize], bbch_min: 80, bbch_max: 89, advice_types: [irrigation_timing, irrigation_amount], region_scope: [global]}
+- id: n-dose-basis
+  document_id: dev_notes
+  text: "Doza azota u prihrani određuje se bilansom ..."
+  meta: {crop: [maize], advice_types: [fertilization_plan], region_scope: [global]}
+- id: spraying-conditions
+  document_id: dev_notes
+  text: "Prskanje se obavlja po mirnom vremenu, bez jakog vetra i bez padavina ..."
+  meta: {crop: [general, maize], advice_types: [field_ops_window], region_scope: [global]}

@@ -1,0 +1,62 @@
+# Required-input sets R_t per advice type. INITIAL VALUES, NOT LOCKED.
+# Review with the agronomist and lock before measurement.
+advice_types:
+  irrigation_timing:
+    risk: low
+    required:
+      - {input: phenophase, min_reliability: medium}
+      - {input: precip_forecast_3d, min_reliability: high}
+      - {input: irrigation_available, min_reliability: medium}
+    one_of:
+      - - {input: soil_water_status, min_reliability: medium}
+        - {input: soil_moisture_sensor, min_reliability: medium}
+    desirable: [ndvi_latest, et0_past_7d]
+  irrigation_amount:
+    risk: high
+    quantity: true
+    required:
+      - {input: phenophase, min_reliability: medium}
+      - {input: et0_past_7d, min_reliability: medium}
+      - {input: precip_forecast_3d, min_reliability: high}
+      - {input: irrigation_available, min_reliability: medium}
+      - {input: soil_awc, min_reliability: medium}
+      - {input: irrigation_efficiency, min_reliability: medium}
+    one_of:
+      - - {input: soil_water_status, min_reliability: medium}
+        - {input: soil_moisture_sensor, min_reliability: medium}
+    desirable: [ndvi_latest]
+  fertilization_plan:
+    risk: high
+    quantity: true
+    required:
+      - {input: phenophase, min_reliability: medium}
+      - {input: previous_fertilization, min_reliability: medium}
+    one_of:
+      - - {input: soil_analysis, min_reliability: medium}
+        - {input: yield_target, min_reliability: medium}
+    desirable: [precip_forecast_7d, ndvi_trend]
+  fertilization_timing:
+    risk: low
+    required:
+      - {input: phenophase, min_reliability: medium}
+      - {input: precip_forecast_7d, min_reliability: medium}
+    one_of: []
+    desirable: [previous_fertilization]
+  field_ops_window:
+    risk: low
+    required:
+      - {input: operation, min_reliability: high}
+      - {input: precip_forecast_7d, min_reliability: medium}
+      - {input: temp_forecast, min_reliability: medium}
+    one_of: []
+    desirable: [wind_forecast]
+  scouting:
+    risk: low
+    required: []
+    one_of:
+      - - {input: ndvi_latest, min_reliability: medium}
+        - {input: field_observation, min_reliability: medium}
+    desirable: [ndvi_spatial_contrast, ndvi_trend, precip_past_7d]
+degrade:
+  irrigation_amount: irrigation_timing
+  fertilization_plan: fertilization_timing

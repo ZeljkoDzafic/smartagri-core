@@ -1,0 +1,14 @@
+id: FER-07
+stratum: missing_input
+note: Dose plan requested without fertilization history, soil analysis or yield target. High-risk type, so V5 asks; timing alone would be supported.
+context:
+  as_of: "2026-05-28T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", bbch: 16, bbch_reported_on: "2026-05-27"}
+  W: {origin: modeled, precip_past_7d_mm: 12.0, et0_past_7d_mm: 24.0, precip_forecast_3d_mm: 1.0, precip_forecast_7d_mm: 9.0, forecast_issued_at: "2026-05-28T04:00:00", horizon_days: 7}
+  Q: {text: "Koliko azota da dam u prihrani?", advice_type: fertilization_plan}
+user_replies:
+  previous_fertilization: "Nisam ništa dao do sada."
+expect:
+  V4: {act: ask, sufficiency: partial, question: previous_fertilization}
+  V5: {act: ask, sufficiency: partial, question: previous_fertilization, allow_quantity: false}

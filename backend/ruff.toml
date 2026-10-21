@@ -1,0 +1,12 @@
+# Minimal lint rule set (spec 008 T011): syntax errors, undefined names, unused imports and
+# variables, and pycodestyle errors that are not about layout. Line length is not checked.
+# The core stays Python 3.9 compatible (project rule), so the target is py39.
+target-version = "py39"
+src = ["src", "tests"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W"]
+
+[lint.per-file-ignores]
+# conftest.py groups the storage fixtures in a second import block on purpose.
+"tests/conftest.py" = ["E402"]

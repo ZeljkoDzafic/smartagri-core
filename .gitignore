@@ -1,0 +1,28 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+node_modules/
+web/dist/
+backend/eval/scenarios/test/
+backend/eval/runs/
+backend/.cache/
+.DS_Store
+*.sqlite
+web/node_modules/
+
+# spec 016: production secrets and local backups
+.env.production
+backups/
+backups-local/
+
+# local settings and data (export)
+.env.*
+!.env.example
+*.sqlite3
+*.db
+.ruff_cache/

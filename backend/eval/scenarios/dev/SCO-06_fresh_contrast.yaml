@@ -1,0 +1,17 @@
+id: SCO-06
+stratum: complete
+note: Fresh NDVI with strong spatial contrast. Recommend priority scouting; the cause is never stated.
+# Reference sources: _passages.yaml ids and their corpus/passages.yaml counterparts.
+applicable_sources: [ndvi-scouting, note-ndvi-scouting-priority, note-ndvi-not-a-diagnosis]
+context:
+  as_of: "2026-07-12T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25"}
+  W: {origin: modeled, precip_past_7d_mm: 2.0, et0_past_7d_mm: 38.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 4.0, tmin_forecast_7d_c: 17.0, tmax_forecast_7d_c: 33.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-07-12T04:00:00", horizon_days: 7}
+  S: {ndvi_series: [{obs_date: "2026-07-05", median: 0.74, p10: 0.60, p90: 0.84, usable_share: 0.90}, {obs_date: "2026-07-10", median: 0.73, p10: 0.50, p90: 0.83, usable_share: 0.88}]}
+  Q: {text: "Koji deo parcele da obiđem prvo?", advice_type: scouting}
+expect:
+  core_action: priority_scouting
+  V4: {act: recommend, sufficiency: sufficient, question: null}
+  V5: {act: recommend, sufficiency: sufficient, question: null}
+  quality: {ndvi_latest: high}

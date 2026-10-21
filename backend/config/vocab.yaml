@@ -1,0 +1,21 @@
+# Fixed vocabulary for passage metadata (docs/architecture.md, docs/architecture.md.2).
+# Every passage in corpus/passages.yaml and every document in corpus/manifest.yaml is checked
+# against this file when the corpus is loaded (retrieval/corpus.py: validate_corpus); a value
+# outside it stops loading with the list of violations.
+# Phenophase ranges are BBCH codes as listed in docs/architecture.md; they label passages, they are not thresholds.
+phenophases:
+  germination:    {bbch_min: 0,  bbch_max: 9}
+  leaf_development: {bbch_min: 10, bbch_max: 19}
+  stem_elongation: {bbch_min: 30, bbch_max: 39}
+  tasseling:      {bbch_min: 51, bbch_max: 59}
+  flowering_silking: {bbch_min: 61, bbch_max: 69}
+  grain_filling:  {bbch_min: 71, bbch_max: 79}
+  ripening:       {bbch_min: 83, bbch_max: 89}
+bbch_bounds: {min: 0, max: 99}
+crops: [maize, general]
+advice_types: [irrigation_timing, irrigation_amount, fertilization_plan, fertilization_timing, field_ops_window, scouting]
+regions: [global, pannonian, temperate_continental, mediterranean, hilly_mountain, non_local]
+agroecology: [irrigated, rainfed]
+soil_textures: [sand, sandy_loam, loam, clay_loam, clay]
+source_types: [scientific, advisory, regulatory, producer, development_note]
+languages: [sr, bs, hr, en]

@@ -1,0 +1,16 @@
+id: FER-11
+stratum: complete
+note: Top-dressing timing at BBCH 15 reported yesterday, fresh 7-day forecast with moderate rain. In the main window, so recommend top-dressing now (ahead of the rain).
+# Reference sources: _passages.yaml ids and their corpus/passages.yaml counterparts.
+applicable_sources: [topdress-n, note-topdress-window]
+not_applicable_sources: [note-topdress-late]
+context:
+  as_of: "2026-05-30T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-22", bbch: 15, bbch_reported_on: "2026-05-29"}
+  W: {origin: modeled, precip_past_7d_mm: 8.0, et0_past_7d_mm: 25.0, precip_forecast_3d_mm: 6.0, precip_forecast_7d_mm: 12.0, tmin_forecast_7d_c: 12.0, tmax_forecast_7d_c: 26.0, wind_forecast_max_ms: 4.0, forecast_issued_at: "2026-05-30T04:00:00", horizon_days: 7}
+  Q: {text: "Je li sad vreme za prihranu kukuruza?", advice_type: fertilization_timing}
+expect:
+  core_action: topdress_now
+  V4: {act: recommend, sufficiency: sufficient, question: null}
+  V5: {act: recommend, sufficiency: sufficient, question: null}

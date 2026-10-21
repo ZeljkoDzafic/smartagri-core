@@ -1,0 +1,18 @@
+id: IRR-T-01
+stratum: complete
+note: All inputs present and fresh. Every variant with a sufficiency layer should recommend.
+# Reference sources: ids from _passages.yaml (used by tests/test_dev_scenarios.py) and their
+# counterparts in corpus/passages.yaml (used by `evalkit run`); entries absent from a corpus are reported as unresolved.
+applicable_sources: [fao56-kc-mid, psss-irrigation-tasseling, fao56-kc-maize-mid, note-irrigation-flowering]
+not_applicable_sources: [ext-irrigation-grainfill, wheat-irrigation, fao56-kc-late, ext-nonlocal-irrigation-grainfill, fao56-kc-maize-late]
+context:
+  as_of: "2026-07-12T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", bbch: 61, bbch_reported_on: "2026-07-11", irrigation_available: "yes", irrigation_system_type: sprinkler, soil_texture: loam, soil_water_status: dry, soil_water_reported_on: "2026-07-12"}
+  W: {origin: modeled, precip_past_7d_mm: 2.0, et0_past_7d_mm: 38.0, precip_forecast_3d_mm: 0.0, precip_forecast_7d_mm: 4.0, tmin_forecast_7d_c: 17.0, tmax_forecast_7d_c: 33.0, wind_forecast_max_ms: 3.0, forecast_issued_at: "2026-07-12T04:00:00", horizon_days: 7}
+  Q: {text: "Da li sutra da navodnjavam kukuruz?", advice_type: irrigation_timing}
+expect:
+  core_action: irrigate_within_2d
+  V4: {act: recommend, sufficiency: sufficient, question: null}
+  V5: {act: recommend, sufficiency: sufficient, question: null}
+  not_applicable: [ext-irrigation-grainfill, wheat-irrigation]

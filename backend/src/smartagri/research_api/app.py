@@ -1,0 +1,116 @@
+"""FastAPI app of the research API (spec 057). Local research use: no accounts; bind to 127.0.0.1."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+from .service import BadRequest, NotFound, ResearchService, Unavailable
+
+STATIC = Path(__file__).resolve().parent / "static"
+
+
+class RatingIn(BaseModel):
+    """Same shape as the product API's rating (rubric R1-R5, 0-2 each; critical error classes; comment)."""
+    item_id: str
+    rater: str
+    r1: int = Field(ge=0, le=2)
+    r2: int = Field(ge=0, le=2)
+    r3: int = Field(ge=0, le=2)
+    r4: int = Field(ge=0, le=2)
+    r5: int = Field(ge=0, le=2)
+    critical: List[str] = []
+    comment: str = ""
+
+
+def create_app(service: Optional[ResearchService] = None) -> FastAPI:
+    svc = service or ResearchService()
+    app = FastAPI(title="SmartAgri research API", version="0.1.0",
+                  description="Research prototype: parcels, input profile with quality, advisory conversation (V0-V5), "
+                              "provenance, VC chat and blind rating.")
+    api = APIRouter(prefix="/api")
+
+    def call(fn, *args):
+        try:
+            return fn(*args)
+        except NotFound as exc:
+            raise HTTPException(404, str(exc))
+        except BadRequest as exc:
+            raise HTTPException(400, str(exc))
+        except Unavailable as exc:
+            raise HTTPException(503, str(exc))
+
+    @api.get("/health")
+    def health():
+        return svc.health()
+
+    @api.get("/meta")
+    def meta():
+        return svc.meta()
+
+    @api.post("/parcels", status_code=201)
+    def create_parcel(body: Dict[str, Any] = Body(...)):
+        return call(svc.create_parcel, body)
+
+    @api.get("/parcels")
+    def list_parcels():
+        return svc.list_parcels()
+
+    @api.get("/parcels/{parcel_id}")
+    def get_parcel(parcel_id: str):
+        return call(svc.get_parcel, parcel_id)
+
+    @api.post("/parcels/{parcel_id}/profile/refresh")
+    def refresh_profile(parcel_id: str):
+        return call(svc.refresh_profile, parcel_id)
+
+    @api.get("/parcels/{parcel_id}/profile")
+    def get_profile(parcel_id: str):
+        return call(svc.get_profile, parcel_id)
+
+    @api.post("/parcels/{parcel_id}/chat")
+    def chat(parcel_id: str, body: Dict[str, Any] = Body(...)):
+        return call(svc.chat, parcel_id, body)
+
+    @api.post("/parcels/{parcel_id}/ai-chat")
+    def ai_chat(parcel_id: str, body: Dict[str, Any] = Body(...)):
+        return call(svc.ai_chat, parcel_id, body)
+
+    @api.get("/conversations/{conversation_id}")
+    def conversation(conversation_id: str):
+        return call(svc.get_conversation, conversation_id)
+
+    @api.get("/runs/{run_id}")
+    def run(run_id: str):
+        return call(svc.get_run, run_id)
+
+    @api.get("/llm")
+    def llm():
+        return svc.llm_info()
+
+    @api.get("/eval/rubric")
+    def rubric():
+        return svc.rubric()
+
+    @api.get("/eval/runs")
+    def eval_runs(set_name: Optional[str] = Query(default=None, alias="set")):
+        return svc.eval_runs(set_name)
+
+    @api.get("/eval/rating/next")
+    def rating_next(rater: str = Query(min_length=1)):
+        return svc.rating_next(rater)
+
+    @api.post("/eval/rating", status_code=201)
+    def rating_save(body: RatingIn):
+        return call(svc.rating_save, body.model_dump())
+
+    app.include_router(api)
+
+    @app.get("/", include_in_schema=False)
+    def index():
+        return FileResponse(STATIC / "index.html")
+
+    return app

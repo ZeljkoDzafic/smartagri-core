@@ -1,0 +1,37 @@
+# Development corpus (starter). It exists so the system runs end to end.
+# It is NOT the experimental corpus: before the protocol is locked it must be replaced or extended
+# with 20-30 reviewed regional sources (see docs/architecture.md_Korpus_znanja.md) and every passage
+# marked `verify: true` must be checked against its source.
+documents:
+  - id: fao56
+    title: "FAO-56: Evapotranspiracija useva, smernice za proračun potreba useva za vodom"
+    author_or_institution: "Allen, Pereira, Raes, Smith / FAO"
+    year: 1998
+    url: "https://www.fao.org/4/x0490e/x0490e00.htm"
+    source_type: scientific
+    language: en
+    license: "FAO; passages are short paraphrases with citation"
+  - id: fao_iwm
+    title: "FAO: Upravljanje vodom za navodnjavanje, raspored navodnjavanja"
+    author_or_institution: "FAO"
+    year: 1989
+    url: "https://www.fao.org/4/t7202e/t7202e06.htm"
+    source_type: advisory
+    language: en
+    license: "FAO; passages are short paraphrases with citation"
+  - id: s2_docs
+    title: "Sentinel-2 L2A: dokumentacija proizvoda"
+    author_or_institution: "Copernicus Data Space Ecosystem"
+    year: 2026
+    url: "https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/S2L2A.html"
+    source_type: scientific
+    language: en
+    license: "Copernicus documentation"
+  - id: dev_notes
+    title: "SmartAgri razvojne beleške (privremeno, nije stručni izvor)"
+    author_or_institution: "SmartAgri"
+    year: 2026
+    url: ""
+    source_type: development_note
+    language: sr
+    license: "MIT"

@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "SmartAgri core: active, uncertainty-aware agronomic advisory"
+abstract: >-
+  Open core of an agronomic advisory system. It combines a deterministic decision model (input quality,
+  applicability of knowledge passages, sufficiency, choice of the next question and a decision policy) with hybrid
+  retrieval, FAO-56 tools and grounding checks, plus an evaluation harness with an ablation ladder, blind rating
+  and a protocol lock.
+type: software
+authors:
+  - family-names: "Džafić"
+    given-names: "Željko"
+license: MIT
+version: "0.1.0"
+date-released: "2026-10-21"
+repository-code: "https://github.com/ZeljkoDzafic/smartagri-core"
+keywords:
+  - agriculture
+  - decision support
+  - retrieval-augmented generation
+  - FAO-56
+  - Sentinel-2
+  - selective answering

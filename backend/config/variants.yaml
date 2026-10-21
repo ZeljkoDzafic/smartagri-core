@@ -1,0 +1,14 @@
+# Ablation ladder. Each step adds exactly one layer. Core code must never branch on a variant name.
+V0: {retrieval: none,   applicability: off,               dynamic_context: false, quality: false, sufficiency: false, asking: false, policy: false, grounding: false}
+V1: {retrieval: hybrid, applicability: off,               dynamic_context: false, quality: false, sufficiency: false, asking: false, policy: false, grounding: false}
+V2: {retrieval: hybrid, applicability: query_conditions,  dynamic_context: false, quality: false, sufficiency: false, asking: false, policy: false, grounding: false}
+V3: {retrieval: hybrid, applicability: parcel_conditions, dynamic_context: true,  quality: false, sufficiency: false, asking: false, policy: false, grounding: false}
+V4: {retrieval: hybrid, applicability: parcel_conditions, dynamic_context: true,  quality: true,  sufficiency: true,  asking: true,  policy: false, grounding: false}
+V5: {retrieval: hybrid, applicability: parcel_conditions, dynamic_context: true,  quality: true,  sufficiency: true,  asking: true,  policy: true,  grounding: true}
+# Context ablations for E4: V5 with one data source of the dynamic context removed before deciding.
+# use_weather: false -> the weather summary W is empty; use_satellite: false -> the NDVI series S is empty.
+V5-weather:   {retrieval: hybrid, applicability: parcel_conditions, dynamic_context: true, quality: true, sufficiency: true, asking: true, policy: true, grounding: true, use_weather: false}
+V5-satellite: {retrieval: hybrid, applicability: parcel_conditions, dynamic_context: true, quality: true, sufficiency: true, asking: true, policy: true, grounding: true, use_satellite: false}
+# Not a rung and not listed as an entry: VC ("LLM sa podacima i izvorima", E5) is the free AI conversation
+# (pipeline/ai_chat.py) played over the same scenario context and the same applicable passages, with no
+# decision model. evalkit runs it (`evalkit run --variant VC`, needs LLM_PROVIDER); core.decide never sees it.

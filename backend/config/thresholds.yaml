@@ -1,0 +1,127 @@
+# Quality grading thresholds q(x). INITIAL VALUES, NOT LOCKED.
+# Review with the agronomist and lock (hash) before any measurement on the test set.
+# Grades are tried top to bottom; the first one whose conditions all hold wins.
+# A value that exists but matches no grade gets `default`. A missing value is always `missing`.
+inputs:
+  phenophase:
+    grades:
+      - {reliability: high, origins: [user_reported, measured], max_age_days: 7}
+      - {reliability: medium, origins: [user_reported, measured], max_age_days: 14}
+      - {reliability: medium, origins: [derived]}
+    default: low
+  sowing_date:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  ndvi_latest:
+    missing_after_days: 30
+    grades:
+      - {reliability: high, max_age_days: 5, min_coverage: 0.80}
+      - {reliability: medium, max_age_days: 10, min_coverage: 0.60}
+    default: low
+  ndvi_spatial_contrast:
+    missing_after_days: 30
+    grades:
+      - {reliability: high, max_age_days: 5, min_coverage: 0.80}
+      - {reliability: medium, max_age_days: 10, min_coverage: 0.60}
+    default: low
+  ndvi_trend:
+    grades:
+      - {reliability: high, min_count: 3}
+      - {reliability: medium, min_count: 2}
+    default: low
+  precip_past_7d:
+    grades:
+      - {reliability: high, origins: [measured]}
+      - {reliability: medium, origins: [modeled]}
+    default: low
+  et0_past_7d:
+    grades:
+      - {reliability: high, origins: [measured]}
+      - {reliability: medium, origins: [modeled]}
+    default: low
+  precip_forecast_3d:
+    grades:
+      - {reliability: high, max_age_days: 1}
+      - {reliability: medium, max_age_days: 2}
+    default: low
+  precip_forecast_7d:
+    grades:
+      - {reliability: medium, max_age_days: 1}
+    default: low
+  temp_forecast:
+    grades:
+      - {reliability: medium, max_age_days: 1}
+    default: low
+  wind_forecast:
+    grades:
+      - {reliability: medium, max_age_days: 1}
+    default: low
+  soil_water_status:
+    grades:
+      - {reliability: high, origins: [measured], max_age_days: 2}
+      - {reliability: medium, origins: [measured, user_reported], max_age_days: 3}
+      - {reliability: medium, origins: [derived], max_age_days: 3}   # from a recent irrigation
+    default: low
+  soil_moisture_sensor:
+    grades:
+      - {reliability: high, origins: [measured], max_age_days: 2}
+      - {reliability: medium, origins: [measured], max_age_days: 4}
+    default: low
+  soil_awc:
+    grades:
+      - {reliability: high, origins: [measured, user_reported]}
+      - {reliability: medium, origins: [derived]}
+    default: low
+  soil_analysis:
+    grades:
+      - {reliability: high, max_age_days: 1095}
+      - {reliability: medium, max_age_days: 2190}
+    default: low
+  irrigation_available:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  irrigation_efficiency:
+    grades:
+      - {reliability: high, origins: [user_reported, measured]}
+      - {reliability: medium, origins: [derived]}
+    default: low
+  previous_fertilization:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  yield_target:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  operation:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  irrigation_capacity:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  previous_crop:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  manure:
+    grades:
+      - {reliability: high, origins: [user_reported], max_age_days: 365}
+    default: low
+  hybrid_fao:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  plant_density:
+    grades:
+      - {reliability: high, origins: [user_reported]}
+    default: low
+  field_observation:
+    missing_after_days: 7
+    grades:
+      - {reliability: high, origins: [user_reported], max_age_days: 3}
+      - {reliability: medium, origins: [user_reported], max_age_days: 7}
+    default: low

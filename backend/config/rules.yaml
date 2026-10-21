@@ -1,0 +1,84 @@
+# Thresholds used by the deterministic decision cores D_t and by phenology estimation.
+# PLACEHOLDER VALUES for development. Every number here must be reviewed by the agronomist
+# and tied to a corpus source before the protocol is locked.
+irrigation:
+  rain_wait_mm_3d: 10.0          # forecast rain that justifies waiting
+  late_season_bbch: 85           # from this stage on irrigation is not advised (placeholder)
+  awc_bands_mm_m: [130, 180]     # below / between / above -> low / medium / high dose band
+  forecast_days: 3
+  max_single_net_mm: 50           # largest net depth applied in one irrigation; placeholder
+  quantity_validated: false       # set to true only after the agronomist has reviewed the balance parameters
+  root_depth_m_by_bbch:          # effective root depth, placeholder
+    - {bbch_max: 15, depth: 0.3}
+    - {bbch_max: 39, depth: 0.6}
+    - {bbch_max: 99, depth: 1.0}
+  vwc_bands: [0.18, 0.28]        # sensor volumetric water content: below = dry, between = moist, above = wet
+fertilization:
+  topdress_bbch: [14, 18]        # main top-dressing window
+  late_bbch_max: 32              # after this, top-dressing is not advised
+  season_n_full_kg_ha: 150       # previous N at or above this counts as "full"
+  yield_bands_t_ha: [7.5, 10.5]  # below / between / above -> low / medium / high dose band
+field_ops:
+  spraying_max_wind_ms: 5.0
+  rain_block_mm_3d: 2.0
+  frost_tmin_c: 0.0
+  # DEVELOPMENT VALUES (spec 010, 72 h field-operations window card). Not used by the decision cores.
+  # The agronomist reviews them before the protocol is locked.
+  window:
+    caution_wind_share: 0.7        # spraying: wind above 70 % of spraying_max_wind_ms -> "oprez" (drift)
+    caution_frost_margin_c: 3.0    # sowing: tmin within 3 °C above frost_tmin_c -> "oprez"
+    heavy_rain_factor: 5           # day rain above 5 x rain_block_mm_3d -> "ne" (same factor as the cultivation core)
+scouting:
+  contrast_priority: 0.25        # p90 - p10
+  trend_priority: -0.05          # 14-day NDVI change
+  low_coverage_warning: 0.60
+phenology:
+  gdd_base_c: 10.0
+  gdd_to_bbch:                   # cumulative GDD since sowing -> BBCH (approximate)
+    - {gdd_max: 60,   bbch: 5}
+    - {gdd_max: 200,  bbch: 13}
+    - {gdd_max: 330,  bbch: 16}
+    - {gdd_max: 480,  bbch: 32}
+    - {gdd_max: 680,  bbch: 55}
+    - {gdd_max: 850,  bbch: 65}
+    - {gdd_max: 1100, bbch: 75}
+    - {gdd_max: 1400, bbch: 85}
+    - {gdd_max: 99999, bbch: 89}
+  days_to_bbch:                  # fallback when no GDD is available
+    - {days_max: 10,  bbch: 5}
+    - {days_max: 30,  bbch: 13}
+    - {days_max: 45,  bbch: 16}
+    - {days_max: 62,  bbch: 32}
+    - {days_max: 75,  bbch: 55}
+    - {days_max: 90,  bbch: 65}
+    - {days_max: 115, bbch: 75}
+    - {days_max: 140, bbch: 85}
+    - {days_max: 9999, bbch: 89}
+soil:
+  awc_by_texture_mm_m: {sand: 80, sandy_loam: 120, loam: 160, clay_loam: 180, clay: 200}
+  efficiency_by_system: {sprinkler: 0.75, drip: 0.90, furrow: 0.60}
+
+# ---------------------------------------------------------------- optional inputs (spec 009)
+# Development values; review with the agronomist before locking.
+optional_inputs:
+  recent_irrigation_days: 3          # an irrigation this recent ...
+  recent_irrigation_min_mm: 15       # ... and at least this deep implies a moist root zone
+  wilting_hint_days: 2               # reported wilting this recent hints at dry soil (low reliability)
+  field_event_days: 7                # hail, lodging or waterlogging this recent makes scouting a priority
+  priority_events: [hail, lodging, waterlogging]
+  referral_events: [pests, disease]
+  legumes: [soybean, alfalfa, pea, bean, clover]
+  manure_credit_days: 365
+  ph_range: [5.5, 7.5]
+  humus_bands_pct: [2.0, 3.0]        # below / between / above -> low / medium / high soil supply
+  fao_reference: 400                 # GDD thresholds in phenology are for this maturity group
+  fao_gdd_per_100: 0.08              # each 100 FAO units scales thermal-time thresholds by 8 %
+  n_content:                         # share of N in common products
+    urea: 0.46
+    kan: 0.27
+    an: 0.344
+    uan: 0.30
+    npk_15_15_15: 0.15
+    npk_20_10_10: 0.20
+    map: 0.11
+    dap: 0.18

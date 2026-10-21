@@ -1,0 +1,13 @@
+id: IRR-T-04
+stratum: missing_input
+note: Soil water unknown, but 18 mm of rain is forecast, so the answer would not change the decision. No question; V5 answers conditionally.
+context:
+  as_of: "2026-07-12T06:00:00"
+  P: {parcel_id: dev, area_ha: 2.1, centroid_lat: 44.9, centroid_lon: 17.3, region_class: pannonian}
+  A: {sowing_date: "2026-04-25", irrigation_available: "yes", irrigation_system_type: sprinkler}
+  W: {origin: modeled, precip_past_7d_mm: 2.0, et0_past_7d_mm: 38.0, precip_forecast_3d_mm: 18.0, precip_forecast_7d_mm: 22.0, forecast_issued_at: "2026-07-12T04:00:00", horizon_days: 7}
+  Q: {text: "Da li sutra da navodnjavam kukuruz?", advice_type: irrigation_timing}
+expect:
+  core_action: wait_for_rain
+  V4: {act: recommend, sufficiency: insufficient, question: null}
+  V5: {act: conditional, sufficiency: insufficient, question: null, reason_code: decision_insensitive}

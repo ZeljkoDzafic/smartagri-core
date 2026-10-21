@@ -1,0 +1,10 @@
+{"data": [
+ {"interval": {"from": "2026-07-01T00:00:00Z", "to": "2026-07-02T00:00:00Z"},
+  "outputs": {"ndvi": {"bands": {"B0": {"stats": {"min": 0.2, "max": 0.9, "mean": 0.7, "stDev": 0.1, "sampleCount": 200, "noDataCount": 20,
+   "percentiles": {"10.0": 0.55, "50.0": 0.72, "90.0": 0.84}}}}}}},
+ {"interval": {"from": "2026-07-06T00:00:00Z", "to": "2026-07-07T00:00:00Z"},
+  "outputs": {"ndvi": {"bands": {"B0": {"stats": {"sampleCount": 200, "noDataCount": 200}}}}}},
+ {"interval": {"from": "2026-07-11T00:00:00Z", "to": "2026-07-12T00:00:00Z"},
+  "outputs": {"ndvi": {"bands": {"B0": {"stats": {"sampleCount": 200, "noDataCount": 100,
+   "percentiles": {"10.0": 0.5, "50.0": 0.7, "90.0": 0.83}}}}}}}
+]}

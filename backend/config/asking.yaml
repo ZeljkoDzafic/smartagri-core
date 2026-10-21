@@ -1,0 +1,74 @@
+# Question selection (alpha). INITIAL VALUES, NOT LOCKED.
+max_questions: 2
+inputs:
+  soil_water_status:
+    user_obtainable: true
+    cost: 2
+    plausible_values: [dry, moist, wet]
+    question_sr: "Kakva je vlažnost zemljišta na dubini 20–30 cm: suvo, umereno vlažno ili vlažno?"
+    how_to_obtain_sr: "Iskopajte ašovom do 30 cm na dva-tri mesta i stisnite grumen u šaci: ako se mrvi, suvo je; ako se oblikuje bez tragova vode, umereno je vlažno; ako ostavlja vlagu na dlanu, vlažno je."
+  irrigation_available:
+    user_obtainable: true
+    cost: 1
+    plausible_values: ["yes", "no"]
+    question_sr: "Da li na ovoj parceli imate mogućnost navodnjavanja?"
+    how_to_obtain_sr: ""
+  irrigation_efficiency:
+    user_obtainable: true
+    cost: 1
+    plausible_values: [0.6, 0.75, 0.9]
+    question_sr: "Koji sistem za navodnjavanje koristite (kišenje, kap po kap, brazde)?"
+    how_to_obtain_sr: "Dovoljan je tip sistema; efikasnost se procenjuje po tipu."
+  soil_awc:
+    user_obtainable: true
+    cost: 3
+    plausible_values: [110, 160, 200]
+    question_sr: "Kakav je tip zemljišta na parceli: lakše peskovito, srednje ilovasto ili teže glinovito?"
+    how_to_obtain_sr: "Ako imate analizu zemljišta, tekstura je navedena u izveštaju."
+  phenophase:
+    user_obtainable: true
+    cost: 1
+    plausible_values: [14, 18, 34, 61, 75, 87]
+    question_sr: "U kojoj je fazi kukuruz sada: koliko razvijenih listova ima, odnosno da li je počelo metličenje ili svilanje?"
+    how_to_obtain_sr: "Prebrojte potpuno razvijene listove na nekoliko biljaka ili navedite da li se vide metlica i svila."
+  previous_fertilization:
+    user_obtainable: true
+    cost: 1
+    plausible_values: [none, partial, full]
+    question_sr: "Koje ste đubrivo i u kojoj količini do sada primenili na ovoj parceli ove sezone?"
+    how_to_obtain_sr: ""
+  yield_target:
+    user_obtainable: true
+    cost: 1
+    plausible_values: [6, 9, 12]
+    question_sr: "Koji prinos zrna realno očekujete na ovoj parceli (t/ha)?"
+    how_to_obtain_sr: "Može poslužiti prosek poslednje tri godine."
+  soil_analysis:
+    user_obtainable: true
+    cost: 4
+    plausible_values: [low, medium, high]
+    question_sr: "Da li imate analizu zemljišta za ovu parcelu i iz koje je godine?"
+    how_to_obtain_sr: "Ako je nemate, uzorkovanje i analiza se rade u laboratoriji; do tada se plan daje bez doze."
+  operation:
+    user_obtainable: true
+    cost: 1
+    plausible_values: [spraying, fertilizing, cultivation, sowing]
+    question_sr: "Koji rad planirate: prskanje, prihranu, međurednu obradu ili setvu?"
+    how_to_obtain_sr: ""
+  # Inputs the user cannot supply: never asked.
+  ndvi_latest: {user_obtainable: false}
+  ndvi_spatial_contrast: {user_obtainable: false}
+  ndvi_trend: {user_obtainable: false}
+  precip_forecast_3d: {user_obtainable: false}
+  precip_forecast_7d: {user_obtainable: false}
+  temp_forecast: {user_obtainable: false}
+  wind_forecast: {user_obtainable: false}
+  et0_past_7d: {user_obtainable: false}
+  precip_past_7d: {user_obtainable: false}
+  soil_moisture_sensor: {user_obtainable: false}
+  irrigation_capacity: {user_obtainable: false}
+  previous_crop: {user_obtainable: false}
+  manure: {user_obtainable: false}
+  hybrid_fao: {user_obtainable: false}
+  plant_density: {user_obtainable: false}
+  field_observation: {user_obtainable: false}
