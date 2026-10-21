@@ -1,8 +1,8 @@
-# Fixed vocabulary for passage metadata (docs/architecture.md, docs/architecture.md.2).
+# Fixed vocabulary for passage metadata (docs/design/06 §3, docs/design/03 §2.2).
 # Every passage in corpus/passages.yaml and every document in corpus/manifest.yaml is checked
 # against this file when the corpus is loaded (retrieval/corpus.py: validate_corpus); a value
 # outside it stops loading with the list of violations.
-# Phenophase ranges are BBCH codes as listed in docs/architecture.md; they label passages, they are not thresholds.
+# Phenophase ranges are BBCH codes as listed in docs/design/06; they label passages, they are not thresholds.
 phenophases:
   germination:    {bbch_min: 0,  bbch_max: 9}
   leaf_development: {bbch_min: 10, bbch_max: 19}
