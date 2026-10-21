@@ -1,6 +1,6 @@
 # Development corpus (starter). It exists so the system runs end to end.
 # It is NOT the experimental corpus: before the protocol is locked it must be replaced or extended
-# with 20-30 reviewed regional sources (see docs/architecture.md_Korpus_znanja.md) and every passage
+# with 20-30 reviewed regional sources (see docs/architecture.md) and every passage
 # marked `verify: true` must be checked against its source.
 documents:
   - id: fao56

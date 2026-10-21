@@ -1,5 +1,5 @@
 .env
-.venv/
+.venv*/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -19,6 +19,24 @@ web/node_modules/
 .env.production
 backups/
 backups-local/
+
+# export additions: local data, secrets, generated output
+.env.*
+!.env.example
+!.env.production.example
+!web/.env.example
+*.sqlite3
+*.db
+*.pem
+*.key
+*.tfstate*
+*.tfvars
+!*.tfvars.example
+.terraform/
+backend/media/
+web/e2e-screenshots/
+web/test-results*/
+.ruff_cache/
 
 # local settings and data (export)
 .env.*

@@ -30,6 +30,42 @@ def variants():
     return load_variants()
 
 
+# ---------------------------------------------------------------- git-ignored test scenarios
+from pathlib import Path
+
+TEST_SCENARIOS_DIR = Path(__file__).resolve().parents[1] / "eval" / "scenarios" / "test"
+TEST_SCENARIOS_ABSENT = ("the test scenarios (backend/eval/scenarios/test/) are git-ignored and absent in this checkout "
+                         "(CI, fresh clone); the protocol-lock fingerprint over them is checked only where they exist")
+
+
+# ---------------------------------------------------------------- fake providers under SMARTAGRI_OFFLINE=1
+# CI runs the suite with SMARTAGRI_OFFLINE=1 so that no request can leave the runner. Offline mode refuses every provider
+# fetch that is not in the cache, including fetches answered by a fake. Tests whose provider calls are answered by an
+# httpx.MockTransport or by a fake fetch callable switch offline mode off for themselves only: the fake answers, nothing
+# reaches the network, and the assertions stay exactly as written.
+
+def use_mock_transport(monkeypatch, transport):
+    """Install a fake HTTP transport for every provider (providers.base.TRANSPORT) and leave offline mode."""
+    from smartagri.providers import base
+    monkeypatch.setattr(base, "TRANSPORT", transport)
+    monkeypatch.delenv("SMARTAGRI_OFFLINE", raising=False)
+    return transport
+
+
+@pytest.fixture
+def online_fakes(monkeypatch):
+    """For tests that pass their own fake fetch callables to the provider cache (no HTTP at all)."""
+    monkeypatch.delenv("SMARTAGRI_OFFLINE", raising=False)
+
+
+def skip_without_test_scenarios():
+    """Skip the rest of a test that hashes or scans the test scenarios (never runs them) when the folder is absent.
+
+    Assertions placed before the call (config hashes, prompt hashes, file lists) still run everywhere."""
+    if not TEST_SCENARIOS_DIR.is_dir():
+        pytest.skip(TEST_SCENARIOS_ABSENT)
+
+
 # ---------------------------------------------------------------- storage backends
 import os
 
