@@ -1,14 +1,14 @@
 {
   "schema": "smartagri-presentation-captures/1",
-  "recorded_utc": "2026-10-26T09:36:59+00:00",
+  "recorded_utc": "2026-10-26T10:23:24+00:00",
   "note": "Unedited captures of the web app running locally in offline mode with the template generator and the default answer language (English). The parcels were drawn in the app on OpenStreetMap tiles (map labels are OpenStreetMap data); no weather or satellite data were fetched, so most inputs are missing. The answers are what the system produced in that state; they are not evaluation results. The sowing-date field is the browser's native date control and shows the regional date format of the capture machine. source_commit is the development commit of the client; client_files_sha256 is a digest over backend/src/smartagri/research_api/static/ (sorted relative path, NUL, sha256 of each file, newline) and can be recomputed from this repository.",
   "screenshots": [
     {
       "interface": "web",
       "file": "assets/images/web-advice.png",
       "sha256": "d7346fd5df71b3b7ed855da2a895f134e4bd2cb7bb94f30b8258246d9eff8904",
-      "source_commit": "8b6e035f808eab7f1a48235ad8ea0a34c45e0bb0",
-      "client_files_sha256": "3a26ed98819d9b8e072d3a022d4a8d1a14e4c283e2a6389ea9628f0eacb9bb05",
+      "source_commit": "e54f0003e61c0d3e004ab27e0c61d009349bcd4b",
+      "client_files_sha256": "01ab9504f178d7dfce6a49647508a40de5fab7f696ee9782b52a12e747dc6513",
       "capture_method": "Headless Chromium (Playwright), 1440x900 viewport at device scale 2, light theme, reduced motion; parcel view scrolled to the question and the first answer card.",
       "commands_or_inputs": [
         "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, SMARTAGRI_LOCALE unset = en, fresh SQLite database)",
@@ -21,9 +21,9 @@
     {
       "interface": "web",
       "file": "assets/images/web-draw.png",
-      "sha256": "d4bfaa6defc34fe5df2ab7bc74d54e8d23a494cb1172be12d3ac534128f552b9",
-      "source_commit": "8b6e035f808eab7f1a48235ad8ea0a34c45e0bb0",
-      "client_files_sha256": "3a26ed98819d9b8e072d3a022d4a8d1a14e4c283e2a6389ea9628f0eacb9bb05",
+      "sha256": "d33305079595f289078244e38e52ded240b98c6d415077d1b1f28e9b25ffbc20",
+      "source_commit": "e54f0003e61c0d3e004ab27e0c61d009349bcd4b",
+      "client_files_sha256": "01ab9504f178d7dfce6a49647508a40de5fab7f696ee9782b52a12e747dc6513",
       "capture_method": "Headless Chromium (Playwright), 1440x900 viewport at device scale 2, light theme, reduced motion; New parcel screen after drawing four corners and Finish.",
       "commands_or_inputs": [
         "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, SMARTAGRI_LOCALE unset = en, fresh SQLite database)",
@@ -36,8 +36,8 @@
       "interface": "web",
       "file": "assets/images/web-phone-dark.png",
       "sha256": "3a856f60e4f13299ae0e100f018b6c89a6829712df1ca13d3a56e080968a8d75",
-      "source_commit": "8b6e035f808eab7f1a48235ad8ea0a34c45e0bb0",
-      "client_files_sha256": "3a26ed98819d9b8e072d3a022d4a8d1a14e4c283e2a6389ea9628f0eacb9bb05",
+      "source_commit": "e54f0003e61c0d3e004ab27e0c61d009349bcd4b",
+      "client_files_sha256": "01ab9504f178d7dfce6a49647508a40de5fab7f696ee9782b52a12e747dc6513",
       "capture_method": "Headless Chromium (Playwright), 390x844 mobile viewport at device scale 2, dark theme, reduced motion; answer card with the follow-up question (Why? opened below the fold).",
       "commands_or_inputs": [
         "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, SMARTAGRI_LOCALE unset = en, fresh SQLite database)",
