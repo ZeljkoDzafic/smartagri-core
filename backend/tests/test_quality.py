@@ -50,8 +50,10 @@ def test_stale_forecast_is_not_high():
 
 
 def test_quality_layer_off_takes_values_at_face_value():
+    """Without q a present input is used as it is but carries no grade (never "high"); an absent one is missing."""
     stale = [dict(obs_date="2026-06-30", median=0.7, p10=0.6, p90=0.8, usable_share=0.5)]
-    assert rel(make_context(ndvi=stale), "ndvi_latest", aware=False) == Reliability.HIGH
+    assert rel(make_context(ndvi=stale), "ndvi_latest", aware=False) == Reliability.UNGRADED
+    assert rel(make_context(), "ndvi_latest", aware=False) == Reliability.MISSING
 
 
 def test_monotonic_in_age_and_coverage():

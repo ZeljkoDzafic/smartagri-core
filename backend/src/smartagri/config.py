@@ -11,6 +11,18 @@ import yaml
 
 CONFIG_FILES = ("thresholds", "requirements", "variants", "asking", "kc_maize", "rules")
 
+# Environment variables are named SMARTAGRI_<NAME>. Deployments of the earlier product still set the former prefix,
+# which is read as a fallback so they keep working.
+LEGACY_ENV_PREFIX = "AGROVID_"  # legacy prefix, read only as a fallback
+
+
+def env(name: str, default: str = "") -> str:
+    """SMARTAGRI_<name>, else the legacy-prefixed variable, else default."""
+    value = os.environ.get("SMARTAGRI_" + name)
+    if value is None or value == "":
+        value = os.environ.get(LEGACY_ENV_PREFIX + name)
+    return default if value is None or value == "" else value
+
 
 def config_dir() -> Path:
     env = os.environ.get("SMARTAGRI_CONFIG_DIR")
@@ -49,6 +61,11 @@ def load_variants():
     for k, v in load("variants").items():
         v = dict(v)
         flags = {f: bool(v.pop(f, default)) for f, default in CONTEXT_FLAGS.items()}
+        # YAML 1.1 reads a bare `off` / `none` as a boolean or null; the pi mode and the retrieval mode are strings.
+        if v.get("applicability") in (False, None):
+            v["applicability"] = "off"
+        if v.get("retrieval") in (False, None):
+            v["retrieval"] = "none"
         variant = VariantConfig(name=k, **v)
         for f, value in flags.items():
             setattr(variant, f, value)

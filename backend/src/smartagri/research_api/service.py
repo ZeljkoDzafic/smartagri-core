@@ -418,8 +418,11 @@ class ResearchService:
     def eval_runs(self, set_name: Optional[str] = None) -> List[Dict[str, Any]]:
         return rating.batches(self.store, set_name)
 
-    def rating_next(self, rater: str) -> Dict[str, Any]:
-        return rating.next_item(self.store, rater)
+    def rating_next(self, rater: str, set_name: Optional[str] = None, batches: Optional[List[str]] = None) -> Dict[str, Any]:
+        try:
+            return rating.next_item(self.store, rater, set_name, batches)
+        except ValueError as exc:                      # mixed sets or an assignment for another set
+            raise BadRequest(str(exc))
 
     def rating_save(self, body: Dict[str, Any]) -> Dict[str, Any]:
         try:

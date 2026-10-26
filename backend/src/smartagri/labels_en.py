@@ -28,7 +28,7 @@ USER_ADVICE_TYPES = ["irrigation_timing", "irrigation_amount", "fertilization_pl
 
 ACTS = {"recommend": "Recommendation", "conditional": "Conditional recommendation", "ask": "Follow-up question",
         "abstain": "No recommendation"}
-RELIABILITY = {"high": "high", "medium": "medium", "low": "low", "missing": "missing"}
+RELIABILITY = {"high": "high", "medium": "medium", "low": "low", "missing": "missing", "ungraded": "not graded"}
 ORIGIN = {"measured": "measured", "user_reported": "reported by the user", "modeled": "model value",
           "derived": "estimate", "unknown": "unknown"}
 APPLICABILITY = {"applicable": "applicable", "conditional": "conditionally applicable", "not_applicable": "not applicable"}
@@ -450,6 +450,13 @@ MESSAGES: Dict[str, str] = {
     " Ukupan deficit pokriti u %d navodnjavanja.": " Cover the total deficit in %d irrigations.",
     "Ako je odgovor „%s”: %s %s": "If the answer is “%s”: %s %s",
     "Faza razvoja: BBCH %s (pouzdanost: %s).": "Growth stage: BBCH %s (reliability: %s).",
+    "Faza razvoja: BBCH %s.": "Growth stage: BBCH %s.",
+    "Stanje vode u zemljištu procenjeno je kao %s jer je parcela navodnjavana %s sa %s mm (procena).":
+        "The soil water status was estimated as %s because the parcel was irrigated on %s with %s mm (estimate).",
+    "Stanje vode u zemljištu procenjeno je kao %s prema prijavljenom venjenju; potvrdite ga na njivi.":
+        "The soil water status was estimated as %s from the reported wilting; confirm it in the field.",
+    "Poslednji upotrebljiv snimak je star %s dana, sa %s %% upotrebljivih piksela.":
+        "The latest usable image is %s days old, with %s %% usable pixels.",
     "Prognoza padavina za naredna tri dana: %s mm.": "Rainfall forecast for the next three days: %s mm.",
     "Referentna evapotranspiracija u prethodnih sedam dana: %s mm; padavine: %s mm.":
         "Reference evapotranspiration over the past seven days: %s mm; rainfall: %s mm.",
@@ -633,7 +640,7 @@ MESSAGES: Dict[str, str] = {
     "Niste član nijedne organizacije.": "You are not a member of any organisation.",
     "Vaša uloga u organizaciji ne dozvoljava ovu radnju.": "Your role in the organisation does not allow this action.",
     "Ovaj deo je dostupan samo istraživačima.": "This part is available to researchers only.",
-    "Zahtev je odbijen: nedostaje zaglavlje X-Requested-With: agrovid.": "Request refused: the X-Requested-With: agrovid header is missing.",
+    "Zahtev je odbijen: nedostaje zaglavlje X-Requested-With: smartagri.": "Request refused: the X-Requested-With: smartagri header is missing.",
     "Ako nalog postoji i nije potvrđen, poslali smo novu vezu za potvrdu.":
         "If the account exists and is not confirmed, we have sent a new confirmation link.",
     "Ako nalog sa ovom e-adresom postoji, poslali smo vezu za novu lozinku.":
@@ -762,7 +769,7 @@ MESSAGES: Dict[str, str] = {
         "HS code %s does not match the tariff headings of the commodity “%s” in Annex I (%s).",
     # ---- eudr_pdf.py
     "nije navedeno": "not given",
-    "Font iz AGROVID_PDF_FONT ne postoji: %s.": "The font from AGROVID_PDF_FONT does not exist: %s.",
+    "Font iz SMARTAGRI_PDF_FONT ne postoji: %s.": "The font from SMARTAGRI_PDF_FONT does not exist: %s.",
     "PDF nije moguće napraviti: na serveru nema fonta sa srpskim slovima (DejaVu Sans).":
         "The PDF cannot be created: the server has no font with the required characters (DejaVu Sans).",
     "PDF nije moguće napraviti: biblioteka reportlab nije instalirana.": "The PDF cannot be created: the reportlab library is not installed.",

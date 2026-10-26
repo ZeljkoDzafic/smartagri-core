@@ -18,6 +18,7 @@ from ..core.quality import values
 from ..core.rules import decide_action_core, n_credit
 from ..core.types import AdviceType, Applicability, Context, Decision, Reliability
 from ..retrieval.corpus import Corpus
+from ..llm.base import ModelCallError
 from .judge import make_judge
 
 # Tools whose inputs or outputs reveal an irrigation amount; shown only when the policy allows a quantity.
@@ -113,12 +114,20 @@ def _plan_by_answer(ctx: Context, d: Decision) -> List[str]:
     return lines
 
 
+def graded(d: Decision, name: str) -> bool:
+    """False for an input of a variant without the q layer: it is shown without any reliability grade."""
+    return d.quality[name].reliability != Reliability.UNGRADED
+
+
 def rationale(ctx: Context, d: Decision) -> List[str]:
     v, t, out = values(ctx), d.advice_type, []
     def rel(name):
         return L().RELIABILITY[d.quality[name].reliability.value]
     if v.get("phenophase") is not None and t != AdviceType.SCOUTING:
-        out.append(T("Faza razvoja: BBCH %s (pouzdanost: %s).") % (v["phenophase"], rel("phenophase")))
+        if graded(d, "phenophase"):
+            out.append(T("Faza razvoja: BBCH %s (pouzdanost: %s).") % (v["phenophase"], rel("phenophase")))
+        else:
+            out.append(T("Faza razvoja: BBCH %s.") % v["phenophase"])
     if t in (AdviceType.IRRIGATION_TIMING, AdviceType.IRRIGATION_AMOUNT):
         if v.get("precip_forecast_3d") is not None:
             out.append(T("Prognoza padavina za naredna tri dana: %s mm.") % L().num(v["precip_forecast_3d"]))
@@ -128,10 +137,17 @@ def rationale(ctx: Context, d: Decision) -> List[str]:
         if v.get("soil_water_status"):
             sw = d.quality["soil_water_status"]
             word = L().VALUE_WORDS[v["soil_water_status"]]
-            if (sw.source_ref or "").startswith("last_irrigation:"):
+            if (sw.source_ref or "").startswith("last_irrigation:") and not graded(d, "soil_water_status"):
+                out.append(T("Stanje vode u zemljištu procenjeno je kao %s jer je parcela navodnjavana %s sa %s mm "
+                             "(procena).") % (word, L().fmt_date(ctx.A.last_irrigation_date),
+                                              L().num(ctx.A.last_irrigation_mm)))
+            elif (sw.source_ref or "").startswith("last_irrigation:"):
                 out.append(T("Stanje vode u zemljištu procenjeno je kao %s jer je parcela navodnjavana %s sa %s mm "
                              "(procena, pouzdanost: %s).") % (word, L().fmt_date(ctx.A.last_irrigation_date),
                                                             L().num(ctx.A.last_irrigation_mm), rel("soil_water_status")))
+            elif (sw.source_ref or "").startswith("observation:wilting") and not graded(d, "soil_water_status"):
+                out.append(T("Stanje vode u zemljištu procenjeno je kao %s prema prijavljenom venjenju; "
+                             "potvrdite ga na njivi.") % word)
             elif (sw.source_ref or "").startswith("observation:wilting"):
                 out.append(T("Stanje vode u zemljištu procenjeno je kao %s prema prijavljenom venjenju (pouzdanost: %s); "
                              "potvrdite ga na njivi.") % (word, rel("soil_water_status")))
@@ -156,8 +172,12 @@ def rationale(ctx: Context, d: Decision) -> List[str]:
             out.append(T("Prognozirana temperatura: %s.") % L().value_text("temp_forecast", v["temp_forecast"]))
     elif t == AdviceType.SCOUTING and v.get("ndvi_latest") is not None:
         q = d.quality["ndvi_latest"]
-        out.append(T("Poslednji upotrebljiv snimak je star %s dana, sa %s %% upotrebljivih piksela (pouzdanost: %s).")
-                   % (L().num(q.age_days), L().num((q.coverage or 0) * 100), rel("ndvi_latest")))
+        if graded(d, "ndvi_latest"):
+            out.append(T("Poslednji upotrebljiv snimak je star %s dana, sa %s %% upotrebljivih piksela (pouzdanost: %s).")
+                       % (L().num(q.age_days), L().num((q.coverage or 0) * 100), rel("ndvi_latest")))
+        else:
+            out.append(T("Poslednji upotrebljiv snimak je star %s dana, sa %s %% upotrebljivih piksela.")
+                       % (L().num(q.age_days), L().num((q.coverage or 0) * 100)))
         if v.get("ndvi_spatial_contrast") is not None:
             out.append(T("Razlika između bujnijih i slabijih delova parcele (NDVI): %s.") % L().num(v["ndvi_spatial_contrast"], 2))
         if v.get("ndvi_trend") is not None:
@@ -255,7 +275,8 @@ def basis(ctx: Context, d: Decision) -> Dict[str, Any]:
     missing = [L().lower_first(L().INPUTS.get(n, n)) for n in missing_names]
     parts = []
     if deciding:
-        parts.append(T("Odlučilo: ") + ", ".join("%s (%s)" % (r["phrase"], r["reliability_label"]) for r in deciding))
+        parts.append(T("Odlučilo: ") + ", ".join(r["phrase"] if r["reliability"] == Reliability.UNGRADED.value
+                                                  else "%s (%s)" % (r["phrase"], r["reliability_label"]) for r in deciding))
     else:
         parts.append(T("Odlučilo: nijedan podatak o parceli"))
     if missing:
@@ -353,6 +374,9 @@ What you may and may not do:
 - The act and the action are decided by the core. Do not change them, and do not add a different action.
   When the fact sheet's field "act_is_free" is true, no act was decided: choose one of recommend,
   conditional, ask, abstain yourself, based only on the fact sheet, and say what you would do.
+  In that case you may also ask the user for additional information when it would change the advice:
+  put exactly one short question in "question_to_user" (with act ask or conditional). Otherwise, and
+  always when "act_is_free" is false, leave "question_to_user" empty.
 - Use only facts from the fact sheet. State no number that does not appear in it. Do not compute.
 - Never give an irrigation amount or a fertiliser dose unless the fact sheet's action.quantity holds one.
 - Never name a cause for a vegetation difference seen in satellite data, and never name a plant
@@ -368,8 +392,9 @@ ANSWER_SCHEMA = {
         "act": {"type": "string", "enum": ["recommend", "conditional", "ask", "abstain"]},
         "summary": {"type": "string"},
         "rationale": {"type": "array", "items": {"type": "string"}},
+        "question_to_user": {"type": "string"},
     },
-    "required": ["act", "summary", "rationale"],
+    "required": ["act", "summary", "rationale", "question_to_user"],
     "additionalProperties": False,
 }
 PROMPT_HASH = hashlib.sha256((SYSTEM_PROMPT + json.dumps(ANSWER_SCHEMA, sort_keys=True)).encode("utf-8")).hexdigest()
@@ -389,6 +414,24 @@ def prompt_hash() -> str:
     return hashlib.sha256((system_prompt() + json.dumps(ANSWER_SCHEMA, sort_keys=True)).encode("utf-8")).hexdigest()
 
 
+def _free_question(answer: Dict[str, Any], out: Dict[str, Any]) -> None:
+    """Variants whose act the model chooses (no sufficiency layer) may ask one free question of their own.
+
+    It becomes the answer's `next_question` with no input (`input: None`, `origin: "model"`); the evaluation
+    runner maps it to a prepared reply by keywords, exactly as for the LLM baseline VC. Only with act ask or
+    conditional: a question attached to a recommendation or an abstention is dropped."""
+    text = (out.get("question_to_user") or "").strip()
+    if text and answer.get("act") in ("ask", "conditional"):
+        answer["next_question"] = {"input": None, "text": text, "how_to_obtain": "", "options": [], "origin": "model"}
+
+
+def _fact_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A data row for the model's fact sheet. Without the q layer the row carries no reliability at all."""
+    if row.get("reliability") == Reliability.UNGRADED.value:
+        return {k: v for k, v in row.items() if k not in ("reliability", "reliability_label")}
+    return row
+
+
 class TemplateGenerator:
     name, model = "template", "none"
 
@@ -399,16 +442,23 @@ class TemplateGenerator:
 
 
 class AnthropicGenerator:
-    """Phrases the answer with Claude. Requires the `anthropic` package and credentials in the environment."""
-    name = "anthropic"
+    """Phrases the answer with Claude. Requires the `anthropic` package and credentials in the environment.
 
-    def __init__(self, model: Optional[str] = None, judge=None):
+    strict (evaluation runs): a failed call raises ModelCallError instead of keeping the template text, and an answer
+    from a model other than `model` is an error too; server_fallback=False sends no server-side model fallback."""
+    name = "anthropic"
+    strict, server_fallback, effort, max_tokens = False, True, "low", 16000
+    last_call: Optional[Dict[str, Any]] = None
+
+    def __init__(self, model: Optional[str] = None, judge=None, strict: bool = False, server_fallback: bool = True,
+                 effort: str = "low", max_tokens: int = 16000):
         import anthropic                      # imported lazily so the package stays optional
         self._anthropic = anthropic
         self.client = anthropic.Anthropic()
         self.model = model or os.environ.get("LLM_MODEL", "claude-opus-5-5")
+        self.strict, self.server_fallback, self.effort, self.max_tokens = strict, server_fallback, effort, max_tokens
         # GROUNDING_JUDGE=llm plugs the Claude entailment judge into the support check (spec 004 T021)
-        self.judge = judge if judge is not None else make_judge()
+        self.judge = judge if judge is not None else make_judge(strict=strict, server_fallback=server_fallback)
 
     @property
     def judge_prompt_hash(self) -> Optional[str]:
@@ -418,17 +468,21 @@ class AnthropicGenerator:
     def generate(self, ctx: Context, d: Decision, corpus: Corpus,
                  grounding_check: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, int]]:
         answer = template_answer(ctx, d, corpus)
+        self.last_call = None
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         grounding = {"unsupported_numbers": [], "action": "none"}
         facts = {"question": ctx.Q.text, "advice_type": L().ADVICE_TYPES[d.advice_type.value],
                  "act": answer["act"], "act_is_free": d.policy.act is None, "action": answer["action"],
-                 "facts": answer["rationale"], "data": answer["data_used"], "limitations": answer["limitations"],
+                 "facts": answer["rationale"], "data": [_fact_row(r) for r in answer["data_used"]],
+                 "limitations": answer["limitations"],
                  "next_question": (answer["next_question"] or {}).get("text"),
                  "sources": [{"title": s["title"], "applicability": s["applicability_label"],
                               "conditions": s["conditions"], "text": s["excerpt"]} for s in answer["sources"]],
                  "calculations": [c for c in answer["calculations"] if c["output"]]}
         out, usage, failure = self._request(facts)
         if failure:
+            if getattr(self, "strict", False):
+                raise ModelCallError("%s: %s" % (self.name, failure))
             grounding["action"] = failure
             return answer, grounding, usage
 
@@ -436,6 +490,7 @@ class AnthropicGenerator:
             answer.update(summary=out["summary"], rationale=out["rationale"], generator="anthropic")
             if d.policy.act is None:
                 answer.update(act=out["act"], act_label=L().ACTS[out["act"]])
+                _free_question(answer, out)
             grounding["action"] = "not_checked"
             return answer, grounding, usage
         bad = unsupported_numbers(out["summary"] + " " + " ".join(out["rationale"]), d.tools,
@@ -470,7 +525,18 @@ class AnthropicGenerator:
         answer.update(rationale=kept or answer["rationale"], generator="anthropic")
         if d.policy.act is None:
             answer.update(act=out["act"], act_label=L().ACTS[out["act"]])
+            _free_question(answer, out)
         return answer, grounding, usage
+
+
+def record_call(generator, provider: str, model: Optional[str], request_id: Optional[str], usage: Dict[str, int]) -> None:
+    """Remember what actually answered (provider, model reported by the response, request id, tokens); pipeline.run
+    stores it in the turn's provenance. In strict mode an answer from another model than requested is an error."""
+    generator.last_call = {"provider": provider, "model_requested": generator.model, "model": model,
+                           "request_id": request_id, "input_tokens": usage.get("input_tokens", 0),
+                           "output_tokens": usage.get("output_tokens", 0)}
+    if getattr(generator, "strict", False) and model and model != generator.model:
+        raise ModelCallError("%s: answered by model %s, not %s" % (provider, model, generator.model))
 
 
 class _AnthropicRequest:
@@ -478,18 +544,22 @@ class _AnthropicRequest:
 
     def _request(self, facts: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Dict[str, int], Optional[str]]:
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
+        kwargs: Dict[str, Any] = dict(
+            model=self.model, max_tokens=getattr(self, "max_tokens", 16000), system=system_prompt(),
+            output_config={"effort": getattr(self, "effort", "low"),
+                           "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
+            messages=[{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}])
+        if getattr(self, "server_fallback", True):
+            # Interactive use: a server-side fallback re-runs the request on another model if a safety classifier
+            # declines it. Never in an evaluation run (config/evaluation.yaml llm.server_fallback: false).
+            kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
         try:
-            # Structured output keeps the reply parseable; a server-side fallback re-runs the request
-            # on another model if a safety classifier declines it.
-            response = self.client.beta.messages.create(
-                model=self.model, max_tokens=16000, system=system_prompt(),
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-                output_config={"effort": "low", "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
-                messages=[{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}],
-            )
+            # Structured output keeps the reply parseable.
+            response = self.client.beta.messages.create(**kwargs)
         except self._anthropic.APIError as exc:
             return None, usage, "template_after_error:" + exc.__class__.__name__
         usage = {"llm_calls": 1, "input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        record_call(self, "anthropic", getattr(response, "model", None), getattr(response, "_request_id", None), usage)
         if response.stop_reason != "end_turn":      # refusal, max_tokens: keep the deterministic text
             return None, usage, "template_after_" + str(response.stop_reason)
         try:
@@ -505,21 +575,23 @@ class ProviderGenerator(AnthropicGenerator):
     Used so that the ladder V0-V5 and the VC baseline can run on the same model.
     """
 
-    def __init__(self, provider, judge=None):
+    def __init__(self, provider, judge=None, strict: bool = False, max_tokens: int = 4000):
         self.provider = provider
         self.name = provider.name
         self.model = provider.model
         self.judge = judge
+        self.strict, self.max_tokens = strict, max_tokens
 
     def _request(self, facts):
         from ..llm import LLMError, parse_json_object
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         try:
             r = self.provider.complete(system_prompt(), [{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}],
-                                       json_schema=ANSWER_SCHEMA, max_tokens=4000)
+                                       json_schema=ANSWER_SCHEMA, max_tokens=self.max_tokens)
         except LLMError as exc:
             return None, usage, "template_after_error:" + str(exc)[:80]
         usage = {"llm_calls": 1, "input_tokens": r.input_tokens, "output_tokens": r.output_tokens}
+        record_call(self, r.provider or self.name, r.model, getattr(r, "request_id", None), usage)
         try:
             out = r.data if r.data is not None else parse_json_object(r.text)
         except LLMError:
@@ -532,12 +604,18 @@ class ProviderGenerator(AnthropicGenerator):
 AnthropicGenerator._request = _AnthropicRequest._request
 
 
-def make_generator():
+def make_generator(strict: bool = False, settings: Optional[Dict[str, Any]] = None):
     """Generator for structured advice.
 
     LLM_PROVIDER=anthropic uses the Anthropic SDK path (with the optional LLM judge); any other configured
     provider (claude-cli, bridge, openai, deepseek, kimi, mistral, ollama, lmstudio, openai-compatible)
-    goes through the provider layer; `template` or a misconfigured provider gives the deterministic template.
+    goes through the provider layer; `template` gives the deterministic template.
+
+    Interactive use (strict=False): a misconfigured provider, a missing package or key gives the template, so the
+    research API stays usable offline; the answer then says so in its grounding record.
+    Evaluation (strict=True, settings = evalkit.settings.load()): when a model is requested and cannot be built,
+    ModelCallError is raised; the model, effort and output limit come from the settings, and no server-side
+    fallback is sent. Nothing falls back to the template silently.
     """
     # ADVICE_GENERATOR=template keeps the structured advice deterministic and fast even when a model is
     # configured for the free AI chat; ADVICE_GENERATOR=llm (or unset with LLM_PROVIDER=anthropic, for
@@ -546,14 +624,33 @@ def make_generator():
     name = os.environ.get("LLM_PROVIDER", "template")
     if mode == "template" or (mode != "llm" and name != "anthropic"):
         return TemplateGenerator()
+    llm = (settings or {}).get("llm") or {}
+    model = llm.get("model") if strict else None
+    fallback = bool(llm.get("server_fallback", False)) if strict else True
     if name == "anthropic":
         try:
+            if strict:
+                return AnthropicGenerator(model=model, strict=True, server_fallback=fallback,
+                                          effort=llm.get("effort", "low"), max_tokens=int(llm.get("max_tokens_generator", 16000)))
             return AnthropicGenerator()
-        except Exception:                     # missing package or credentials: stay usable offline
-            return TemplateGenerator()
+        except ModelCallError:
+            raise
+        except Exception as exc:              # missing package or credentials
+            if strict:
+                raise ModelCallError("anthropic generator unavailable: %s: %s" % (exc.__class__.__name__, exc))
+            return TemplateGenerator()        # interactive: stay usable offline
     try:
         from ..llm import make_provider
-        provider = make_provider(name)
-    except Exception:
+        provider = make_provider(name, model=model, server_fallback=fallback,
+                                 effort=llm.get("effort") if strict else None)
+    except Exception as exc:
+        if strict:
+            raise ModelCallError("provider %s unavailable: %s" % (name, exc))
         return TemplateGenerator()
-    return ProviderGenerator(provider) if provider is not None else TemplateGenerator()
+    if provider is None:
+        if strict:
+            raise ModelCallError("ADVICE_GENERATOR=llm but LLM_PROVIDER=%s gives no model" % name)
+        return TemplateGenerator()
+    if strict:
+        return ProviderGenerator(provider, strict=True, max_tokens=int(llm.get("max_tokens_generator", 16000)))
+    return ProviderGenerator(provider)

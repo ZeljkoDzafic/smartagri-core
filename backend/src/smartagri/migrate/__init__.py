@@ -25,7 +25,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-log = logging.getLogger("agrovid.migrate")
+log = logging.getLogger("smartagri.migrate")
 
 TABLE = "schema_migrations"
 DDL = ("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, name TEXT NOT NULL, "

@@ -1,11 +1,11 @@
 # SmartAgri core build file. Exact dependency versions: requirements.lock (Python 3.12), constraints-py39.txt.
 [build-system]
-requires = ["setuptools>=58"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "smartagri"
-version = "0.1.0"
+version = "0.2.0"
 description = "Active, uncertainty-aware agronomic advisory: decision model, retrieval and evaluation harness (research prototype)"
 requires-python = ">=3.9"
 license = {text = "MIT"}

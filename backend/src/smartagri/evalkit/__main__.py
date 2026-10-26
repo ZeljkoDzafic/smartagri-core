@@ -8,6 +8,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -24,11 +25,15 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--lock-file", help="default: backend/eval/protocol-lock.json")
     r.add_argument("--scenarios-dir", help="read scenarios from this folder instead of eval/scenarios/<set>")
     q = sub.add_parser("report", help="automatic measures and, with raters, rated measures")
+    q.add_argument("--set", help="scenario set to report (required when the store holds more than one set)")
+    q.add_argument("--batch", action="append", help="batch id to report; repeatable; default: every batch of the set")
     q.add_argument("--rater", help="rater whose scores are reported")
     q.add_argument("--compare", nargs=2, metavar=("A", "B"), help="paired difference A - B, e.g. V4 V3")
     q.add_argument("--agreement", nargs=2, metavar=("RATER_A", "RATER_B"))
     q.add_argument("--format", choices=("json", "md"), default="json", help="md: tables of the evaluation report")
     e = sub.add_parser("export", help="dump items and ratings as JSON")
+    e.add_argument("--set", help="only items of this scenario set")
+    e.add_argument("--batch", action="append", help="only items of this batch; repeatable")
     e.add_argument("--out", default="-")
     e.add_argument("--citation-sample", type=int, metavar="N",
                    help="instead: a fixed-seed sample of N cited sentences for the manual support check")
@@ -48,12 +53,21 @@ def _parser() -> argparse.ArgumentParser:
                    help="name=v1,v2,...; names: ndvi_age, forecast_age, soil_water_age, bbch_age (days), usable_share")
     s.add_argument("--variant", default="V5")
     s.add_argument("--format", choices=("json", "text", "both"), default="both")
+    a = sub.add_parser("assign", help="assign the items of one set (and batches) to a rater in a seeded order")
+    a.add_argument("--set", required=True)
+    a.add_argument("--batch", action="append", help="batch id; repeatable; default: every batch of the set")
+    a.add_argument("--variant", action="append", help="variant; repeatable; default: every variant")
+    a.add_argument("--rater", required=True)
+    a.add_argument("--seed", type=int, default=7)
+    a.add_argument("--dry-run", action="store_true", help="print the assignment without writing it")
     k = sub.add_parser("lock", help="write (or --check) the protocol lock: sha256 of scenarios, corpus, config, prompt, rater guide")
     k.add_argument("--set", default="test")
     k.add_argument("--scenarios-dir", help="default: eval/scenarios/<set>")
     k.add_argument("--corpus-dir", help="default: SMARTAGRI_CORPUS_DIR or backend/corpus")
     k.add_argument("--rater-guide", help="default: docs/RATER_GUIDE.md")
-    k.add_argument("--cache-snapshot", help="external-cache snapshot (python -m smartagri.cache export) to lock as well")
+    k.add_argument("--analysis-plan", help="default: docs/protocol.md")
+    k.add_argument("--cache-snapshot", help="external-cache snapshot (python -m smartagri.cache export); mandatory for a "
+                                           "protected set (test)")
     k.add_argument("--out", help="default: backend/eval/protocol-lock.json")
     k.add_argument("--tag", default="protocol-v1")
     k.add_argument("--check", action="store_true", help="verify the existing lock instead of writing one")
@@ -61,20 +75,33 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def _lock_inputs(set_name: str, scenarios_dir=None, corpus=None, rater_guide=None, cache_snapshot=None):
-    """Current hashes and prompt hash for the protocol lock."""
+def _lock_inputs(set_name: str, scenarios_dir=None, corpus=None, rater_guide=None, cache_snapshot=None,
+                 analysis_plan=None):
+    """Current hashes and prompt hash for the protocol lock (the protocol part; see lock.environment for the rest)."""
     from ..config import config_dir
     from ..pipeline.ai_chat import PROMPT_HASH as VC_PROMPT_HASH
     from ..pipeline.generate import PROMPT_HASH
+    from ..pipeline.judge import JUDGE_PROMPT_HASH
     from ..retrieval.corpus import corpus_dir
     from . import lock
     from .scenarios import scenario_dir
     files = lock.collect(Path(scenarios_dir) if scenarios_dir else scenario_dir(set_name),
                          Path(corpus) if corpus else corpus_dir(), config_dir(),
                          Path(rater_guide) if rater_guide else lock.default_rater_guide(),
-                         Path(cache_snapshot) if cache_snapshot else None)
+                         Path(cache_snapshot) if cache_snapshot else None,
+                         Path(analysis_plan) if analysis_plan else None)
     files["prompt/vc_ai_chat"] = VC_PROMPT_HASH     # the LLM baseline VC (E5) is locked with its own prompt
+    files["prompt/judge"] = JUDGE_PROMPT_HASH        # the entailment judge of gamma (used with GROUNDING_JUDGE=llm)
     return files, PROMPT_HASH
+
+
+def _lock_environment():
+    """The environment part of the lock: code, dependencies, interpreter, model settings, generator selection."""
+    from . import lock
+    from . import settings as st
+    cfg = st.load()
+    generator = "llm:%s" % cfg["llm"].get("provider") if st.llm_requested() else "template"
+    return lock.environment(cfg, generator)
 
 
 def cmd_lock(args) -> int:
@@ -91,30 +118,72 @@ def cmd_lock(args) -> int:
         except FileNotFoundError as exc:
             print("lock: %s" % exc, file=sys.stderr)
             return 1
-        diff = lock.differences(locked, files, prompt)
+        diff = lock.differences(locked, files, prompt) + lock.environment_differences(locked, _lock_environment())
         print(json.dumps({"lock": str(out), "combined_sha256": locked["combined_sha256"], "differences": diff},
                          ensure_ascii=False, indent=2))
         return 1 if diff else 0
     if out.exists() and not args.force:
         print("lock: %s exists; use --check to verify or --force to replace it" % out, file=sys.stderr)
         return 2
+    from .scenarios import PROTECTED_SETS
+    if args.set in PROTECTED_SETS and not args.cache_snapshot:
+        print("lock: refused, the %r set is locked only with --cache-snapshot (python -m smartagri.cache export)"
+              % args.set, file=sys.stderr)
+        return 2
+    from . import settings as st
+    problems = st.check(st.load(), need_model=st.llm_requested())
+    if problems:
+        print("lock: refused, " + "; ".join(problems), file=sys.stderr)
+        return 2
     try:
-        files, prompt = _lock_inputs(args.set, args.scenarios_dir, args.corpus_dir, args.rater_guide, args.cache_snapshot)
+        files, prompt = _lock_inputs(args.set, args.scenarios_dir, args.corpus_dir, args.rater_guide, args.cache_snapshot,
+                                     args.analysis_plan)
     except FileNotFoundError as exc:
         print("lock: %s" % exc, file=sys.stderr)
         return 2
-    data = lock.make_lock(args.set, files, prompt, Path(args.cache_snapshot) if args.cache_snapshot else None, args.tag)
+    env = _lock_environment()
+    if env["code"]["dirty"]:
+        print("lock: refused, uncommitted changes in " + ", ".join(env["code"]["dirty"]), file=sys.stderr)
+        return 2
+    data = lock.make_lock(args.set, files, prompt, Path(args.cache_snapshot) if args.cache_snapshot else None, args.tag,
+                          env=env)
     lock.write(data, out)
     print(json.dumps({"lock": str(out), "set": args.set, "files": len(files), "prompt_hash": prompt,
-                      "combined_sha256": data["combined_sha256"]}, indent=2))
+                      "protocol_sha256": data["protocol_sha256"], "combined_sha256": data["combined_sha256"],
+                      "commit": env["code"]["commit"], "src_sha256": env["code"]["src_sha256"]}, indent=2))
     print("lock: written; tag the commit with `git tag %s` once the human has approved it" % args.tag, file=sys.stderr)
     return 0
 
 
+def protected_folder(folder) -> Optional[str]:
+    """The protected set a scenarios folder belongs to: the set's own folder (or one inside it), or a folder holding a
+    byte-identical copy of any of its files. None for an unprotected folder."""
+    from . import lock
+    from .scenarios import PROTECTED_SETS, scenario_dir
+    if not folder:
+        return None
+    f = Path(folder).resolve()
+    for name in PROTECTED_SETS:
+        home = scenario_dir(name).resolve()
+        if f == home or home in f.parents:
+            return name
+        if home.is_dir() and f.is_dir():
+            protected = {lock.sha256_file(p) for p in home.rglob("*") if p.is_file()}
+            if any(lock.sha256_file(p) in protected for p in f.rglob("*") if p.is_file()):
+                return name
+    return None
+
+
 def check_run_allowed(args) -> int:
-    """0 when `run` may proceed. A protected set needs --locked and a lock that matches the files."""
+    """0 when `run` may proceed. A protected set needs --locked and a lock that matches the files and the environment.
+    A --scenarios-dir that holds protected scenarios counts as that protected set, whatever --set says."""
     from . import lock
     from .scenarios import PROTECTED_SETS
+    owner = protected_folder(getattr(args, "scenarios_dir", None))
+    if owner is not None and args.set != owner:
+        print("run: refused, %s holds scenarios of the protected %r set; run them only as --set %s --locked"
+              % (args.scenarios_dir, owner, owner), file=sys.stderr)
+        return 2
     if args.set not in PROTECTED_SETS:
         return 0
     if not args.locked:
@@ -131,7 +200,7 @@ def check_run_allowed(args) -> int:
     except FileNotFoundError as exc:
         print("run: refused, %s" % exc, file=sys.stderr)
         return 2
-    diff = lock.differences(locked, files, prompt, args.set)
+    diff = lock.differences(locked, files, prompt, args.set) + lock.environment_differences(locked, _lock_environment())
     if diff:
         print("run: refused, the files differ from the protocol lock:\n  " + "\n  ".join(diff), file=sys.stderr)
         return 2
@@ -214,19 +283,47 @@ def main(argv=None) -> int:
         if unknown:
             print("run: unknown variant(s) %s; known: %s" % (", ".join(unknown), ", ".join(sorted(known))), file=sys.stderr)
             return 2
+        from . import settings as st
+        from ..llm.base import ModelCallError
+        ladder = [n for n in names if n not in vc.EXTERNAL_VARIANTS]
+        problems = st.check(st.load(), need_model=bool(ladder) and st.llm_requested())
+        if problems:
+            print("run: refused, " + "; ".join(problems), file=sys.stderr)
+            return 2
         if any(n in vc.EXTERNAL_VARIANTS for n in names):
             try:
                 vc.provider_or_refuse()
             except vc.Unavailable as exc:
                 print("run: refused, %s" % exc, file=sys.stderr)
                 return 2
+        failed = 0
         for name in names:
-            print(json.dumps(run_batch(store, args.set, name, args.repeats,
-                                       Path(args.scenarios_dir) if args.scenarios_dir else None), ensure_ascii=False))
+            try:
+                res = run_batch(store, args.set, name, args.repeats, Path(args.scenarios_dir) if args.scenarios_dir else None)
+            except (ModelCallError, vc.Unavailable) as exc:
+                print("run: failed, %s" % exc, file=sys.stderr)
+                return 2
+            failed += int(res.get("failed") or 0)
+            print(json.dumps(res, ensure_ascii=False))
+        if failed:
+            # Error items are stored and excluded from every measure; the run as a whole is not usable as is.
+            print("run: %d item(s) failed (stored as errors, not rateable); the run exits non-zero" % failed, file=sys.stderr)
+            return 1
         return 0
 
+    if args.cmd == "assign":
+        from . import rating
+        data = rating.assign(store, args.rater, args.set, args.batch, args.variant, args.seed, write=not args.dry_run)
+        shown = dict({k: v for k, v in data.items() if k != "items"}, n=len(data["items"]))
+        print(json.dumps(shown, ensure_ascii=False, indent=2))
+        return 0 if data["items"] else 1
+
     from . import report as rep
-    items = store.list_eval_items()
+    try:
+        items = rep.select(store.list_eval_items(), getattr(args, "set", None), getattr(args, "batch", None))
+    except ValueError as exc:
+        print("%s: refused, %s" % (args.cmd, exc), file=sys.stderr)
+        return 2
     if args.cmd == "report":
         if args.format == "md":
             from . import tables
@@ -240,7 +337,7 @@ def main(argv=None) -> int:
             if args.compare:
                 out["paired"] = rep.paired(rated, args.compare[0], args.compare[1])
         if args.agreement:
-            out["agreement"] = rep.agreement(store, args.agreement[0], args.agreement[1])
+            out["agreement"] = rep.agreement(store, args.agreement[0], args.agreement[1], items)
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
 
@@ -248,7 +345,9 @@ def main(argv=None) -> int:
         from .citations import sample
         data = json.dumps(sample(items, args.citation_sample, args.seed), ensure_ascii=False, indent=2)
     else:
-        data = json.dumps({"items": items, "ratings": store.list_ratings()}, ensure_ascii=False, indent=2)
+        ids = {i["id"] for i in items}
+        data = json.dumps({"items": items, "ratings": [r for r in store.list_ratings() if r["item_id"] in ids]},
+                          ensure_ascii=False, indent=2)
     if args.out == "-":
         sys.stdout.write(data + "\n")
     else:

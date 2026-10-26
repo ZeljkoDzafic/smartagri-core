@@ -1,9 +1,9 @@
-# Uputstvo za ocenjivače (Prilog E)
+# Uputstvo za ocenjivače
 
-> Status: NACRT (AI-generisan, nije pregledan). Zaključava se zajedno sa protokolom (`protocol-v1`);
-> posle zaključavanja se ne menja. Izmene pre zaključavanja nastaju samo posle kalibracije na pet
-> razvojnih scenarija (protokol, odeljak 6.5). Brojevi u primerima su ilustrativni i ne potiču sa
-> stvarne parcele.
+> Status: nacrt; pregleda se i kalibriše pre zaključavanja protokola (`protocol-v1`). Zaključava se
+> zajedno sa protokolom i posle zaključavanja se ne menja. Izmene pre zaključavanja nastaju samo
+> posle kalibracije na pet razvojnih scenarija (plan analize, `docs/protocol.md`). Brojevi u
+> primerima su ilustrativni i ne potiču sa stvarne parcele.
 
 ## 1. Šta ocenjujete
 
@@ -119,7 +119,7 @@ Primer (obilazak parcele, poslednji NDVI snimak star 12 dana, pola piksela upotr
 ## 4. Kritične greške K1–K5
 
 Kritične greške beležite nezavisno od rubrike. Jedna stavka može imati više klasa. Definicije su
-iste kao u protokolu (odeljak 6.4) i u rubrici aplikacije.
+iste kao u planu analize (`docs/protocol.md`) i u rubrici aplikacije.
 
 ### K1 — Količina ili doza bez neophodnih podataka
 

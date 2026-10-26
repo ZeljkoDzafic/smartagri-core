@@ -51,13 +51,19 @@ def cluster_of(sc: Dict[str, Any]) -> str:
 
 
 def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, generator) -> Dict[str, Any]:
-    """Play one scenario. A question the scenario has no reply for is answered with 'I do not know'."""
+    """Play one scenario. A question of the alpha layer the scenario has no reply for is answered with 'I do not know'.
+
+    A free question of the model (variants without the sufficiency layer, `next_question.input` is None) is mapped
+    to a prepared reply by keywords exactly as for the LLM baseline VC (`evalkit.vc.match_reply`); when no reply
+    matches, the conversation ends, as it does for VC."""
+    from .vc import match_reply
     variant = load_variants()[variant_name]
     ctx = Context.from_dict(sc["context"])
     view = scenario_view(sc, ctx)
     replies = sc.get("user_replies") or {}
     today = ctx.as_of.date().isoformat()
-    turns, records = [], []
+    turns, records, matched = [], [], []
+    used: set = set()
     for _ in range(MAX_TURNS):
         out = advise(ctx, corpus, retriever, variant, generator)
         turn = {"question": ctx.Q.text if not turns else turns[-1]["user_reply"], "answer": out["answer"], "user_reply": None}
@@ -65,8 +71,17 @@ def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, gener
         turns.append(turn)
         nq = out["answer"]["next_question"]
         if not nq:
+            matched.append(None)
             break
-        name = nq["input"]
+        name = nq.get("input")
+        if name is None:                                        # a free question of the model
+            name = match_reply(nq.get("text") or "", replies, used)
+            matched.append(name)
+            if name is None:
+                break
+            used.add(name)
+        else:
+            matched.append(name)
         if name in replies:
             kind, value = intent.parse_reply(name, str(replies[name]))
             if kind != "value":
@@ -81,26 +96,51 @@ def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, gener
     return {"scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
             "expect": (sc.get("expect") or {}).get(variant_name), "reference": sc.get("reference"), "first_act": first["act"],
             "final_act": turns[-1]["answer"]["act"], "n_turns": len(turns),
-            "first_question_input": (first["next_question"] or {}).get("input"),
+            "first_question_input": matched[0] if matched else None,
             "first_sufficiency": (records[0]["decisions"].get("sufficiency") or {}).get("status"),
             "retrieval": retrieval_record(sc, [(p.id, p.document_id) for p in corpus.passages],
                                           records[0]["decisions"].get("passage_budget") or [])}
 
 
+def models_used(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Per item: every model that actually answered, with the provider's request ids (from each turn's provenance)."""
+    calls = [r.get("provenance", {}).get("llm_call") for r in records]
+    calls = [c for c in calls if c]
+    return {"models_used": sorted({str(c.get("model")) for c in calls if c.get("model")}),
+            "request_ids": [c.get("request_id") for c in calls if c.get("request_id")]}
+
+
 def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, folder=None) -> Dict[str, Any]:
     """Run every scenario of a set (or of `folder`). Protected sets are refused by the CLI before this is called.
-    External baselines (VC) run through their own runner in evalkit.vc, never through core.decide."""
+    External baselines (VC) run through their own runner in evalkit.vc, never through core.decide.
+
+    The generator is strict (config/evaluation.yaml): a failed or substituted model call is stored as an error item
+    (`error`, `rateable: False`) and counted in `failed`; the CLI then exits non-zero. Raises ModelCallError before
+    any item is written when a requested model cannot be built at all."""
+    from . import settings as st
     from . import vc
     if variant_name in vc.EXTERNAL_VARIANTS:
         return vc.run_batch(store, set_name, variant_name, repeats, folder)
+    from ..llm.base import LLMError
+    cfg = st.load()
     corpus = load_corpus()
-    retriever, generator = make_retriever(corpus, store), make_generator()
+    retriever, generator = make_retriever(corpus, store), make_generator(strict=True, settings=cfg)
+    generation = st.summary(cfg, generator.name)
     batch_id = new_id()
-    items = []
+    items, failed = [], 0
     for sc in load_scenarios(set_name, folder):
         for repeat in range(1, repeats + 1):
-            result = run_scenario(sc, variant_name, corpus, retriever, generator)
-            item = dict(result, id=new_id(), batch_id=batch_id, scenario_id=sc["id"], variant=variant_name,
-                        repeat=repeat, set=set_name, created_at=now_iso(), generator=generator.name)
-            items.append(store.save_eval_item(item))
-    return {"batch_id": batch_id, "variant": variant_name, "set": set_name, "n": len(items), "generator": generator.name}
+            base = dict(id=new_id(), batch_id=batch_id, scenario_id=sc["id"], variant=variant_name, repeat=repeat,
+                        set=set_name, created_at=now_iso(), generator=generator.name, generation=generation)
+            try:
+                result = run_scenario(sc, variant_name, corpus, retriever, generator)
+            except LLMError as exc:
+                # Kept so the failure is visible in the report; never offered for rating, never replaced by a template.
+                failed += 1
+                store.save_eval_item(dict(base, error=str(exc)[:300], rateable=False, scenario={"id": sc["id"]},
+                                          turns=[], records=[], n_turns=0, first_act=None, final_act=None,
+                                          stratum=sc.get("stratum"), cluster=cluster_of(sc)))
+                continue
+            items.append(store.save_eval_item(dict(result, **base, **models_used(result["records"]))))
+    return {"batch_id": batch_id, "variant": variant_name, "set": set_name, "n": len(items), "failed": failed,
+            "generator": generator.name, "model": generation["model"]}

@@ -27,14 +27,18 @@ def stated_conditions(question: str) -> Dict[str, Any]:
 
 
 def ablate_context(ctx: Context, variant: VariantConfig) -> Context:
-    """Remove the parts of the dynamic context a variant may not see (E4 ablations).
+    """Remove the parts of the dynamic context a variant may not see.
 
-    Driven only by the flags `use_weather` and `use_satellite` (default True; see config.load_variants),
-    never by the variant's name. Returns a shallow copy; the caller's context is left intact."""
+    `dynamic_context: false` (rungs below the dynamic parcel context: V0-V2) removes both the weather summary W
+    and the NDVI series S, so those variants see only the static parcel profile (P, A) and the question Q.
+    `use_weather` / `use_satellite: false` remove one of them (E4 ablations). Driven only by these flags
+    (defaults in config.load_variants), never by the variant's name. Returns a shallow copy; the caller's
+    context is left intact."""
     changes: Dict[str, Any] = {}
-    if not getattr(variant, "use_weather", True):
+    dynamic = getattr(variant, "dynamic_context", True)
+    if not dynamic or not getattr(variant, "use_weather", True):
         changes["W"] = WeatherSummary()
-    if not getattr(variant, "use_satellite", True):
+    if not dynamic or not getattr(variant, "use_satellite", True):
         changes["S"] = SatelliteSummary()
     return dataclasses.replace(ctx, **changes) if changes else ctx
 
@@ -56,6 +60,14 @@ def advise(ctx: Context, corpus: Corpus, retriever: Retriever, variant: VariantC
         decisions.pop(key, None)
     decisions["grounding"] = grounding
     scene_dates = [o.obs_date for o in ctx.S.ndvi_series]
+    provenance_extra: Dict[str, Any] = {}
+    call = getattr(generator, "last_call", None)
+    if call:                                  # what actually answered: provider, model, request id, tokens
+        provenance_extra["llm_call"] = dict(call)
+    judge = getattr(generator, "judge", None)
+    if judge is not None and getattr(judge, "calls", None):
+        provenance_extra["judge_calls"] = list(judge.calls)
+        judge.calls = []
     return {
         "advice_type": t.value, "advice_type_label": L().ADVICE_TYPES[t.value],
         "answer": answer, "decisions": decisions,
@@ -63,7 +75,9 @@ def advise(ctx: Context, corpus: Corpus, retriever: Retriever, variant: VariantC
                        "corpus_hash": corpus.hash, "model": generator.model, "prompt_hash": prompt_hash(),
                        "judge_prompt_hash": getattr(generator, "judge_prompt_hash", None),
                        "scene_dates": scene_dates, "forecast_issued_at": ctx.W.forecast_issued_at,
-                       "context_used": {"weather": getattr(variant, "use_weather", True),
-                                        "satellite": getattr(variant, "use_satellite", True)}},
+                       "context_used": {"weather": getattr(variant, "dynamic_context", True)
+                                        and getattr(variant, "use_weather", True),
+                                        "satellite": getattr(variant, "dynamic_context", True)
+                                        and getattr(variant, "use_satellite", True)}, **provenance_extra},
         "cost": dict(usage, seconds=round(time.time() - started, 3)),
     }

@@ -183,7 +183,9 @@ def test_failed_model_call_is_recorded_and_not_rateable(two):
 def test_lock_covers_the_vc_prompt(env, capsys):
     folder = _folder(env, ("IRR-T-01",))
     lock_file = env / "lock.json"
-    assert cli(["lock", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 0
+    snap = env / "snapshot.tar"
+    snap.write_bytes(b"cache snapshot")
+    assert cli(["lock", "--scenarios-dir", str(folder), "--cache-snapshot", str(snap), "--out", str(lock_file)]) == 0
     data = json.loads(lock_file.read_text(encoding="utf-8"))
     from smartagri.pipeline.ai_chat import PROMPT_HASH
     assert data["files"]["prompt/vc_ai_chat"] == PROMPT_HASH

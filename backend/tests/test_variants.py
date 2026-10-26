@@ -14,15 +14,191 @@ def test_core_never_branches_on_a_variant_name():
         assert not re.search(r"""["']V[0-5]["']""", path.read_text(encoding="utf-8")), path
 
 
+# The rungs of the ladder and the one layer each adds, as the experiment design defines them (Table 3 of the design):
+#   V0 language model with the static parcel profile, no retrieval
+#   V1 + hybrid retrieval (standard RAG)
+#   V2 + applicability pi over passage metadata, conditions taken from the question (condition-aware RAG)
+#   V3 + dynamic parcel context: conditions and summary from W and S (pi now reads the parcel, W and S become visible)
+#   V4 + the explicit sufficiency-and-asking model: input quality q, sufficiency sigma, question choice alpha
+#        (one layer of the design; q, sigma and alpha are introduced together on this rung by definition)
+#   V5 + decision policy delta and grounding check gamma (the full model)
+LADDER = ["V0", "V1", "V2", "V3", "V4", "V5"]
+FLAGS = ["retrieval", "applicability", "dynamic_context", "quality", "sufficiency", "asking", "policy", "grounding"]
+LAYERS = [
+    ("hybrid retrieval", {"retrieval"}),
+    ("applicability from the question", {"applicability"}),
+    ("dynamic parcel context", {"applicability", "dynamic_context"}),
+    ("sufficiency and asking model (q, sigma, alpha)", {"quality", "sufficiency", "asking"}),
+    ("decision policy and grounding (delta, gamma)", {"policy", "grounding"}),
+]
+
+
 def test_each_step_of_the_ladder_adds_exactly_one_layer(variants):
-    flags = ["retrieval", "applicability", "dynamic_context", "quality", "sufficiency", "asking", "policy", "grounding"]
-    names = ["V0", "V1", "V2", "V3", "V4", "V5"]
-    changed = [{f for f in flags if getattr(variants[a], f) != getattr(variants[b], f)} for a, b in zip(names, names[1:])]
-    assert changed[0] == {"retrieval"}
-    assert changed[1] == {"applicability"}
-    assert changed[2] == {"applicability", "dynamic_context"}          # conditions now come from the parcel
-    assert changed[3] == {"quality", "sufficiency", "asking"}           # the layer tested by E1
-    assert changed[4] == {"policy", "grounding"}                        # the layer tested by E3
+    """Every rung differs from the one below in the flags of exactly one layer, and in nothing else."""
+    for (a, b), (layer, flags) in zip(zip(LADDER, LADDER[1:]), LAYERS):
+        changed = {f for f in FLAGS if getattr(variants[a], f) != getattr(variants[b], f)}
+        assert changed == flags, (a, b, layer, changed)
+        for f in flags:                                    # a layer is only ever added, never removed
+            assert getattr(variants[b], f) not in (False, "none", "off"), (b, f)
+    # every layer is introduced on exactly one rung
+    seen = [f for _, flags in LAYERS for f in flags if f != "applicability"]
+    assert len(seen) == len(set(seen)) == len(FLAGS) - 1
+    assert [variants[v].applicability for v in LADDER] == ["off", "off", "query_conditions"] + ["parcel_conditions"] * 3
+
+
+def test_mode_values_are_strings_not_yaml_booleans(variants):
+    """A bare `off` in YAML is the boolean false; V1 then ran pi from the question like V2. Never again."""
+    for v in variants.values():
+        assert isinstance(v.retrieval, str) and isinstance(v.applicability, str), v.name
+    assert variants["V1"].applicability == "off" and variants["V0"].retrieval == "none"
+
+
+def test_v1_takes_every_retrieved_passage_as_applicable_and_v2_filters(variants):
+    from smartagri.core.types import Passage, PassageMeta
+    p = Passage("p", meta=PassageMeta(crop=["wheat"]))
+    ctx = make_context(stated={"crop": "maize"})
+    assert decide(ctx, [p], variants["V1"]).applicability[0].status.value == "applicable"
+    assert decide(ctx, [p], variants["V2"]).applicability[0].status.value == "not_applicable"
+
+
+def test_v0_to_v2_see_only_the_static_profile_and_v3_adds_weather_and_ndvi(variants):
+    from smartagri.pipeline.run import ablate_context
+    ndvi = [{"obs_date": "2026-07-10", "median": 0.8, "p10": 0.7, "p90": 0.85, "usable_share": 0.95}]
+    ctx = make_context(ndvi=ndvi)
+    for name in ("V0", "V1", "V2"):
+        seen = ablate_context(ctx, variants[name])
+        assert seen.W.precip_forecast_3d_mm is None and seen.W.et0_past_7d_mm is None and seen.S.ndvi_series == [], name
+        assert seen.A == ctx.A and seen.P == ctx.P and seen.Q == ctx.Q, name
+    for name in ("V3", "V4", "V5"):
+        assert ablate_context(ctx, variants[name]) is ctx, name
+    assert ctx.W.precip_forecast_3d_mm == 0.0 and len(ctx.S.ndvi_series) == 1      # the caller's context is intact
+
+
+def test_dynamic_context_reaches_the_decision_and_the_provenance(variants):
+    from smartagri.pipeline.generate import TemplateGenerator
+    from smartagri.pipeline.run import advise
+    from smartagri.retrieval import Retriever, load_corpus
+    corpus = load_corpus()
+    retriever = Retriever(corpus.passages)
+    ctx = make_context()
+    ctx.Q.text = "Da li sutra da navodnjavam kukuruz?"
+    v2 = advise(ctx, corpus, retriever, variants["V2"], TemplateGenerator())
+    v3 = advise(ctx, corpus, retriever, variants["V3"], TemplateGenerator())
+    assert v2["decisions"]["quality"]["precip_forecast_3d"]["reliability"] == "missing"
+    assert v3["decisions"]["quality"]["precip_forecast_3d"]["reliability"] == "ungraded"
+    assert v2["provenance"]["context_used"] == {"weather": False, "satellite": False}
+    assert v3["provenance"]["context_used"] == {"weather": True, "satellite": True}
+    assert v2["provenance"]["forecast_issued_at"] is None and v3["provenance"]["forecast_issued_at"]
+
+
+def test_v3_and_v4_receive_the_same_context(variants):
+    """E1 compares V4 with V3 at the same input context: the q layer changes how inputs are graded, not what is seen."""
+    from smartagri.pipeline.run import ablate_context
+    ctx = make_context(ndvi=[{"obs_date": "2026-07-10", "median": 0.8, "p10": 0.7, "p90": 0.85, "usable_share": 0.95}])
+    assert ablate_context(ctx, variants["V3"]) is ablate_context(ctx, variants["V4"]) is ctx
+    assert variants["V3"].retrieval == variants["V4"].retrieval and variants["V3"].applicability == variants["V4"].applicability
+
+
+def test_without_q_present_inputs_are_ungraded_never_high(variants):
+    ctx = make_context(ndvi=[{"obs_date": "2026-06-20", "median": 0.8, "p10": 0.7, "p90": 0.85, "usable_share": 0.4}])
+    for name in ("V0", "V1", "V2", "V3"):
+        rel = {q.reliability.value for q in decide(ctx, [], variants[name]).quality.values()}
+        assert rel <= {"ungraded", "missing"} and "ungraded" in rel, name
+    graded = {q.reliability.value for q in decide(ctx, [], variants["V4"]).quality.values()}
+    assert "ungraded" not in graded and graded & {"high", "medium", "low"}
+
+
+def test_without_q_answers_state_no_reliability_grade(variants):
+    from smartagri.pipeline.generate import TemplateGenerator
+    from smartagri.pipeline.run import advise
+    from smartagri.retrieval import Retriever, load_corpus
+    corpus = load_corpus()
+    ctx = make_context()
+    ctx.Q.text = "Da li sutra da navodnjavam kukuruz?"
+    a3 = advise(ctx, corpus, Retriever(corpus.passages), variants["V3"], TemplateGenerator())["answer"]
+    a4 = advise(ctx, corpus, Retriever(corpus.passages), variants["V4"], TemplateGenerator())["answer"]
+    assert {r["reliability"] for r in a3["data_used"]} <= {"ungraded", "missing"}
+    text3 = " ".join(a3["rationale"] + [a3["basis"]["text"]])
+    assert "pouzdanost" not in text3 and "visoka" not in text3 and "nije ocenjena" not in text3
+    assert "pouzdanost" in " ".join(a4["rationale"]) and "(visoka)" in a4["basis"]["text"]
+
+
+def test_without_q_pi_never_grades_by_reliability(variants):
+    """In V3 a missing or unreliable condition does not make a passage conditional: that is q inside pi (V4)."""
+    from smartagri.core.applicability import applicability
+    from smartagri.core.quality import annotate_quality, values
+    from smartagri.core.types import Passage, PassageMeta
+    p = Passage("p", meta=PassageMeta(crop=["maize"], bbch_min=50, bbch_max=70, requires_no_rain_3d=True))
+    ctx = make_context(agronomic={"bbch": None, "bbch_reported_on": None, "sowing_date": None},
+                       weather={"forecast_issued_at": None})
+    q3, q4 = annotate_quality(ctx, quality_aware=False), annotate_quality(ctx, quality_aware=True)
+    r3 = applicability(p, ctx, q3, values(ctx), "parcel_conditions", False)
+    r4 = applicability(p, ctx, q4, values(ctx), "parcel_conditions", True)
+    assert r3.status.value == "applicable" and r3.unverifiable == []
+    assert r4.status.value == "conditional" and set(r4.unverifiable) >= {"phenophase", "weather_consistency"}
+
+
+def _fake_model(body):
+    from smartagri.pipeline import generate
+
+    class Block:
+        type, text = "text", body
+
+    class Resp:
+        stop_reason, content, model, _request_id = "end_turn", [Block()], "fake-model-1", "req_1"
+        usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
+
+    g = generate.AnthropicGenerator.__new__(generate.AnthropicGenerator)
+    g.model, g._anthropic, g.judge = "fake-model-1", type("A", (), {"APIError": Exception}), None
+    g.strict, g.server_fallback = False, False
+    g.client = type("C", (), {"beta": type("B", (), {"messages": type("M", (), {
+        "create": staticmethod(lambda **k: Resp())})()})()})()
+    return g
+
+
+def test_v3_may_ask_a_free_question_that_the_runner_answers_from_the_scenario(variants):
+    """V3 (no alpha) gets the general permission to ask: the model's own question is mapped to a prepared reply."""
+    import yaml
+    from smartagri.evalkit.runner import run_scenario
+    from smartagri.retrieval import Retriever, load_corpus
+    body = ('{"act": "ask", "summary": "Potreban je jedan podatak.", "rationale": ["Odluka zavisi od vlage."], '
+            '"question_to_user": "Kakvo je stanje vlage u zemljištu na dubini korena?"}')
+    corpus = load_corpus()
+    sc = yaml.safe_load((Path(__file__).resolve().parents[1] / "eval" / "scenarios" / "dev" /
+                         "IRR-T-02_missing_soil_water.yaml").read_text(encoding="utf-8"))
+    out = run_scenario(sc, "V3", corpus, Retriever(corpus.passages), _fake_model(body))
+    first = out["turns"][0]["answer"]
+    assert first["act"] == "ask" and first["next_question"]["origin"] == "model" and first["next_question"]["input"] is None
+    assert out["first_question_input"] == "soil_water_status" and out["turns"][0]["user_reply"] == "Suvo je, mrvi se."
+    assert out["n_turns"] >= 2
+    # the same model output under V4 cannot add a question of its own: the act and the question are the core's
+    out4 = run_scenario(sc, "V4", corpus, Retriever(corpus.passages), _fake_model(body))
+    assert all((t["answer"]["next_question"] or {}).get("origin") != "model" for t in out4["turns"])
+
+
+def test_a_free_question_without_a_matching_reply_ends_the_conversation(variants):
+    import yaml
+    from smartagri.evalkit.runner import run_scenario
+    from smartagri.retrieval import Retriever, load_corpus
+    body = ('{"act": "ask", "summary": "Pitanje.", "rationale": ["x"], '
+            '"question_to_user": "Koja je boja vašeg traktora?"}')
+    corpus = load_corpus()
+    sc = yaml.safe_load((Path(__file__).resolve().parents[1] / "eval" / "scenarios" / "dev" /
+                         "IRR-T-02_missing_soil_water.yaml").read_text(encoding="utf-8"))
+    out = run_scenario(sc, "V3", corpus, Retriever(corpus.passages), _fake_model(body))
+    assert out["n_turns"] == 1 and out["first_question_input"] is None
+
+
+def test_the_template_cannot_ask_for_variants_without_sufficiency(variants):
+    """Documented limit: without a language model the act of V0-V3 is always "recommend" (no free question)."""
+    from smartagri.pipeline.generate import TemplateGenerator
+    from smartagri.pipeline.run import advise
+    from smartagri.retrieval import Retriever, load_corpus
+    corpus = load_corpus()
+    ctx = make_context(agronomic={"soil_water_status": None})
+    for name in ("V0", "V1", "V2", "V3"):
+        a = advise(ctx, corpus, Retriever(corpus.passages), variants[name], TemplateGenerator())["answer"]
+        assert a["act"] == "recommend" and a["next_question"] is None, name
 
 
 def test_decision_is_deterministic_and_serialisable(variants):
@@ -34,7 +210,7 @@ def test_decision_is_deterministic_and_serialisable(variants):
 
 
 def test_dynamic_context_flag_matches_the_applicability_mode(variants):
-    """dynamic_context documents the ladder; the code realises it through the pi mode."""
+    """The dynamic-context layer is one layer: pi reads the parcel exactly when W and S are visible."""
     for v in variants.values():
         assert v.dynamic_context == (v.applicability == "parcel_conditions"), v.name
 

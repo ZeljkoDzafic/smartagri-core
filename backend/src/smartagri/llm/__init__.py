@@ -9,7 +9,7 @@ LM Studio, llama.cpp server, vLLM) share one implementation with a base-URL pres
 through the Anthropic SDK or through the locally installed Claude Code CLI; the bridge lets the API
 container use the host's CLI.
 """
-from .base import Image, LLMError, LLMResponse, Provider, parse_json_object
+from .base import Image, LLMError, LLMResponse, ModelCallError, Provider, parse_json_object
 from .factory import describe, make_provider
 
-__all__ = ["Image", "LLMError", "LLMResponse", "Provider", "parse_json_object", "make_provider", "describe"]
+__all__ = ["Image", "LLMError", "LLMResponse", "ModelCallError", "Provider", "parse_json_object", "make_provider", "describe"]

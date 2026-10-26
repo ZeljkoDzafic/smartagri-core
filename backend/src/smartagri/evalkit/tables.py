@@ -1,7 +1,7 @@
 """Markdown tables of the evaluation report, generated only from stored items and ratings.
 
-Every cell without data is "—"; no number is ever typed in by hand (protocol 6.7). Table and
-section numbers follow the evaluation report template.
+Every cell without data is "—"; no number is ever typed in by hand (docs/protocol.md). Table and
+section numbers follow the evaluation report template. Margins and alpha come from config/analysis.yaml.
 """
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ MEASURE_LABELS = (("total", "Rubrika ukupno (0–10)", True), ("r1", "r1 primenl
                   ("K4", "Stopa K4 (preuranjena preporuka)", False),
                   ("K5", "Stopa K5 (neopravdano uzdržavanje / pitanje)", False),
                   ("act_correct", "Tačnost odluke o činu (prvi korak)", False))
-H5_PAIR = ("V5", "VC")      # secondary comparison E5: V5 against the LLM baseline with data and sources
-H5_RATED = (("total", "Rubrika ukupno (0–10)", True), ("r5", "r5 odluka o činu i nesigurnost", True),
+E5_PAIR = ("V5", "VC")      # secondary comparison E5: V5 against the LLM baseline with data and sources
+E5_RATED = (("total", "Rubrika ukupno (0–10)", True), ("r5", "r5 odluka o činu i nesigurnost", True),
             ("critical", "Stopa kritičnih grešaka (bilo koja K)", False), ("K1", "Stopa K1 (količina bez podataka)", False),
             ("K2", "Stopa K2 (radnja protiv uslova)", False), ("K4", "Stopa K4 (preuranjena preporuka)", False),
             ("K5", "Stopa K5 (neopravdano uzdržavanje / pitanje)", False))
-MIN_N_FOR_CI = 10           # protocol 6.6: no interval for subsets smaller than ten scenarios
+MIN_N_FOR_CI = 10           # docs/protocol.md: no interval for subsets smaller than ten scenarios
 
 
 def f(x: Any, digits: int = 2) -> str:
@@ -117,19 +117,56 @@ def table_strata(scores, meta, a: str, b: str) -> str:
                      f(rep.variant_mean(scores, b, "K4", scen)), f(rep.variant_mean(scores, a, "K4", scen)),
                      f(rep.variant_mean(scores, b, "K5", scen)), f(rep.variant_mean(scores, a, "K5", scen))])
     head = ["Stratum", "n", "Rubrika " + b, "Rubrika " + a, "Razlika", "95% CI", "K4 " + b, "K4 " + a, "K5 " + b, "K5 " + a]
-    return ("Tabela 7.3. Primarno poređenje po stratumu scenarija (interval samo za n ≥ %d).\n\n" % MIN_N_FOR_CI) + table(head, rows)
+    out = ("Tabela 7.3. Primarno poređenje po stratumu scenarija (interval samo za n ≥ %d).\n\n" % MIN_N_FOR_CI) + table(head, rows)
+    return out + "\n\n" + equivalence_note(scores, meta)
+
+
+def _margin_text(m: Optional[float]) -> str:
+    return "granica nije zadata" if m is None else "granica ±%s" % f(float(m))
+
+
+def equivalence_note(scores, meta, settings: Optional[Dict[str, Any]] = None) -> str:
+    """Negative control (docs/protocol.md): equivalence (TOST) of the configured comparison on the configured strata."""
+    cfg = (settings if settings is not None else rep.analysis_settings()).get("equivalence") or {}
+    a, b = (cfg.get("comparison") or ["V4", "V3"])[:2]
+    measure, strata, margin = cfg.get("measure", "total"), tuple(cfg.get("strata") or ("complete",)), cfg.get("margin")
+    alpha = float((settings if settings is not None else rep.analysis_settings()).get("alpha", 0.05))
+    scen = [s for s, m in meta.items() if m.get("stratum") in strata]
+    p = rep.paired_measure(scores, a, b, measure, meta, scen)
+    if not p:
+        return "Negativna kontrola (%s, stratum %s): nema ocenjenih scenarija." % (measure, ", ".join(strata))
+    sa, sb = scores.get(a, {}), scores.get(b, {})
+    common = [s for s in sorted(set(sa) & set(sb) & set(scen)) if measure in sa[s] and measure in sb[s]]
+    diffs = [sa[s][measure] - sb[s][measure] for s in common]
+    cl = [meta.get(s, {}).get("cluster", s) for s in common]
+    e = rep.equivalence(diffs, margin, cl if len(set(cl)) < len(cl) else None, alpha)
+    verdict = "—" if not e or e["equivalent"] is None else ("ekvivalentno" if e["equivalent"] else "nije pokazana ekvivalencija")
+    return ("Negativna kontrola (TOST, %s − %s, mera %s, stratum %s, n = %d): razlika %s, %d%% interval %s, %s; %s."
+            % (a, b, measure, ", ".join(strata), len(diffs), f(e["diff"]) if e else DASH,
+               round(100 * (1 - 2 * alpha)), ci(e["ci"]) if e else DASH, _margin_text(margin), verdict))
+
+
+def _wilcoxon_p(scores, a: str, b: str, measure: str = "total") -> Optional[float]:
+    sa, sb = scores.get(a, {}), scores.get(b, {})
+    d = [sa[s][measure] - sb[s][measure] for s in sorted(set(sa) & set(sb)) if measure in sa[s] and measure in sb[s]]
+    w = rep.wilcoxon_signed_rank(d)
+    return None if w is None else w["p_two_sided"]
 
 
 def table_ladder(scores, meta, auto) -> str:
     rows = []
+    # Secondary family of docs/protocol.md section 4: Holm over the steps that carry a secondary comparison.
+    family = {h: _wilcoxon_p(scores, a, b) for a, b, h in STEPS if h not in ("—", "E1")}
+    adjusted = rep.holm(family)
     for a, b, h in STEPS:
         cov = DASH
         if a in auto and b in auto:
             cov = f(auto[a]["coverage"] - auto[b]["coverage"])
+        p = adjusted.get(h) if h in family else None
         rows.append(["%s − %s" % (a, b), h, diff_ci(rep.paired_measure(scores, a, b, "total", meta)),
-                     diff_ci(rep.paired_measure(scores, a, b, "critical", meta)), cov, DASH])
+                     diff_ci(rep.paired_measure(scores, a, b, "critical", meta)), cov, f(p, 4), DASH])
     head = ["Stepenica", "Poređenje", "Rubrika (razlika, 95% CI)", "Stopa kritičnih grešaka (razlika, 95% CI)",
-            "Pokrivenost (razlika)", "Glavni nalaz"]
+            "Pokrivenost (razlika)", "p rubrike (Wilcoxon, Holm)", "Glavni nalaz"]
     return "Tabela 7.4. Doprinos pojedinačnih slojeva.\n\n" + table(head, rows)
 
 
@@ -156,10 +193,12 @@ def table_selective(items, auto, ratings: Dict[str, Dict[str, Any]], variants=("
     return "Tabela 7.6. Ponašanje selektivnog odgovaranja.\n\n" + table(["Mera"] + list(variants), rows)
 
 
-def table_h5(items, scores, meta, auto, a: str = H5_PAIR[0], b: str = H5_PAIR[1]) -> str:
-    """E5: V5 has a lower critical-error rate (incl. K4) than VC at a rubric score that is not worse."""
+def table_e5(items, scores, meta, auto, a: str = E5_PAIR[0], b: str = E5_PAIR[1],
+             settings: Optional[Dict[str, Any]] = None) -> str:
+    """E5: V5 has a lower critical-error rate (incl. K4) than VC at a rubric score that is not worse (non-inferiority
+    with the margin of config/analysis.yaml; no verdict while the margin is not set)."""
     rows = []
-    for key, label, wins in H5_RATED:
+    for key, label, wins in E5_RATED:
         p = rep.paired_measure(scores, a, b, key, meta)
         wtl = DASH if not p else "%d / %d / %d" % (p["wins"], p["ties"], p["losses"])
         rows.append([label, f(rep.variant_mean(scores, b, key)), f(rep.variant_mean(scores, a, key)),
@@ -182,11 +221,21 @@ def table_h5(items, scores, meta, auto, a: str = H5_PAIR[0], b: str = H5_PAIR[1]
     for label, get, digits in autos:
         rows.append([label, f(get(b), digits), f(get(a), digits), DASH, DASH, DASH])
     p = rep.paired_measure(scores, a, b, "total", meta)
+    cfg = settings if settings is not None else rep.analysis_settings()
+    ni_cfg = cfg.get("noninferiority") or {}
+    alpha = float(cfg.get("alpha", 0.05))
+    sa, sb = scores.get(a, {}), scores.get(b, {})
+    common = [s for s in sorted(set(sa) & set(sb)) if "total" in sa[s] and "total" in sb[s]]
+    diffs = [sa[s]["total"] - sb[s]["total"] for s in common]
+    cl = [meta.get(s, {}).get("cluster", s) for s in common]
+    ni = rep.noninferiority(diffs, ni_cfg.get("margin"), cl if len(set(cl)) < len(cl) else None, alpha)
+    verdict = DASH if not ni or ni["noninferior"] is None else ("neinferiorno" if ni["noninferior"] else "neinferiornost nije pokazana")
     head = ["Mera", b, a, "Razlika %s − %s" % (a, b), "95% CI", "Scenarija u korist %s / izjednačeno / u korist %s" % (a, b)]
-    note = ("E5 je potvrđeno ako je stopa kritičnih grešaka %s niža (interval razlike ispod nule) a rubrika nije lošija "
-            "(granica neinferiornosti iz zaključanog protokola). Za stope grešaka „u korist %s” znači veću stopu. "
+    note = ("Neinferiornost rubrike (jednostrano, alfa/2 = %s): donja granica %s, %s; %s. "
+            "E5 je potvrđeno ako je stopa kritičnih grešaka %s niža (interval razlike ispod nule) a rubrika neinferiorna. "
+            "Za stope grešaka „u korist %s” znači veću stopu. "
             "%s je slobodan LLM odgovor sa istim podacima i istim primenljivim izvorima, bez modela odlučivanja."
-            % (a, a, b))
+            % (f(alpha / 2.0, 3), f(ni["lower"]) if ni else DASH, _margin_text(ni_cfg.get("margin")), verdict, a, a, b))
     return ("Tabela 7.10. Sekundarno poređenje E5: %s prema %s (LLM sa podacima i izvorima), n = %s scenarija sa ocenom.\n\n"
             % (a, b, f(p["n"] if p else None))) + table(head, rows) + "\n\n" + note
 
@@ -209,16 +258,17 @@ def table_agreement(agree: Optional[Dict[str, Any]], raters: Optional[Tuple[str,
     rows = []
     for c in rep.CRITERIA:
         x = (agree or {}).get(c) or {}
-        rows.append([c, f(x.get("kappa_quadratic")), f(x.get("percent_agreement"))])
+        rows.append([c, f(x.get("kappa_quadratic")), ci(x.get("kappa_ci95")), f(x.get("percent_agreement"))])
     x = (agree or {}).get("critical_any") or {}
-    rows.append(["Kritična greška (da / ne)", f(x.get("kappa")), f(x.get("percent_agreement"))])
+    rows.append(["Kritična greška (da / ne)", f(x.get("kappa")), ci(x.get("kappa_ci95")), f(x.get("percent_agreement"))])
     for k in ("K1", "K2", "K3", "K4", "K5"):
         x = (agree or {}).get("critical_" + k) or {}
-        rows.append([k, f(x.get("kappa")), f(x.get("percent_agreement"))])
+        rows.append([k, f(x.get("kappa")), ci(x.get("kappa_ci95")), f(x.get("percent_agreement"))])
     who = "%s – %s" % raters if raters else "ocenjivač A – ocenjivač B"
     n = (agree or {}).get("n_items")
-    return ("Tabela 7.8. Slaganje ocenjivača (%s), n = %s stavki. Za r1–r5 ponderisani κ (kvadratne težine), "
-            "za K neponderisani.\n\n" % (who, f(n) if n else DASH)) + table(["Kriterijum", "κ", "Udeo potpunog slaganja"], rows)
+    return ("Tabela 7.8. Slaganje ocenjivača (%s), n = %s stavki. Za r1–r5 ponderisani κ (kvadratne težine, Cohen 1968), "
+            "za K neponderisani (Cohen 1960); 95%% CI: bootstrap po stavkama.\n\n" % (who, f(n) if n else DASH)) + \
+        table(["Kriterijum", "κ", "95% CI", "Udeo potpunog slaganja"], rows)
 
 
 def render(store: Store, items: List[Dict[str, Any]], rater: Optional[str] = None,
@@ -227,7 +277,7 @@ def render(store: Store, items: List[Dict[str, Any]], rater: Optional[str] = Non
     scores = rep.scenario_scores(store, items, rater)
     meta = rep.scenario_meta(items)
     ratings = {r["item_id"]: r for r in store.list_ratings(rater)} if rater else {}
-    agree = rep.agreement(store, agreement[0], agreement[1]) if agreement else None
+    agree = rep.agreement(store, agreement[0], agreement[1], items) if agreement else None
     a, b = main
     parts = [
         "<!-- Generated by `python -m smartagri.evalkit report --format md`; do not edit by hand. -->",
@@ -236,7 +286,7 @@ def render(store: Store, items: List[Dict[str, Any]], rater: Optional[str] = Non
         "## 7.2 Primarno poređenje: %s prema %s" % (a, b), table_main(scores, meta, a, b), table_strata(scores, meta, a, b),
         "## 7.3 Stepenice lestvice", table_ladder(scores, meta, auto),
         "## 7.5 Cena aktivnog pitanja", table_selective(items, auto, ratings),
-        "## E5 Poređenje sa jakim LLM osnovom (VC)", table_h5(items, scores, meta, auto),
+        "## E5 Poređenje sa jakim LLM osnovom (VC)", table_e5(items, scores, meta, auto),
         "## 7.6 Pronalaženje izvora i citati", table_retrieval(auto),
         "## 7.7 Slaganje ocenjivača", table_agreement(agree, agreement),
     ]

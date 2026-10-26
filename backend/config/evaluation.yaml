@@ -1,0 +1,23 @@
+# Language-model settings of an evaluation run (`python -m smartagri.evalkit run`). Read only by evalkit; the
+# interactive research API keeps its own environment settings. Recorded in the protocol lock (config/*.yaml).
+#
+# The values below are the defaults the code used before this file existed (provider, model, effort, output limits);
+# they are working values and are TO BE CONFIRMED before the protocol lock.
+#
+# Rules enforced by evalkit (see evalkit/settings.py):
+#   - `model` must be an exact model id, never an alias (sonnet, opus, haiku, ...-latest);
+#   - LLM_PROVIDER / LLM_MODEL in the environment, when set, must equal these values, otherwise the run is refused;
+#   - server_fallback: false sends no server-side model fallback, and an answer from any model other than `model`
+#     is an error item, never a rated answer;
+#   - a failed call (API error, refusal, max_tokens, unparseable output, missing package or key) is an error item
+#     and makes the run exit non-zero; nothing falls back to the deterministic template.
+llm:
+  provider: anthropic
+  model: claude-opus-5-5
+  effort: low                 # output_config.effort; the same for the ladder generator, the judge and VC
+  server_fallback: false
+  max_tokens_generator: 16000 # ladder V0-V5: phrasing of the core's decision (structured output). The output limits
+                              # of VC (ai_chat) and of the judge are constants in their modules, covered by the
+                              # source hash of the lock.
+judge:                        # used only with GROUNDING_JUDGE=llm (gamma, V5 variants)
+  model: claude-opus-5-5

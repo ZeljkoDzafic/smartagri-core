@@ -15,42 +15,63 @@ The decision is made by explicit, deterministic layers; a language model (option
 - **q** quality of each input (origin, age, coverage, reliability);
 - **σ** sufficiency of the inputs for the requested type of advice;
 - **α** choice of the next question;
-- **δ** the decision policy (recommend, conditional, ask, abstain, refer);
-- **γ** grounding checks of the answer (numbers come from tools, sentences must be supported by passages).
+- **δ** the decision policy: one of four acts, recommend, conditional, ask or abstain; an abstention for an
+  out-of-scope question or an insufficient corpus carries a referral to the extension service (a referral is not a
+  separate act);
+- **γ** grounding checks of a generated answer (numbers come from tools, sentences must be supported by passages).
 
-Agronomic numbers are computed in code (FAO-56: ETc = Kc × ET0, water balance, gross dose = net / efficiency), never
-by the language model.
+Agronomic numbers are computed in code, never by the language model: ETc = Kc × ET0 with FAO-56 crop coefficients, a
+simplified root-zone balance and gross depth = net / efficiency. The configuration values and the corpus are
+development defaults pending agronomic review, and irrigation quantities are not shown in answers in this version;
+see [Limitations](docs/limitations.md). [docs/layers.md](docs/layers.md) maps every layer to its code, configuration
+and tests.
 
 ## Contents
 
 | Path | What |
 |---|---|
 | `backend/src/smartagri/core/` | decision model π, q, σ, α, δ, FAO-56 tools, grounding |
-| `backend/src/smartagri/retrieval/` | corpus loading, BM25 + vector retrieval with rank fusion, corpus ingest and coverage |
+| `backend/src/smartagri/retrieval/` | corpus loading, BM25 retrieval (fused with a dense ranking when `EMBEDDINGS_PROVIDER=fastembed`), corpus ingest and coverage |
 | `backend/src/smartagri/pipeline/`, `providers/`, `llm/` | answer generation and judge, weather and satellite adapters, LLM providers |
 | `backend/src/smartagri/evalkit/` | `python -m smartagri.evalkit run / report / export / guard / sweep / lock` |
 | `backend/src/smartagri/research_api/` | minimal HTTP API and the web app (map drawing, profile, weather and NDVI, water balance, advice, provenance, evaluation overview, blind rating) |
 | `backend/config/` | rules, thresholds, variants, question bank, Kc table (locked with the evaluation protocol) |
 | `backend/corpus/` | corpus manifest (licence per document) and passages |
 | `backend/eval/scenarios/dev/` | development scenarios; held-out test scenarios are published only after the protocol lock |
-| `docs/` | architecture overview, evaluation protocol, rater guide |
+| `docs/` | documentation (see [Documentation](#documentation)), rater guide |
+| `examples/` | `advise_one_parcel.py`: one parcel, one question, offline |
 | `website/`, `tools/check_presentation_site.py`, `wrangler.jsonc` | static presentation site, its check and its Cloudflare deployment |
 | `Dockerfile`, `docs/deployment.md` | container image and guide for a public deployment of the web app with accounts |
 
 ## Install and test
 
-Python 3.9 or newer. Docker is not required.
+Python 3.12 is recommended; Python 3.9 is supported. Docker is not required.
 
 ```bash
 cd backend
-python3 -m venv .venv && . .venv/bin/activate
-pip install -c constraints-py39.txt -e ".[dev,api]"      # Python 3.12: -c requirements.lock
+python3.12 -m venv .venv && . .venv/bin/activate
+python -m pip install --upgrade pip setuptools           # an old pip/setuptools cannot do the editable install
+pip install -c requirements.lock -e ".[dev,api]"         # Python 3.9: -c constraints-py39.txt
 pytest -q                                                # SQLite, offline; no keys needed
 ```
 
-`.env.example` lists the optional settings: LLM provider, Copernicus credentials, offline mode and the answer
-language (`SMARTAGRI_LOCALE`, default `en`). Without any of
-them the system uses the deterministic template generator and works without network access to models.
+`.env.example` (repository root) lists the optional settings: LLM provider, Copernicus credentials, offline mode,
+retrieval mode, storage, accounts and the answer language of the web app (`SMARTAGRI_LOCALE`). None is required:
+without them the system uses the deterministic template generator and BM25 retrieval, and works without keys. The
+code does not read a `.env` file by itself; export the settings into the environment, for example after
+`cp .env.example .env` and editing it, run `set -a; . ./.env; set +a` in the repository root before `cd backend`.
+
+## Example
+
+```bash
+cd backend && . .venv/bin/activate
+LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none SMARTAGRI_OFFLINE=1 python ../examples/advise_one_parcel.py
+```
+
+[`examples/advise_one_parcel.py`](examples/advise_one_parcel.py) creates a maize parcel, builds its profile from
+fixture data placed in the provider cache (no network), asks one irrigation question through the same Python
+service the web app uses, and prints the act, the reason, the inputs with their reliability, the sources with their
+applicability and the provenance hashes. CI runs it on every push.
 
 ## Run
 
@@ -70,17 +91,20 @@ Open `http://127.0.0.1:8100`. Draw a parcel on the map (or paste or import a Geo
 see each input with its origin, age and reliability (q), ask a question under any variant V0–V5, answer the
 follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes ("Download
 provenance (JSON)" saves the whole answer with its decisions, sources, inputs and hashes). The parcel page also shows
-the stored weather and Sentinel-2 NDVI series with their source and age, and a daily FAO-56 water balance (ET0, Kc,
-ETc = Kc × ET0, rainfall, root-zone deficit, capped at TAW when the optional soil texture is given) computed in
-code by the core tools; a missing series stays empty. The
+the stored weather and Sentinel-2 NDVI series with their source and age, and a daily root-zone balance (ET0, Kc, ETc = Kc × ET0, rainfall, root-zone deficit, capped at TAW when the
+optional soil texture is given) computed in code with the core tools. It is an illustration and does not feed the
+advice; a missing series stays empty. The
 read-only Evaluation page shows what `python -m smartagri.evalkit report` computes from the stored runs (development
 runs are labelled as such), the leakage guard counts and the protocol lock; it is not linked from the rating screen.
 
-Answers are in English by default. `SMARTAGRI_LOCALE=sr-Latn` switches the interface and the answers to the local
-language (Latin script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English
-and in the local language. Sources are quoted in their original language: the passages of the published corpus are
-short paraphrases in Serbian, so source titles and excerpts appear in Serbian. Evaluation runs never go through the
-API and always use the default locale, so the answer language does not change any result. The VC chat (a free LLM
+The web app and the research API answer in English by default (`SMARTAGRI_LOCALE`, default `en`;
+`research_api/locale.py`). `SMARTAGRI_LOCALE=sr-Latn` switches the interface and the answers to Serbian (Latin
+script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English
+and in Serbian. Sources are quoted in their original language: the passages of the published corpus are short
+paraphrases in Serbian, so source titles and excerpts appear in Serbian. Outside a web request the core's own default
+locale applies, which is Serbian, Latin script (`i18n.py`, `DEFAULT_LOCALE`): evaluation runs, scenarios, the rater
+view and the report tables are in Serbian. Evaluation runs never go through the API, so the answer language of the
+web app does not change any result. The VC chat (a free LLM
 conversation with the same data and sources) answers in the language of the message and needs `LLM_PROVIDER`. The
 blind rating screen shows only the blinded item and the rubric, in the wording of the rater guide.
 
@@ -149,28 +173,73 @@ Pages remains an alternative (workflow `Deploy website to GitHub Pages`, run by 
 
 ## Evaluation
 
-`evalkit` runs an ablation ladder of variants V0–V5 (each rung adds one layer) and the LLM baseline VC over scenario
-sets, and supports blind rating, bootstrap intervals, rater agreement, a leakage guard and a protocol lock.
-See [`docs/evaluation.md`](docs/evaluation.md).
+`evalkit` runs an ablation ladder of variants V0–V5 (each rung adds one layer; the layer of V4 is q, σ and α, the
+layer of V5 is δ and γ) and the LLM baseline VC over scenario sets, and supports blind rating, bootstrap intervals,
+rater agreement, a leakage guard and a protocol lock that binds the code and the environment. See [`docs/evaluation.md`](docs/evaluation.md), [`docs/protocol.md`](docs/protocol.md) and
+[`docs/reproducibility.md`](docs/reproducibility.md).
 
 ```bash
 python -m smartagri.evalkit run --set dev && python -m smartagri.evalkit report
 ```
 
+The development scenarios are a regression check of the installation, not an experiment; see
+[limitations](docs/limitations.md#evaluation).
+
 ## Corpus licences
 
-`backend/corpus/manifest.yaml` gives the source, URL and licence of every document. The published passages are short
-paraphrases with citations, or the author's own notes. A document whose licence does not allow redistribution is
-published as metadata only (title, URL, licence); the corpus hash recorded in every run lets you check a locally
-rebuilt corpus.
+`backend/corpus/manifest.yaml` gives the source, URL and terms of every document. The published passages are short
+paraphrases with citations, or the author's own notes; the corpus is licensed per document, separately from the MIT
+licence of the code (see [NOTICE](NOTICE)). The published corpus is a 22-passage development corpus, most of whose
+passages are still marked for verification against their source. A document whose terms do not allow
+redistribution is to be published as metadata only (title, URL, terms); the corpus hash recorded in every run lets
+you check a locally rebuilt corpus.
 
 ## Data sources and standards
 
-FAO Irrigation and Drainage Paper 56 (crop coefficients, ET0, water balance), BBCH growth stages, Open-Meteo
-(forecast, historical and previous-runs APIs), Copernicus Data Space Ecosystem (Sentinel-2 L2A, Statistical API),
-OpenStreetMap. Each keeps its own licence and terms.
+FAO Irrigation and Drainage Paper 56 (crop coefficients, ETc = Kc × ET0), BBCH growth stages, Open-Meteo (forecast,
+historical-forecast and previous-runs APIs, including FAO ET0), Copernicus Data Space Ecosystem (Sentinel-2 L2A, Statistical API),
+OpenStreetMap tiles. Each keeps its own licence and terms; see [NOTICE](NOTICE) for the attributions they require.
+
+## Documentation
+
+| Document | Content |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | flow of one question, storage, packages |
+| [docs/layers.md](docs/layers.md) | every layer (C, π, q, σ, α, δ, γ) and agronomic tool mapped to code, configuration and tests; the four acts |
+| [docs/limitations.md](docs/limitations.md) | what this version does not do, with the files to check |
+| [docs/evaluation.md](docs/evaluation.md) | variants, comparisons and measures |
+| [docs/protocol.md](docs/protocol.md) | evaluation protocol: outcomes, analysis plan, rater design, protocol lock |
+| [docs/reproducibility.md](docs/reproducibility.md) | clean install, development run, report, protocol lock, results from a tagged release |
+| [docs/RATER_GUIDE.md](docs/RATER_GUIDE.md) | instructions for blind raters (Serbian) |
+| [docs/deployment.md](docs/deployment.md) | public deployment of the web app with accounts |
+| [docs/adr/](docs/adr/README.md) | architecture decision records |
+| [website/README.md](website/README.md) | the presentation website and its deployment |
+| [CHANGELOG.md](CHANGELOG.md) | changes per version |
+
+## How to cite
+
+Use the metadata in [`CITATION.cff`](CITATION.cff) (GitHub shows it as "Cite this repository"). Cite the version you
+used; each release is a git tag `vX.Y.Z`. A DOI will be added once releases are archived on Zenodo
+(`.zenodo.json`).
+
+> Džafić, Ž. (2026). *SmartAgri core: active, uncertainty-aware agronomic advisory* (Version 0.2.0) [Computer
+> software]. https://github.com/ZeljkoDzafic/smartagri-core
+
+When you publish results that use weather or satellite data obtained through this software, also give the
+attributions listed in [NOTICE](NOTICE) (Open-Meteo, Copernicus Sentinel data).
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the checks
+and the rules for locked files, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Authors are listed in
+[AUTHORS.md](AUTHORS.md).
+
+## Security
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in public issues.
 
 ## Licence
 
-MIT (`LICENSE`). Cite with `CITATION.cff`. A commercial product built on this core is developed separately; it is
-not needed to run, check or reproduce anything here.
+MIT for the code (`LICENSE`); the corpus and third-party components keep their own terms ([NOTICE](NOTICE)). A
+commercial product built on this core is developed separately; it is not needed to run, check or reproduce anything
+here.

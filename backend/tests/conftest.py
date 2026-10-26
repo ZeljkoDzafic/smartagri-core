@@ -30,6 +30,15 @@ def variants():
     return load_variants()
 
 
+@pytest.fixture(autouse=True)
+def _lock_sees_a_clean_checkout(monkeypatch):
+    """The protocol lock refuses a checkout with uncommitted source or config changes (lock.git_state). Tests run in
+    working copies that are dirty while being developed, so they see a fixed clean state; the refusal itself is tested
+    through lock.environment_differences."""
+    from smartagri.evalkit import lock
+    monkeypatch.setattr(lock, "git_state", lambda: {"git": True, "commit": "0" * 40, "dirty": []})
+
+
 # ---------------------------------------------------------------- git-ignored test scenarios
 from pathlib import Path
 
@@ -165,7 +174,7 @@ def store(request):
 import uuid
 
 TEST_PASSWORD = "dobra-lozinka-2026"
-CSRF = {"X-Requested-With": "agrovid"}
+CSRF = {"X-Requested-With": "smartagri"}
 
 
 def login_as(client, role="owner", email=None, org_id=None, researcher=True, org_name="Gazdinstvo Test",

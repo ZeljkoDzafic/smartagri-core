@@ -1,4 +1,4 @@
-"""Conflicts between applicable sources (rule 4.6.3 of the model).
+"""Conflicts between applicable sources (the source-conflict rule of the decision model, docs/architecture.md).
 
 The core does not pick a winner by asking a language model which source is more credible.
 It uses applicability, which is checkable:

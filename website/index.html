@@ -210,7 +210,7 @@ curl -s -X POST localhost:8100/api/parcels/$ID/chat \
             <li><code>run</code> scenario sets under one or more variants</li>
             <li><code>report</code> automatic and rated measures, paired comparisons</li>
             <li><code>guard</code> n-gram leakage check between scenarios and corpus</li>
-            <li><code>lock</code> sha256 of scenarios, corpus, config, prompts and rater guide</li>
+            <li><code>lock</code> sha256 of scenarios, corpus, config, prompts, rater guide and analysis plan, plus code and environment</li>
             <li><code>export</code> and <code>sweep</code> for items, ratings and synthetic variations</li>
           </ul>
         </div>
@@ -233,16 +233,16 @@ python -m smartagri.evalkit guard --set dev</code></pre>
       </div>
       <div class="ladder reveal" role="list" aria-label="Ablation ladder">
         <div role="listitem"><b>V0</b><span>answer without retrieval</span></div>
-        <div role="listitem"><b>V1</b><span>+ hybrid retrieval (BM25 + vectors)</span></div>
+        <div role="listitem"><b>V1</b><span>+ retrieval (BM25; fused with dense vectors when enabled)</span></div>
         <div role="listitem"><b>V2</b><span>+ π over the question’s conditions</span></div>
         <div role="listitem"><b>V3</b><span>+ π over the parcel, context C</span></div>
         <div role="listitem"><b>V4</b><span>+ q, σ and α</span></div>
         <div role="listitem"><b>V5</b><span>+ δ and γ</span></div>
       </div>
       <div class="feature-grid">
-        <article class="reveal"><h3>Ablation ladder</h3><p>Each variant adds to the one before, so a paired comparison such as V4 against V3 isolates what those layers change. A free LLM conversation with the same data and passages (VC) is a baseline outside the ladder.</p></article>
-        <article class="reveal"><h3>Blind rating</h3><p>Raters score items on a five-criterion rubric with critical-error classes. They never see the variant, generator or model, and each rater gets a fixed item order.</p></article>
-        <article class="reveal"><h3>Protocol lock</h3><p>Before measurement, a lock file records the sha256 of the scenarios, corpus, configuration, prompts and rater guide. Held-out test scenarios are published only after the lock.</p></article>
+        <article class="reveal"><h3>Ablation ladder</h3><p>Each rung adds one layer to the one before (V4 adds the sufficiency-and-asking model, V5 the policy and grounding check), so a paired comparison such as V4 against V3 isolates that layer. A free LLM conversation with the same data and passages (VC) is a baseline outside the ladder.</p></article>
+        <article class="reveal"><h3>Blind rating</h3><p>Raters score items on a five-criterion rubric with critical-error classes. They never see the variant, generator or model, and each rater gets the items of one scenario set in a seeded, recorded order.</p></article>
+        <article class="reveal"><h3>Protocol lock</h3><p>Before measurement, a lock file records the sha256 of the scenarios, corpus, configuration, prompts, rater guide and analysis plan, and binds the code, dependencies and model settings. Held-out test scenarios are published only after the lock.</p></article>
       </div>
     </section>
 
@@ -267,18 +267,19 @@ python -m smartagri.evalkit guard --set dev</code></pre>
       <div class="section-head reveal">
         <p class="eyebrow">Get started</p>
         <h2 id="start-title">Running in minutes.<br>No keys needed.</h2>
-        <p>Python 3.9 or newer. SQLite and offline mode by default; Docker is not required.</p>
+        <p>Python 3.12 recommended, 3.9 supported. SQLite and offline mode by default; Docker is not required.</p>
       </div>
       <div class="install-card reveal">
         <div class="code-head"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Linux / macOS</span><button id="copy-install" class="copy-button" type="button">Copy</button></div>
 <pre id="install-command"><code>git clone https://github.com/ZeljkoDzafic/smartagri-core.git
 cd smartagri-core/backend
-python3 -m venv .venv &amp;&amp; . .venv/bin/activate
-pip install -c constraints-py39.txt -e ".[dev,api]"
+python3.12 -m venv .venv &amp;&amp; . .venv/bin/activate
+python -m pip install --upgrade pip setuptools
+pip install -c requirements.lock -e ".[dev,api]"
 pytest -q
 python -m smartagri.research_api   # http://127.0.0.1:8100</code></pre>
         <div class="install-notes">
-          <p class="small">On Python 3.12, use <code>-c requirements.lock</code>. On Windows, create the environment with <code>py -m venv .venv</code> and run <code>.venv\Scripts\python.exe</code>. Optional settings are listed in <code>.env.example</code>: <code>SMARTAGRI_LOCALE</code> sets the answer language, and <code>SMARTAGRI_TILE_URL</code> sets another tile server (<code>none</code> turns tiles off).</p>
+          <p class="small">On Python 3.9, use <code>-c constraints-py39.txt</code>; upgrading pip and setuptools first is required for the editable install on older Python installations. On Windows, create the environment with <code>py -m venv .venv</code> and run <code>.venv\Scripts\python.exe</code>. Optional settings are listed in <code>.env.example</code>: <code>SMARTAGRI_LOCALE</code> sets the answer language, and <code>SMARTAGRI_TILE_URL</code> sets another tile server (<code>none</code> turns tiles off).</p>
           <p id="copy-status" class="small" role="status" aria-live="polite"></p>
         </div>
       </div>

@@ -21,10 +21,15 @@ class Reliability(str, Enum):
     MEDIUM = "medium"
     LOW = "low"
     MISSING = "missing"
+    # A present input of a variant without the q layer: its value is used as it is, but it carries no grade.
+    # Never produced when q is on; never shown as "high".
+    UNGRADED = "ungraded"
 
     @property
     def rank(self) -> int:
-        return {"missing": 0, "low": 1, "medium": 2, "high": 3}[self.value]
+        # UNGRADED ranks like a value taken at face value: no layer that compares ranks (sigma, the q-aware
+        # parts of pi) runs without q, so the rank is never used to grade it.
+        return {"missing": 0, "low": 1, "medium": 2, "high": 3, "ungraded": 3}[self.value]
 
 
 class Applicability(str, Enum):

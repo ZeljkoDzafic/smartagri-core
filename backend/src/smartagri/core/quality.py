@@ -187,8 +187,10 @@ def grade(name: str, o: Observation) -> Quality:
 def annotate_quality(ctx: Context, quality_aware: bool = True) -> QualityProfile:
     """Quality profile of the context.
 
-    With quality_aware=False (variants without the q layer) every present input is taken at face
-    value as 'high' and every absent one as 'missing', which is what a system without q assumes.
+    With quality_aware=False (variants without the q layer) no input is graded: every present input is
+    marked 'ungraded' (its value is used as it is, with no reliability claim) and every absent one 'missing'.
+    Raw facts that belong to the data itself (observation date, age, usable-pixel share, origin) are kept;
+    only the grade, which is the output of q, is withheld.
     """
     profile: QualityProfile = {}
     for name, o in observe_all(ctx).items():
@@ -203,8 +205,8 @@ def annotate_quality(ctx: Context, quality_aware: bool = True) -> QualityProfile
         elif o.value is None:
             profile[name] = Quality(name, Origin.UNKNOWN, None, None, Reliability.MISSING, "not available")
         else:
-            profile[name] = Quality(name, o.origin, o.age_days, o.coverage, Reliability.HIGH,
-                                    "quality layer off", o.source_ref)
+            profile[name] = Quality(name, o.origin, o.age_days, o.coverage, Reliability.UNGRADED,
+                                    "quality layer off: not graded", o.source_ref)
     return profile
 
 

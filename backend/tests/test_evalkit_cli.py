@@ -78,7 +78,12 @@ def test_run_on_the_test_set_is_refused_without_a_lock(env, capsys):
 def test_lock_then_locked_run_then_tamper(env, capsys):
     folder = _fake_test_set(env)
     lock_file = env / "protocol-lock.json"
-    assert cli(["lock", "--set", "test", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 0
+    snap = env / "snapshot.tar"
+    snap.write_bytes(b"cache snapshot")
+    assert cli(["lock", "--set", "test", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 2   # no snapshot
+    capsys.readouterr()
+    assert cli(["lock", "--set", "test", "--scenarios-dir", str(folder), "--cache-snapshot", str(snap),
+                "--out", str(lock_file)]) == 0
     written = json.loads(capsys.readouterr().out)
     data = json.loads(lock_file.read_text(encoding="utf-8"))
     assert data["combined_sha256"] == written["combined_sha256"] and data["set"] == "test"
@@ -87,7 +92,8 @@ def test_lock_then_locked_run_then_tamper(env, capsys):
             "corpus/passages.yaml", "rater_guide/RATER_GUIDE.md"} <= keys
     assert sum(k.startswith("scenarios/") for k in keys) == 2 and len(data["prompt_hash"]) == 64
 
-    assert cli(["lock", "--set", "test", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 2   # no silent overwrite
+    assert cli(["lock", "--set", "test", "--scenarios-dir", str(folder), "--cache-snapshot", str(snap),
+                "--out", str(lock_file)]) == 2   # no silent overwrite
     capsys.readouterr()
     assert cli(["lock", "--check", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 0
     assert json.loads(capsys.readouterr().out)["differences"] == []

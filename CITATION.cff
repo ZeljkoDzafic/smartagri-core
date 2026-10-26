@@ -1,23 +1,71 @@
+# Citation metadata (Citation File Format 1.2.0, https://citation-file-format.github.io/).
+# `version` and `date-released` must match the git tag `vX.Y.Z`, backend/pyproject.toml and the CHANGELOG heading of
+# the release being cited (the release workflow checks the first three).
+# DOI: added after the first Zenodo release. Zenodo mints a concept DOI (all versions) and a version DOI; add them
+# under `identifiers` and as `doi` here and in `preferred-citation` once Zenodo has issued them. Until then no DOI
+# is given. When an article describing the software is published, `preferred-citation` becomes that article.
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "SmartAgri core: active, uncertainty-aware agronomic advisory"
 abstract: >-
-  Open core of an agronomic advisory system. It combines a deterministic decision model (input quality,
-  applicability of knowledge passages, sufficiency, choice of the next question and a decision policy) with hybrid
-  retrieval, FAO-56 tools and grounding checks, plus an evaluation harness with an ablation ladder, blind rating
-  and a protocol lock.
+  Open core of an agronomic advisory system for maize. Before any text is generated, explicit deterministic layers
+  decide whether the system may advise on a parcel at all: applicability of knowledge passages, quality of each
+  input, sufficiency of the inputs, choice of the next question and a decision policy that recommends, gives a
+  conditional answer, asks or abstains. Agronomic numbers are computed in code (FAO-56 ETc = Kc x ET0, a simplified
+  root-zone balance, gross depth = net / efficiency), and grounding checks keep a language model, when one is used,
+  from adding unsupported numbers or sentences. The repository includes BM25 retrieval with optional dense ranking,
+  a web app, and an evaluation harness with an ablation ladder, blind rating, a leakage guard and a protocol lock.
+  Configuration values and the corpus are development defaults pending agronomic review.
 type: software
 authors:
   - family-names: "Džafić"
     given-names: "Željko"
+    email: "zeljkodzafic@gmail.com"
 license: MIT
-version: "0.1.0"
-date-released: "2026-10-21"
+version: "0.2.0"
+date-released: "2026-10-26"
 repository-code: "https://github.com/ZeljkoDzafic/smartagri-core"
 keywords:
   - agriculture
+  - agronomic advisory
   - decision support
+  - maize
+  - irrigation
   - retrieval-augmented generation
+  - selective answering
+  - abstention
+  - uncertainty
   - FAO-56
   - Sentinel-2
-  - selective answering
+  - Open-Meteo
+  - evaluation
+  - reproducibility
+preferred-citation:
+  type: software
+  title: "SmartAgri core: active, uncertainty-aware agronomic advisory"
+  authors:
+    - family-names: "Džafić"
+      given-names: "Željko"
+  version: "0.2.0"
+  date-released: "2026-10-26"
+  license: MIT
+  repository-code: "https://github.com/ZeljkoDzafic/smartagri-core"
+  url: "https://github.com/ZeljkoDzafic/smartagri-core"
+references:
+  - type: report
+    title: "Crop evapotranspiration: Guidelines for computing crop water requirements"
+    authors:
+      - family-names: "Allen"
+        given-names: "Richard G."
+      - family-names: "Pereira"
+        given-names: "Luis S."
+      - family-names: "Raes"
+        given-names: "Dirk"
+      - family-names: "Smith"
+        given-names: "Martin"
+    collection-title: "FAO Irrigation and Drainage Paper 56"
+    institution:
+      name: "Food and Agriculture Organization of the United Nations"
+      city: "Rome"
+    year: 1998
+    url: "https://www.fao.org/4/x0490e/x0490e00.htm"

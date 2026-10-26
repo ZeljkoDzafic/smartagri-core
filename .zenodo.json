@@ -1,0 +1,37 @@
+{
+  "title": "SmartAgri core: active, uncertainty-aware agronomic advisory",
+  "upload_type": "software",
+  "description": "<p>Open core of an agronomic advisory system for maize. Before any text is generated, explicit deterministic layers decide whether the system may advise on a parcel at all: applicability of knowledge passages, quality of each input, sufficiency of the inputs, choice of the next question and a decision policy that recommends, gives a conditional answer, asks or abstains. Agronomic numbers are computed in code (FAO-56 ETc = Kc x ET0, a simplified root-zone balance, gross depth = net / efficiency); grounding checks keep a language model, when one is used, from adding unsupported numbers or sentences.</p><p>The repository includes BM25 retrieval with optional dense ranking, a web app, and an evaluation harness with an ablation ladder, blind rating, a leakage guard and a protocol lock. It runs offline without keys. Configuration values and the development corpus are defaults pending agronomic review; see docs/limitations.md in the archived release.</p>",
+  "creators": [
+    {
+      "name": "Džafić, Željko"
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "language": "eng",
+  "keywords": [
+    "agriculture",
+    "agronomic advisory",
+    "decision support",
+    "maize",
+    "irrigation",
+    "retrieval-augmented generation",
+    "selective answering",
+    "abstention",
+    "uncertainty",
+    "FAO-56",
+    "Sentinel-2",
+    "Open-Meteo",
+    "evaluation",
+    "reproducibility"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/ZeljkoDzafic/smartagri-core",
+      "relation": "isSupplementTo",
+      "resource_type": "software"
+    }
+  ],
+  "notes": "Version, date and DOI are assigned by Zenodo from the GitHub release. CITATION.cff in the repository carries the same metadata."
+}

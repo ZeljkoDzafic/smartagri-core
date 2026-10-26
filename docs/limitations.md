@@ -1,0 +1,95 @@
+# Limitations
+
+This page lists what the current version does **not** do, or does only in a simplified way. Each item names the
+file where the behaviour can be checked. Paths are relative to `backend/`. The list is part of the documentation of
+any result produced with this version; results should be read together with it.
+
+## Corpus
+
+- **Development corpus only.** `corpus/passages.yaml` holds 22 passages from 4 documents (`corpus/manifest.yaml`);
+  18 of them are marked `verify: true`, that is, not yet checked against their source. One document (`dev_notes`)
+  is the developer's own notes and is labelled "not an expert source". The manifest header states that this corpus
+  exists so that the system runs end to end and that it is not the corpus of an experiment.
+- **One language.** Passages are paraphrases in Serbian. An English question is mapped to its advice type and
+  retrieved with the canonical local question of that type (`research_api/service.py`, `labels_en.py`,
+  `LOCAL_QUERIES`), so English retrieval quality is not measured separately.
+- **Retrieval default is BM25 only.** Dense ranking and rank fusion are used only with
+  `EMBEDDINGS_PROVIDER=fastembed` (`retrieval/embed.py`, `make_embedder`; `retrieval/__init__.py`,
+  `make_retriever`). The value `retrieval: hybrid` in `config/variants.yaml` names the intended mode; the effective
+  mode depends on that setting.
+
+## Agronomic parameters
+
+- **Development defaults, not reviewed.** `config/rules.yaml` begins with "PLACEHOLDER VALUES for development";
+  `config/thresholds.yaml` with "INITIAL VALUES, NOT LOCKED". Thresholds for rain, late season, root depth, AWC by
+  texture, irrigation efficiency, fertilization windows and field operations, and the quality grades of q, are
+  development values pending agronomic review.
+- **Kc values.** `config/kc_maize.yaml` takes Kc ini 0.30, Kc mid 1.20 and Kc end 0.60 from FAO-56 Table 12, uses
+  0.75 as a midpoint for the development stage, and is marked "VERIFY against the source".
+- **Depletion by soil-water status.** The net irrigation need maps a qualitative status (dry, moist, wet) to a
+  fixed fraction of total available water (`core/tools/water_balance.py`, `DEPLETION_BY_STATUS`, marked as a
+  placeholder).
+- **Region classes.** `geo.py` (`region_class`) assigns `pannonian`, `mediterranean` or `hilly_mountain` from latitude
+  and elevation with a placeholder rule.
+
+## Water balance and quantities
+
+- **Quantity advice is disabled.** `config/rules.yaml` sets `irrigation.quantity_validated: false`; with it,
+  `pipeline/generate.py` (`_quantity`) never states an irrigation depth or volume and adds a note that the
+  parameters are not reviewed. The tools still compute net and gross depths; they appear among the calculations
+  of an answer only when δ allows a quantity (`allow_quantity`; `pipeline/generate.py`, `calculations`).
+- **Simplified root-zone balance, not a FAO-56 daily soil water balance.** The net need is
+  `max(0, depletion fraction × AWC × root depth − rain forecast)` (`core/tools/water_balance.py`). ETc is computed
+  (`core/tools/etc.py`) and reported, but it does not enter the net need.
+- **ET0 for the coming days is persistence.** `core/decide.py` (`run_tools`) sets the ET0 of the next
+  `irrigation.forecast_days` (3) days to the sum of ET0 over the past 7 days scaled by 3/7; the ET0 forecast that
+  Open-Meteo returns is not used for it.
+- **Kc is not interpolated within stages.** `core/tools/etc.py` (`kc_for_bbch`) looks Kc up in a step table by BBCH
+  range; there is no linear interpolation during the development and late-season stages as in FAO-56, and BBCH
+  90–99 has no Kc (ETc is then missing).
+- **Effective rainfall is not modelled.** Forecast rain is subtracted in full from the net need
+  (`core/tools/water_balance.py`); the daily balance of the parcel page subtracts daily rain in full
+  (`research_api/views.py`, `BALANCE_FORMULA`). No runoff, interception or deep percolation is considered.
+- **The daily balance of the parcel page is an illustration.** It starts from a zero deficit and is labelled
+  `used_by_advice: false` (`research_api/views.py`, `water_balance`); it is not used by the advice.
+- **Age of past-weather sums.** The 7-day past rainfall and ET0 sums enter q with age 0 days
+  (`core/quality.py`, `observe_all`); their reliability comes from their origin (modelled), not from their age.
+
+## Scope
+
+- **Maize only.** A parcel created through the API is always `crop: maize` (`research_api/service.py`,
+  `create_parcel`); the Kc table, the phenology table and the corpus are for maize.
+- **One region.** The development scenarios use a parcel in the Pannonian lowland
+  (`eval/scenarios/dev/*.yaml`, `region_class: pannonian`), the corpus has no other regional sources, and the default
+  weather time zone is `Europe/Sarajevo` (`providers/weather.py`). Behaviour elsewhere is untested.
+- **Advice types.** Irrigation timing and amount, fertilization timing and plan, field-operations window and scouting
+  (`core/types.py`, `AdviceType`); everything else is out of scope and leads to abstention with a referral.
+  The template answers never prescribe plant-protection products and do not infer the cause of a vegetation
+  change from an index alone; with a language model these rules are instructions in the prompt
+  (`pipeline/generate.py`), and in this version no separate check enforces them on the generated text.
+
+## Generation
+
+- **Template generator by default.** Without `LLM_PROVIDER` the answer text is built deterministically from the
+  decision (`pipeline/generate.py`, `TemplateGenerator`). Results produced with the template generator describe the
+  decision layers; they say nothing about the wording, errors or variability of a language model. With a language
+  model, γ checks numbers and sentence support (`core/grounding.py`), but the sentence check is lexical unless the
+  optional judge is configured (`pipeline/judge.py`), and repeated runs can differ.
+- **CI covers only the template path.** All tests and the CI example run with `LLM_PROVIDER=template`
+  (`.github/workflows/ci.yml`); language-model providers are tested with fakes.
+
+## Evaluation
+
+- **Development scenarios are a regression check.** The 15 development scenarios (`eval/scenarios/dev/`) carry
+  expectations written by the developer for each variant; act accuracy on them measures conformance with those
+  expectations, not correctness. Their references point to `eval/scenarios/dev/_passages.yaml`, so retrieval
+  recall on the development set checks the installation, not retrieval quality.
+- **Raters.** The blind rating is planned with the developer and one independent agronomist as raters; agreement
+  (weighted Cohen's κ, `evalkit/report.py`) is therefore between two people, one of whom built the system. The
+  rater guide (`../docs/RATER_GUIDE.md`) is in Serbian and is a draft until it has been calibrated and locked.
+  The design of the rating is fixed in [protocol.md](protocol.md).
+- **Limits of blinding.** Answers differ in form between variants: the free-text baseline VC is shown as text
+  (`evalkit/rating.py`, `blind_answer`), V0 has no sources, and variants without α do not ask a structured
+  question. A rater may recognise the family of a variant from the form of the answer.
+- **Language of evaluation material.** Scenarios, the rater view and the report tables are in Serbian (Latin
+  script); evaluation runs always use the core's default locale (`i18n.py`, `DEFAULT_LOCALE`).

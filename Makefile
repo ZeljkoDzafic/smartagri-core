@@ -2,20 +2,21 @@
 .PHONY: venv test api eval-dev eval-guard eval-lock report
 
 venv:
-	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -c constraints-py39.txt -e ".[dev,api]"
+	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip setuptools && pip install -c constraints-py39.txt -e ".[dev,api]"
 test:
 	cd backend && . .venv/bin/activate && pytest -q
 # Minimal research API and client: http://127.0.0.1:8100
 api:
 	cd backend && . .venv/bin/activate && python -m smartagri.research_api
-# Development scenarios under every variant, then the report tables.
+# Development scenarios under every variant in a fresh database, then the report of the dev set.
 eval-dev:
-	cd backend && . .venv/bin/activate && python -m smartagri.evalkit run --set dev && python -m smartagri.evalkit report
+	cd backend && . .venv/bin/activate && rm -f eval-dev.sqlite && SMARTAGRI_DB=eval-dev.sqlite python -m smartagri.evalkit run --set dev && SMARTAGRI_DB=eval-dev.sqlite python -m smartagri.evalkit report --set dev
 # Leakage guard: n-gram overlap between test scenario texts and the corpus (needs the test set, published after the lock).
 eval-guard:
 	cd backend && . .venv/bin/activate && python -m smartagri.evalkit guard --set test
-# Protocol lock: sha256 of scenarios, corpus, config, prompts and the rater guide.
+# Protocol lock: sha256 of scenarios, corpus, config, prompts, rater guide and analysis plan, plus code and environment.
+# The test set needs the external-cache snapshot: make eval-lock SNAPSHOT=snapshot.tar
 eval-lock:
-	cd backend && . .venv/bin/activate && python -m smartagri.evalkit lock --set test $(if $(SNAPSHOT),--cache-snapshot $(SNAPSHOT))
+	cd backend && . .venv/bin/activate && python -m smartagri.evalkit lock --set test --cache-snapshot $(SNAPSHOT)
 report:
-	cd backend && . .venv/bin/activate && python -m smartagri.evalkit report
+	cd backend && . .venv/bin/activate && python -m smartagri.evalkit report --set $(or $(SET),dev)

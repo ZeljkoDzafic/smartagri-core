@@ -1,6 +1,6 @@
 # Continuous integration: lint, tests (SQLite, offline, no keys) on Python 3.9 and 3.12, the leakage guard on the
-# development set, and a dependency audit of the pinned set. Dependencies are pinned by requirements.lock (3.12) and
-# constraints-py39.txt (3.9).
+# development set, the offline example (3.12), and a dependency audit of the pinned set. Dependencies are pinned by
+# requirements.lock (3.12) and constraints-py39.txt (3.9).
 name: ci
 
 on:
@@ -51,6 +51,9 @@ jobs:
         run: pytest -q
       - name: Leakage guard on the development set
         run: python -m smartagri.evalkit guard --set dev > /dev/null
+      - name: Example (examples/advise_one_parcel.py, offline, template generator)
+        if: matrix.python == '3.12'
+        run: python ../examples/advise_one_parcel.py
 
   audit:
     name: dependency audit (pip-audit, requirements.lock)

@@ -50,7 +50,7 @@ const INPUTS = {
   irrigation_capacity: "Irrigation system capacity", previous_crop: "Previous crop", manure: "Manure (last 12 months)",
   hybrid_fao: "Hybrid maturity group (FAO)", plant_density: "Plant density", field_observation: "Field observations (last 7 days)",
 };
-const RELIABILITY = {high: "high", medium: "medium", low: "low", missing: "missing"};
+const RELIABILITY = {high: "high", medium: "medium", low: "low", missing: "missing", ungraded: "not graded"};
 const ORIGIN = {measured: "measured", user_reported: "reported by the user", modeled: "model value", derived: "estimate", unknown: "unknown origin"};
 const APPLICABILITY = {applicable: "applicable", conditional: "conditionally applicable", not_applicable: "not applicable"};
 const VALUES = {"nema podatka": "no data", "da": "yes", "ne": "no", "nepoznato": "unknown"};
@@ -348,7 +348,7 @@ const ACT_ICON = {recommend: "M5 12.5l4.2 4.2L19 7", conditional: "M12 7v6M12 16
                   abstain: "M7 12h10", refer: "M7 12h10M13 7l5 5-5 5"};
 function answerCard(run) {
   const a = run.answer, act = a.action || {}, L = LANG();
-  const data = (a.data_used || []).map((d) => `<li><span>${esc(inputName(d.input, d.label))}</span><span class="v"><span ${L}>${esc(valueText(d.value_text))}</span> <span class="pill rel-${esc(d.reliability)}">${esc(tr(RELIABILITY, d.reliability, d.reliability_label))}</span>${d.age_days != null ? `<span class="age">${esc(t("{n} d", {n: d.age_days}))}</span>` : ""}</span></li>`).join("");
+  const data = (a.data_used || []).map((d) => `<li><span>${esc(inputName(d.input, d.label))}</span><span class="v"><span ${L}>${esc(valueText(d.value_text))}</span>${d.reliability === "ungraded" ? "" : ` <span class="pill rel-${esc(d.reliability)}">${esc(tr(RELIABILITY, d.reliability, d.reliability_label))}</span>`}${d.age_days != null ? `<span class="age">${esc(t("{n} d", {n: d.age_days}))}</span>` : ""}</span></li>`).join("");
   const src = (a.sources || []).map((s) => `<li><span class="src-title" ${CORPUS}>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>` : esc(s.title)}</span> <span class="src-status">π: ${esc(tr(APPLICABILITY, s.applicability, s.applicability_label))}${s.conditions && s.conditions.length ? `; <span ${L}>${esc(s.conditions.join("; "))}</span>` : ""}</span></li>`).join("");
   const why = (a.rationale || []).map((r) => `<li>${esc(r)}</li>`).join("");
   const calc = (a.calculations || []).map((c) => `<li>${esc(typeof c === "string" ? c : c.text || c.label || JSON.stringify(c))}</li>`).join("");
@@ -441,8 +441,8 @@ function dataTable(caption, head, rows) {
     <tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i ? `<td>${c}</td>` : `<th scope="row">${c}</th>`)).join("")}</tr>`).join("")}</tbody></table></div></details>`;
 }
 const NO_PROFILE = "No data have been fetched for this parcel yet. Press “Refresh data” to fetch the weather and Sentinel-2 series.";
-// A forecast for an earlier decision date is the archived forecast of that moment, assembled afterwards.
-const RECONSTRUCTED = "Reconstructed from the Open-Meteo historical-forecast archive: the forecast that was available at the decision moment.";
+// A profile for an earlier decision date is assembled afterwards; its forecast days are the runs issued before it.
+const RECONSTRUCTED = "Reconstructed after the fact: past days from the Open-Meteo historical-forecast archive, forecast days from the runs issued before the decision moment (Previous Runs API).";
 
 function renderSeries(s) {
   const w = s.weather, n = s.ndvi;

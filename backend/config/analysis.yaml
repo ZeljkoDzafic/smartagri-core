@@ -1,0 +1,19 @@
+# Machine-readable parameters of the analysis plan (docs/protocol.md). Read by `evalkit report`; locked with the
+# protocol like every config/*.yaml file. A margin that is null has not been decided: the report then prints the
+# interval and states "margin not set" instead of a decision. Nothing here may change after the protocol lock.
+alpha: 0.05                 # two-sided; 95 % intervals. Proposed default, to be confirmed before the lock.
+bootstrap: {samples: 10000, seed: 7}
+kappa_bootstrap: {samples: 2000, seed: 7}
+min_n_for_ci: 10            # no interval for a subset of fewer scenarios (strata are descriptive)
+primary:                    # E1: one primary outcome (docs/protocol.md section 2)
+  comparison: [V4, V3]
+  measure: critical         # critical-error rate (any class K1-K5, K4 included), per scenario, repeats averaged
+noninferiority:             # E5: rubric total of V5 not worse than VC by more than the margin
+  comparison: [V5, VC]
+  measure: total
+  margin: null              # rubric points (0-10 scale). TO BE DECIDED BY THE PROTOCOL OWNER before the lock.
+equivalence:                # negative control: V4 vs V3 on the stratum with complete, reliable inputs
+  comparison: [V4, V3]
+  measure: total
+  strata: [complete]
+  margin: null              # rubric points. TO BE DECIDED BY THE PROTOCOL OWNER before the lock.

@@ -24,7 +24,7 @@ module that still branches on English writes English (the fallback language of e
 `T()` and `translate_message()` render the requested locale's JSON catalogue with English fallback per key. For the
 three existing locales both codes are equal and nothing changes; `L()` and `T()` for `sr-Latn` never leave this
 module (plan D1). English itself is served from its JSON catalogue (D2, proven equivalent to labels_en); the
-environment variable AGROVID_EN_CATALOGUE=module switches English back to module labels_en.
+environment variable SMARTAGRI_EN_CATALOGUE=module switches English back to module labels_en.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ CODES = tuple(x["code"] for x in LOCALES)
 # Language subtags of the local language and its standard variants; all map to the local language.
 LOCAL_LANGUAGES = ("sr", "bs", "hr", "cnr", "sh")
 
-_STATE: ContextVar[Optional[Dict[str, Any]]] = ContextVar("agrovid_locale", default=None)
+_STATE: ContextVar[Optional[Dict[str, Any]]] = ContextVar("smartagri_locale", default=None)
 
 # sr-Cyrl: neutral wording for the few default sentences that name a language (the default text is unchanged).
 NEUTRAL = {
@@ -122,7 +122,7 @@ def from_accept_language(header: Optional[str]) -> Optional[str]:
 
 def resolve(query: Optional[str] = None, header: Optional[str] = None,
             accept_language: Optional[str] = None) -> Optional[str]:
-    """The explicitly requested locale: ?lang=, then X-Agrovid-Lang, then Accept-Language; None when none applies
+    """The explicitly requested locale: ?lang=, then the language header of the client, then Accept-Language; None when none applies
     (then the user's saved preference, then the default, decide; see apply_user_preference)."""
     for value in (query, header):
         code = normalize(value)
@@ -211,8 +211,8 @@ def is_default() -> bool:
 
 
 def _en_module() -> bool:
-    import os
-    return os.environ.get("AGROVID_EN_CATALOGUE", "") == "module"
+    from .config import env
+    return env("EN_CATALOGUE") == "module"
 
 
 # ---------------------------------------------------------------- catalogues
@@ -475,7 +475,7 @@ def translate_message(text: Any, depth: int = 0) -> Any:
     provider messages) in the requested locale: an exact entry (a message or a mirrored label), or a format entry
     (%-formats of the messages, {name} formats of ACTIVITY_WARNINGS) whose arguments are translated in turn. Text
     without an entry is returned unchanged (user data stays as entered). English and every new locale use the JSON
-    catalogues (spec 036 D6); AGROVID_EN_CATALOGUE=module restores the labels_en path for English."""
+    catalogues (spec 036 D6); SMARTAGRI_EN_CATALOGUE=module restores the labels_en path for English."""
     code = active()
     if code == "en" and _en_module():
         return _legacy_translate_message(text, depth)

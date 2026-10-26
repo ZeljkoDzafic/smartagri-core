@@ -45,7 +45,7 @@ class BridgeProvider(Provider):
         if r.status_code != 200:
             raise LLMError("bridge: %s" % body.get("error", "HTTP %d" % r.status_code))
         return LLMResponse(**{k: body.get(k) for k in ("text", "provider", "model", "input_tokens", "output_tokens",
-                                                        "usd", "stop_reason", "data")})
+                                                        "usd", "stop_reason", "data", "request_id")})
 
 
 def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
@@ -81,7 +81,8 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
             except LLMError as exc:
                 return self._send(502, {"error": str(exc)})
             self._send(200, {"text": r.text, "provider": r.provider, "model": r.model, "input_tokens": r.input_tokens,
-                             "output_tokens": r.output_tokens, "usd": r.usd, "stop_reason": r.stop_reason, "data": r.data})
+                             "output_tokens": r.output_tokens, "usd": r.usd, "stop_reason": r.stop_reason, "data": r.data,
+                             "request_id": r.request_id})
 
         def log_message(self, fmt, *args):
             sys.stderr.write("bridge: " + fmt % args + "\n")

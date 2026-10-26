@@ -61,8 +61,9 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
     lat, lon = parcel["centroid"]["lat"], parcel["centroid"]["lon"]
     sowing = (parcel.get("agronomic") or {}).get("sowing_date")
 
-    # retrospective_constructed: the weather was assembled after the fact from the historical-forecast
-    # archive (as_of before today); it is recorded here and copied into the profile provenance.
+    # retrospective_constructed: for an as_of before today the weather was assembled after the fact: past days from
+    # the historical-forecast archive, forecast days from the Previous Runs API as issued before as_of
+    # (providers/weather.py). It is recorded here and copied into the profile provenance.
     w: Dict[str, Any] = {"status": "missing", "message": "", "source": weather.SOURCE, "fetched_at": None,
                          "summary": None, "daily": [], "request_hash": None, "endpoint": None,
                          "retrospective_constructed": False}
@@ -75,8 +76,10 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
         w.update(status="ok", fetched_at=got["fetched_at"], request_hash=got["request_hash"],
                  endpoint=got.get("endpoint"), retrospective_constructed=bool(got.get("retrospective_constructed")),
                  summary=weather.summarize(rows, as_of, sowing,
-                                           # an archived forecast was issued at the decision time, not when we fetched it
-                                           as_of.isoformat() if got.get("retrospective_constructed") else got["fetched_at"]), daily=rows[-(30 + 7):])
+                                           # a past as_of: the (conservative) issue time of the runs used, never the
+                                           # time we fetched the archive; live: the fetch time
+                                           (got.get("forecast_issued_at") or None) if got.get("retrospective_constructed")
+                                           else got["fetched_at"]), daily=rows[-(30 + 7):])
     except ProviderUnavailable as exc:
         w["message"] = str(exc)
 

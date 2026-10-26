@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .. import labels
 from ..core.types import Context
-from ..llm import LLMError, Provider, make_provider
+from ..llm import LLMError, ModelCallError, Provider, make_provider
 from ..pipeline import ai_chat
 from ..retrieval import load_corpus, make_retriever
 from ..retrieval.search import fold
@@ -61,14 +61,36 @@ class Unavailable(Exception):
 
 
 def provider_or_refuse(name: Optional[str] = None) -> Provider:
+    """The evaluation provider for VC: model, effort and the absence of a server-side fallback come from
+    config/evaluation.yaml (evalkit.settings); the environment must agree with it."""
+    from . import settings as st
+    cfg = st.load()
+    problems = st.check(cfg, need_model=True)
+    if problems:
+        raise Unavailable("; ".join(problems))
+    llm = cfg["llm"]
     try:
-        p = make_provider(name)
+        p = make_provider(name, model=llm.get("model"), server_fallback=bool(llm.get("server_fallback", False)),
+                          effort=llm.get("effort"))
     except LLMError as exc:
         raise Unavailable("VC needs a language model, but LLM_PROVIDER is misconfigured: %s" % exc)
     if p is None:
         raise Unavailable("VC needs a language model: set LLM_PROVIDER (claude-cli, anthropic, openai, deepseek, "
                           "kimi, mistral, ollama, lmstudio or openai-compatible); the template has no model")
     return p
+
+
+class _Recording(Provider):
+    """Delegates to the evaluation provider and remembers the request ids of its responses (provenance)."""
+
+    def __init__(self, inner: Provider):
+        self.inner, self.name, self.model = inner, inner.name, inner.model
+        self.request_ids: List[Optional[str]] = []
+
+    def complete(self, system, messages, json_schema=None, max_tokens=4000):
+        r = self.inner.complete(system, messages, json_schema=json_schema, max_tokens=max_tokens)
+        self.request_ids.append(getattr(r, "request_id", None))
+        return r
 
 
 def ends_with_question(answer: Dict[str, Any]) -> bool:
@@ -108,11 +130,16 @@ def _answer_view(out: Dict[str, Any]) -> Dict[str, Any]:
 def _call(provider: Provider, ctx: Context, message: str, history, corpus, retriever, query: str) -> Dict[str, Any]:
     for attempt in range(RETRIES + 1):
         try:
-            return ai_chat.answer(provider, ctx, message, history, corpus, retriever,
-                                  advice_type=ctx.Q.advice_type, query=query)
+            out = ai_chat.answer(provider, ctx, message, history, corpus, retriever,
+                                 advice_type=ctx.Q.advice_type, query=query)
         except LLMError:
             if attempt == RETRIES:
                 raise
+            continue
+        if out.get("model") and provider.model and out["model"] != provider.model:
+            # an answer from another model than the pinned one is never a VC answer
+            raise ModelCallError("VC answered by model %s, not %s" % (out["model"], provider.model))
+        return out
     raise AssertionError("unreachable")
 
 
@@ -128,9 +155,11 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
     records: List[Dict[str, Any]] = []
     matched: List[Optional[str]] = []
     used: set = set()
+    recording = provider if isinstance(provider, _Recording) else _Recording(provider)
     for _ in range(MAX_TURNS):
         ctx.Q.advice_type = advice_type
-        out = _call(provider, ctx, message, history, corpus, retriever, query)
+        recording.request_ids = []
+        out = _call(recording, ctx, message, history, corpus, retriever, query)
         answer = _answer_view(out)
         turn = {"question": message, "answer": answer, "user_reply": None}
         turns.append(turn)
@@ -138,6 +167,7 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
         records.append({"decisions": {"grounding": out["grounding"]}, "cost": cost,
                         "provenance": {"as_of": ctx.as_of.isoformat() if ctx.as_of else None, "corpus_hash": corpus.hash,
                                        "provider": out["provider"], "model": out["model"],
+                                       "request_ids": [x for x in recording.request_ids if x],
                                        "prompt_hash": out["_prompt_hash"], "passages": out["_passage_ids"],
                                        "model_text": out["_raw_text"]}})
         if not ends_with_question(answer) or len(turns) == MAX_TURNS:
@@ -186,6 +216,8 @@ def run_batch(store: Store, set_name: str, variant_name: str = "VC", repeats: in
                                           cluster=cluster_of(sc)))
                 continue
             usd += sum(float(r["cost"].get("usd") or 0) for r in result["records"])
+            base["models_used"] = sorted({str(r["provenance"]["model"]) for r in result["records"] if r["provenance"].get("model")})
+            base["request_ids"] = [x for r in result["records"] for x in r["provenance"].get("request_ids") or []]
             if result["records"]:
                 base["model"] = result["records"][0]["provenance"]["model"] or provider.model
             store.save_eval_item(dict(result, **base))

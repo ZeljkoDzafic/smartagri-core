@@ -1,4 +1,4 @@
-"""Synthetic variations of one development scenario (protocol 6.2; secondary analysis).
+"""Synthetic variations of one development scenario (docs/protocol.md: secondary analysis).
 
 Each combination of the varied parameters yields a copy of the scenario with shifted observation
 dates, forecast issue time or usable-pixel share; the copy is played like any scenario and only

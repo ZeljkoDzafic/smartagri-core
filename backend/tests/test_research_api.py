@@ -270,7 +270,7 @@ def test_rating_endpoints_run_in_the_default_locale(client, monkeypatch):
     from smartagri.evalkit import rating
     seen = []
 
-    def next_item(store, rater):
+    def next_item(store, rater, *filters):
         seen.append(i18n.current())
         return {"item_id": None, "remaining": 0}
     monkeypatch.setattr(rating, "next_item", next_item)

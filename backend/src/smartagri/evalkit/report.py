@@ -81,8 +81,8 @@ def mean(xs: Sequence[float]) -> Optional[float]:
 
 
 def bootstrap_ci(diffs: Sequence[float], n: int = 10000, seed: int = 7,
-                 clusters: Optional[Sequence[str]] = None) -> Optional[Tuple[float, float]]:
-    """95 % percentile interval for the mean paired difference.
+                 clusters: Optional[Sequence[str]] = None, level: float = 0.95) -> Optional[Tuple[float, float]]:
+    """Percentile interval (default 95 %) for the mean paired difference.
 
     Without clusters, scenarios are resampled. With clusters (e.g. scenarios sharing a parcel),
     whole clusters are resampled with replacement, which respects the dependence between them.
@@ -104,7 +104,35 @@ def bootstrap_ci(diffs: Sequence[float], n: int = 10000, seed: int = 7,
         sample = [x for _g in groups for x in rng.choice(groups)]
         means.append(mean(sample))
     means.sort()
-    return means[int(0.025 * n)], means[int(0.975 * n) - 1]
+    tail = (1.0 - level) / 2.0
+    return means[int(round(tail * n))], means[int(round((1.0 - tail) * n)) - 1]
+
+
+def noninferiority(diffs: Sequence[float], margin: Optional[float], clusters: Optional[Sequence[str]] = None,
+                   alpha: float = 0.05, n: int = 10000, seed: int = 7) -> Optional[Dict[str, Any]]:
+    """Non-inferiority of a against b on a measure where higher is better, diffs = a - b.
+
+    One-sided test at alpha/2 (the lower limit of the two-sided 1 - alpha percentile interval): a is non-inferior
+    when that lower limit lies above -margin. margin None = not decided: the interval is returned without a verdict."""
+    ci = bootstrap_ci(diffs, n, seed, clusters, level=1.0 - alpha)
+    if ci is None:
+        return None
+    verdict = None if margin is None else ci[0] > -abs(float(margin))
+    return {"diff": _r(mean(diffs)), "ci": ci, "lower": ci[0], "margin": margin, "noninferior": verdict,
+            "test": "one-sided, alpha/2 = %.3f, percentile bootstrap" % (alpha / 2.0)}
+
+
+def equivalence(diffs: Sequence[float], margin: Optional[float], clusters: Optional[Sequence[str]] = None,
+                alpha: float = 0.05, n: int = 10000, seed: int = 7) -> Optional[Dict[str, Any]]:
+    """Two one-sided tests (TOST) at alpha: equivalent when the 1 - 2 alpha percentile interval of the mean difference
+    lies inside (-margin, +margin). margin None = not decided: the interval is returned without a verdict."""
+    ci = bootstrap_ci(diffs, n, seed, clusters, level=1.0 - 2.0 * alpha)
+    if ci is None:
+        return None
+    m = None if margin is None else abs(float(margin))
+    verdict = None if m is None else (-m < ci[0] and ci[1] < m)
+    return {"diff": _r(mean(diffs)), "ci": ci, "margin": margin, "equivalent": verdict,
+            "test": "TOST, alpha = %.3f, %d %% percentile bootstrap interval" % (alpha, round(100 * (1 - 2 * alpha)))}
 
 
 def wilcoxon_signed_rank(diffs: Sequence[float]) -> Optional[Dict[str, float]]:
@@ -140,6 +168,16 @@ def wilcoxon_signed_rank(diffs: Sequence[float]) -> Optional[Dict[str, float]]:
     return {"n": n, "w_plus": w_plus, "z": round(z, 3), "p_two_sided": round(p, 4)}
 
 
+def holm(pvalues: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
+    """Holm step-down adjustment of a family of p-values ({name: p}); None stays None and is not counted."""
+    named = sorted(((p, k) for k, p in pvalues.items() if p is not None))
+    m, out, running = len(named), {k: None for k in pvalues}, 0.0
+    for rank, (p, k) in enumerate(named):
+        running = max(running, min(1.0, (m - rank) * p))
+        out[k] = round(running, 4)
+    return out
+
+
 def weighted_kappa(a: Sequence[int], b: Sequence[int], categories: int = 3, weights: str = "quadratic") -> Optional[float]:
     """Cohen's kappa for two raters on an ordinal 0..categories-1 scale.
 
@@ -158,6 +196,28 @@ def weighted_kappa(a: Sequence[int], b: Sequence[int], categories: int = 3, weig
     pb = [sum(1 for y in b if y == j) / n for j in range(categories)]
     exp = sum(w[i][j] * pa[i] * pb[j] for i in range(categories) for j in range(categories))
     return None if exp == 0 else 1.0 - obs / exp
+
+
+def kappa_ci(a: Sequence[int], b: Sequence[int], categories: int = 3, weights: str = "quadratic",
+             n: int = 2000, seed: int = 7, level: float = 0.95) -> Optional[Tuple[float, float]]:
+    """Percentile bootstrap interval for Cohen's kappa (weighted kappa: Cohen, 1968), resampling rated items.
+    Resamples where kappa is undefined (one category only) are skipped; None with fewer than 2 items or when more
+    than half of the resamples are undefined."""
+    if len(a) < 2 or len(a) != len(b):
+        return None
+    rng = random.Random(seed)
+    idx = list(range(len(a)))
+    vals = []
+    for _ in range(n):
+        pick = [rng.choice(idx) for _ in idx]
+        k = weighted_kappa([a[i] for i in pick], [b[i] for i in pick], categories, weights)
+        if k is not None:
+            vals.append(k)
+    if len(vals) < n / 2.0:
+        return None
+    vals.sort()
+    tail = (1.0 - level) / 2.0
+    return round(vals[int(round(tail * len(vals)))], 3), round(vals[int(round((1.0 - tail) * len(vals))) - 1], 3)
 
 
 def is_text(item: Dict[str, Any]) -> bool:
@@ -314,22 +374,31 @@ def paired(rated_out: Dict[str, Dict[str, Any]], a: str, b: str) -> Optional[Dic
             "rubric_wilcoxon": wilcoxon_signed_rank(d_total)}
 
 
-def agreement(store: Store, rater_a: str, rater_b: str) -> Dict[str, Any]:
+def agreement(store: Store, rater_a: str, rater_b: str, items: Optional[List[Dict[str, Any]]] = None,
+              kappa_samples: int = 2000, seed: int = 7) -> Dict[str, Any]:
+    """Agreement of two raters on the items both rated (restricted to `items` when given: one set and its batches).
+    r1-r5: quadratic-weighted kappa (Cohen, 1968) with a percentile bootstrap interval over items; K classes:
+    unweighted kappa (Cohen, 1960) with interval; percent agreement for both."""
     ra = {r["item_id"]: r for r in store.list_ratings(rater_a)}
     rb = {r["item_id"]: r for r in store.list_ratings(rater_b)}
     common = sorted(set(ra) & set(rb))
+    if items is not None:
+        allowed = {i["id"] for i in items}
+        common = [i for i in common if i in allowed]
     out: Dict[str, Any] = {"n_items": len(common)}
     def r(x):
         return None if x is None else round(x, 3)
     for c in CRITERIA:
         xa, xb = [ra[i][c] for i in common], [rb[i][c] for i in common]
         out[c] = {"kappa_quadratic": r(weighted_kappa(xa, xb)),
+                  "kappa_ci95": kappa_ci(xa, xb, n=kappa_samples, seed=seed),
                   "percent_agreement": r(mean([1.0 if x == y else 0.0 for x, y in zip(xa, xb)]))}
     flags = [("any", lambda rt: bool(rt["critical"]))] + \
         [(k, (lambda key: lambda rt: key in rt["critical"])(k)) for k in ("K1", "K2", "K3", "K4", "K5")]
     for name, has in flags:
         xa, xb = [1 if has(ra[i]) else 0 for i in common], [1 if has(rb[i]) else 0 for i in common]
         out["critical_" + name] = {"kappa": r(weighted_kappa(xa, xb, 2, "none")),
+                                   "kappa_ci95": kappa_ci(xa, xb, 2, "none", n=kappa_samples, seed=seed),
                                    "percent_agreement": r(mean([1.0 if x == y else 0.0 for x, y in zip(xa, xb)]))}
     return out
 
@@ -340,7 +409,7 @@ RATED_MEASURES = ("total",) + CRITERIA + ("critical", "K1", "K2", "K3", "K4", "K
 
 
 def scenario_scores(store: Store, items: List[Dict[str, Any]], rater: Optional[str]) -> Dict[str, Dict[str, Dict[str, float]]]:
-    """variant -> scenario -> measure -> value, repeats averaged first (protocol 6.6).
+    """variant -> scenario -> measure -> value, repeats averaged first (docs/protocol.md).
 
     Rated measures (total, r1..r5, critical, K1..K5) need `rater`; `act_correct` is automatic and
     present whenever the scenario states acceptable first-turn acts."""
@@ -383,6 +452,28 @@ def paired_measure(scores: Dict[str, Dict[str, Dict[str, float]]], a: str, b: st
             "diff": _r(mean(d)), "ci95": bootstrap_ci(d, clusters=cl if clustered else None),
             "bootstrap": "cluster" if clustered else "scenario",
             "wins": sum(1 for x in d if x > 0), "ties": sum(1 for x in d if x == 0), "losses": sum(1 for x in d if x < 0)}
+
+
+def select(items: List[Dict[str, Any]], set_name: Optional[str] = None,
+           batches: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+    """Items of one scenario set and, when given, of the named batches only. Raises ValueError when no set is named
+    and the items span more than one set: a report never mixes dev and test."""
+    out = [i for i in items if (set_name is None or i.get("set") == set_name)
+           and (not batches or i.get("batch_id") in batches)]
+    sets = sorted({str(i.get("set")) for i in out})
+    if len(sets) > 1:
+        raise ValueError("the items span several scenario sets (%s); choose one with --set" % ", ".join(sets))
+    return out
+
+
+def analysis_settings() -> Dict[str, Any]:
+    """config/analysis.yaml (alpha, bootstrap, margins); defaults when absent."""
+    from .. import config
+    try:
+        data = config.load("analysis") or {}
+    except FileNotFoundError:
+        data = {}
+    return data
 
 
 def variant_mean(scores: Dict[str, Dict[str, Dict[str, float]]], variant: str, measure: str,

@@ -67,7 +67,7 @@ class OpenAICompatProvider(Provider):
             raise LLMError("%s: finish_reason=%s" % (self.name, choice.get("finish_reason")))
         usage = data.get("usage") or {}
         return LLMResponse(text, self.name, data.get("model", self.model), usage.get("prompt_tokens", 0),
-                           usage.get("completion_tokens", 0), None, "end_turn")
+                           usage.get("completion_tokens", 0), None, "end_turn", request_id=data.get("id"))
 
     # ------------------------------------------------------------ spec 023: image input
     def complete_with_images(self, system, messages, images, json_schema=None, max_tokens=1500) -> LLMResponse:

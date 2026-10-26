@@ -47,4 +47,4 @@ def ensure_english_catalogue() -> None:
     without it i18n.L() and i18n.T() have no English catalogue to read. Only the English code path is affected; the
     default locale never reads either."""
     if i18n._catalogue() is None:
-        os.environ.setdefault("AGROVID_EN_CATALOGUE", "module")
+        os.environ.setdefault("SMARTAGRI_EN_CATALOGUE", "module")

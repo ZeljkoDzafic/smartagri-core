@@ -1,8 +1,19 @@
-"""Blinded rating queue. A rater never sees the variant, and sees items in an order fixed per rater."""
+"""Blinded rating queue. A rater never sees the variant, and sees items in an order fixed per rater.
+
+The queue never mixes scenario sets. Items reach a rater either through an assignment (`evalkit assign`: one set,
+named batches, an explicit list of items in a seeded order, written to eval/assignments/<rater>.json and hashed), or,
+without one, as every unrated item of one set (and of the named batches) in the same seeded order. The order of an
+item is sha256(seed | rater | scenario | variant | repeat): it does not depend on the random item id, so the same
+protocol over a new run gives the same order, and the seed is recorded with the assignment.
+"""
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Optional
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence
 
 from .. import labels
 from ..store import Store, new_id, now_iso
@@ -46,13 +57,94 @@ def _blind(item: Dict[str, Any]) -> Dict[str, Any]:
     return {"item_id": item["id"], "scenario": item["scenario"], "turns": turns}
 
 
-def next_item(store: Store, rater: str) -> Dict[str, Any]:
+DEFAULT_SEED = 7
+ASSIGNMENT_FORMAT = "smartagri-rating-assignment/1"
+
+
+def order_key(item: Dict[str, Any], rater: str, seed: int = DEFAULT_SEED) -> str:
+    """Seeded order of an item for one rater; independent of the random item id (the id only breaks exact ties)."""
+    text = "%s|%s|%s|%s|%s" % (seed, rater, item.get("scenario_id"), item.get("variant"), item.get("repeat"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest() + "|" + str(item.get("id"))
+
+
+def assignments_dir() -> Path:
+    env = os.environ.get("SMARTAGRI_ASSIGNMENTS_DIR")
+    return Path(env) if env else Path(__file__).resolve().parents[3] / "eval" / "assignments"
+
+
+def _safe(rater: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in rater.strip()) or "rater"
+
+
+def assignment_path(rater: str) -> Path:
+    return assignments_dir() / ("%s.json" % _safe(rater))
+
+
+def load_assignment(rater: str) -> Optional[Dict[str, Any]]:
+    path = assignment_path(rater)
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("format") != ASSIGNMENT_FORMAT or data.get("rater") != rater:
+        raise ValueError("Neispravna dodela stavki za ocenjivača %s (%s)." % (rater, path))
+    return data
+
+
+def eligible(store: Store, set_name: str, batches: Optional[Sequence[str]] = None,
+             variants: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+    """Rateable items of one set (and of the named batches and variants)."""
+    return [i for i in store.list_eval_items() if i.get("set") == set_name and i.get("rateable", True)
+            and not i.get("error") and (not batches or i.get("batch_id") in batches)
+            and (not variants or i.get("variant") in variants)]
+
+
+def assign(store: Store, rater: str, set_name: str, batches: Optional[Sequence[str]] = None,
+           variants: Optional[Sequence[str]] = None, seed: int = DEFAULT_SEED, write: bool = True) -> Dict[str, Any]:
+    """Assign items of one set to a rater in the seeded order; the list and its sha256 are written to
+    eval/assignments/<rater>.json (hash it, or commit it, before rating starts)."""
+    if not rater.strip():
+        raise ValueError("Ime ocenjivača je obavezno.")
+    items = sorted(eligible(store, set_name, batches, variants), key=lambda i: order_key(i, rater, seed))
+    order = [i["id"] for i in items]
+    data = {"format": ASSIGNMENT_FORMAT, "rater": rater, "set": set_name, "batches": sorted(batches or []),
+            "variants": sorted(variants or []), "seed": seed,
+            "created_at": datetime.now().astimezone().isoformat(timespec="seconds"), "items": order,
+            "items_sha256": hashlib.sha256("\n".join(order).encode("utf-8")).hexdigest()}
+    if write:
+        path = assignment_path(rater)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        data["path"] = str(path)
+    return data
+
+
+def next_item(store: Store, rater: str, set_name: Optional[str] = None, batches: Optional[Sequence[str]] = None,
+              seed: int = DEFAULT_SEED) -> Dict[str, Any]:
+    """The rater's next unrated item. With an assignment file for the rater: its items in its order (set_name and
+    batches, when given, must agree with it). Without one: unrated items of one set; ValueError when no set is named
+    and unrated items of several sets exist (the queue never mixes sets)."""
     done = {r["item_id"] for r in store.list_ratings(rater)}
-    todo = [i for i in store.list_eval_items() if i["id"] not in done and i.get("rateable", True)]
+    a = load_assignment(rater)
+    if a is not None:
+        if set_name is not None and set_name != a["set"]:
+            raise ValueError("Ocenjivač %s ima dodelu za skup %s, ne %s." % (rater, a["set"], set_name))
+        by_id = {i["id"]: i for i in store.list_eval_items()}
+        todo = [by_id[x] for x in a["items"] if x in by_id and x not in done]
+        if not todo:
+            return {"item_id": None, "remaining": 0}
+        return dict(_blind(todo[0]), remaining=len(todo), set=a["set"])
+    pool = [i for i in store.list_eval_items() if i["id"] not in done and i.get("rateable", True) and not i.get("error")
+            and (not batches or i.get("batch_id") in batches)]
+    if set_name is None:
+        sets = sorted({str(i.get("set")) for i in pool})
+        if len(sets) > 1:
+            raise ValueError("Stavke pripadaju različitim skupovima (%s); izaberite skup." % ", ".join(sets))
+        set_name = sets[0] if sets else None
+    todo = [i for i in pool if i.get("set") == set_name]
     if not todo:
         return {"item_id": None, "remaining": 0}
-    todo.sort(key=lambda i: hashlib.sha256((rater + i["id"]).encode("utf-8")).hexdigest())
-    return dict(_blind(todo[0]), remaining=len(todo))
+    todo.sort(key=lambda i: order_key(i, rater, seed))
+    return dict(_blind(todo[0]), remaining=len(todo), set=set_name)
 
 
 def save(store: Store, body: Dict[str, Any]) -> Dict[str, Any]:

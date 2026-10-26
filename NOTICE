@@ -1,0 +1,86 @@
+SmartAgri core
+Copyright (c) 2026 Željko Džafić
+
+The source code in this repository is licensed under the MIT licence (see LICENSE), except where a file or
+directory below states otherwise. The MIT licence covers the code; it does not change the terms of the
+third-party software, data and documents listed here.
+
+------------------------------------------------------------------------------------------------------------------
+1. Third-party software included in this repository
+------------------------------------------------------------------------------------------------------------------
+
+Leaflet 1.9.4
+  Location: backend/src/smartagri/research_api/static/vendor/leaflet/
+  Licence:  BSD 2-Clause; the full text is in backend/src/smartagri/research_api/static/vendor/leaflet/LICENSE
+  Copyright (c) 2010-2023, Volodymyr Agafonkin; Copyright (c) 2010-2011, CloudMade.
+  Source:   https://leafletjs.com/
+
+Python packages installed from the package index (listed with exact versions in backend/requirements.lock and
+backend/constraints-py39.txt) are not redistributed in this repository; each keeps its own licence.
+
+------------------------------------------------------------------------------------------------------------------
+2. Map tiles
+------------------------------------------------------------------------------------------------------------------
+
+By default the web app loads map tiles from the OpenStreetMap tile servers (tile.openstreetmap.org) and shows the
+attribution "© OpenStreetMap contributors" with a link to https://www.openstreetmap.org/copyright.
+  Map data:     © OpenStreetMap contributors, Open Database License (ODbL) 1.0.
+  Tile use:     subject to the OpenStreetMap Foundation Tile Usage Policy
+                (https://operations.osmfoundation.org/policies/tiles/). A public deployment with real traffic
+                should use its own or a commercial tile service (SMARTAGRI_TILE_URL) and set the matching
+                attribution (SMARTAGRI_TILE_ATTRIBUTION). SMARTAGRI_TILE_URL=none turns tiles off.
+No tiles are stored in this repository.
+
+------------------------------------------------------------------------------------------------------------------
+3. Data services used at run time (not redistributed)
+------------------------------------------------------------------------------------------------------------------
+
+Open-Meteo (weather forecast, historical forecast and ET0)
+  https://open-meteo.com/
+  Data are provided under the Creative Commons Attribution 4.0 International licence (CC BY 4.0); the free API is
+  for non-commercial use under the Open-Meteo terms (https://open-meteo.com/en/terms). Attribution:
+  "Weather data by Open-Meteo.com". Users who publish results based on these data must give the same attribution.
+
+Copernicus Sentinel-2 Level-2A, via the Copernicus Data Space Ecosystem Statistical API
+  https://dataspace.copernicus.eu/
+  Use is free, full and open under the Legal Notice on the use of Copernicus Sentinel Data and Service Information
+  (Commission Delegated Regulation (EU) No 1159/2013). NDVI statistics derived by this software are
+  "Contains modified Copernicus Sentinel data [year]"; results published from them must carry that notice.
+  Access requires the user's own Copernicus Data Space account (CDSE_CLIENT_ID, CDSE_CLIENT_SECRET).
+
+The external-cache snapshots that a protocol lock may reference contain responses of these services and are
+subject to the same terms.
+
+------------------------------------------------------------------------------------------------------------------
+4. Knowledge corpus and evaluation material
+------------------------------------------------------------------------------------------------------------------
+
+backend/corpus/ holds a small development corpus: short paraphrases, in Serbian, of published sources, each with a
+citation, and the author's own development notes. The corpus is licensed per document, separately from the MIT
+licence of the code: backend/corpus/manifest.yaml gives each document's source, URL and terms, and those terms,
+not LICENSE, govern the passages of that document. As of this version:
+
+  - fao56 (FAO Irrigation and Drainage Paper 56) and fao_iwm (FAO irrigation water management): short paraphrases
+    with citation. The source texts remain under FAO copyright and the FAO terms of use
+    (https://www.fao.org/contact-us/terms/); they are cited, not redistributed, and the MIT licence grants no
+    rights in them.
+  - s2_docs (Copernicus Data Space Ecosystem product documentation): short paraphrases with citation, under the
+    terms of that documentation.
+  - dev_notes (the author's development notes; not an expert source): MIT, as stated in the manifest.
+
+A document whose terms do not allow redistribution is to be published as metadata only (title, URL, terms); a locally
+rebuilt corpus can be checked against the corpus hash stored with every run. The development scenarios in
+backend/eval/scenarios/dev/ are the author's own work and are covered by LICENSE.
+
+The development corpus is not the corpus of any reported experiment; see docs/limitations.md.
+
+------------------------------------------------------------------------------------------------------------------
+5. Standards and references
+------------------------------------------------------------------------------------------------------------------
+
+Allen, R. G., Pereira, L. S., Raes, D., Smith, M. (1998). Crop evapotranspiration: Guidelines for computing crop
+water requirements. FAO Irrigation and Drainage Paper 56. FAO, Rome. Methods and Table 12 coefficients are
+implemented in code and cited; no text of the paper is included.
+
+BBCH growth stage scale for maize (Meier, U. (ed.), Growth stages of mono- and dicotyledonous plants, BBCH
+Monograph, Julius Kühn-Institut): stage codes are used as identifiers.

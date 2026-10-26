@@ -10,6 +10,11 @@ class LLMError(Exception):
     """The provider could not produce an answer (network, refusal, bad output, missing credentials)."""
 
 
+class ModelCallError(LLMError):
+    """A configured model call failed, or was answered by another model, in a run that must not fall back
+    (an evaluation run). The caller records an error item instead of an answer."""
+
+
 @dataclass
 class LLMResponse:
     text: str
@@ -21,6 +26,7 @@ class LLMResponse:
     stop_reason: str = "end_turn"
     data: Optional[Dict[str, Any]] = None       # parsed JSON when a schema was requested
     raw: Dict[str, Any] = field(default_factory=dict)
+    request_id: Optional[str] = None            # the provider's id of the request, when it reports one
 
 
 @dataclass

@@ -31,7 +31,8 @@ class ClaudeCliProvider(Provider):
 
     def __init__(self, model: Optional[str] = None, binary: Optional[str] = None, runner=None, timeout: int = 180):
         self.binary = binary or os.environ.get("CLAUDE_CLI", "claude")
-        self.model = model or os.environ.get("CLAUDE_CLI_MODEL") or os.environ.get("LLM_MODEL") or "sonnet"
+        # An exact model id by default, never an alias such as "sonnet" that moves to a new version on its own.
+        self.model = model or os.environ.get("CLAUDE_CLI_MODEL") or os.environ.get("LLM_MODEL") or "claude-sonnet-5-5"
         self.timeout = timeout
         self._run = runner or subprocess.run
         if runner is None and shutil.which(self.binary) is None:
@@ -59,4 +60,4 @@ class ClaudeCliProvider(Provider):
         return LLMResponse(text if data is None else json.dumps(data, ensure_ascii=False), self.name, self.model,
                            int(usage.get("input_tokens", 0)) + int(usage.get("cache_read_input_tokens", 0)),
                            int(usage.get("output_tokens", 0)), out.get("total_cost_usd"),
-                           out.get("stop_reason") or "end_turn", data)
+                           out.get("stop_reason") or "end_turn", data, request_id=out.get("session_id"))

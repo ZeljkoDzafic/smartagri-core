@@ -10,26 +10,30 @@ from .base import LLMError, Provider
 NONE = ("", "none", "template")
 
 
-def make_provider(name: Optional[str] = None) -> Optional[Provider]:
-    """Provider from LLM_PROVIDER; None for the template (no model). Raises LLMError when misconfigured."""
+def make_provider(name: Optional[str] = None, model: Optional[str] = None, server_fallback: bool = True,
+                  effort: Optional[str] = None) -> Optional[Provider]:
+    """Provider from LLM_PROVIDER; None for the template (no model). Raises LLMError when misconfigured.
+
+    model / server_fallback / effort: set by an evaluation run from config/evaluation.yaml (exact model id, no
+    server-side fallback); interactive use keeps the environment's settings."""
     name = (name if name is not None else os.environ.get("LLM_PROVIDER", "template")).strip().lower()
     if name in NONE:
         return None
     if name == "anthropic":
         try:
             from .anthropic_provider import AnthropicProvider
-            return AnthropicProvider()
+            return AnthropicProvider(model=model, server_fallback=server_fallback, effort=effort)
         except ImportError:
             raise LLMError("anthropic: package not installed (pip install anthropic)")
     if name == "claude-cli":
         from .claude_cli import ClaudeCliProvider
-        return ClaudeCliProvider()
+        return ClaudeCliProvider(model=model)
     if name == "bridge":
         from .bridge import BridgeProvider
         return BridgeProvider()
     from .openai_compat import PRESETS, OpenAICompatProvider
     if name in PRESETS:
-        return OpenAICompatProvider(name)
+        return OpenAICompatProvider(name, model=model)
     raise LLMError("unknown LLM_PROVIDER %r" % name)
 
 

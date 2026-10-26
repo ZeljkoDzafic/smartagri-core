@@ -25,15 +25,16 @@ CYR2LAT = {v: k for k, v in SINGLE.items()}
 CYR2LAT.update({"љ": "lj", "њ": "nj", "џ": "dž", "Љ": "Lj", "Њ": "Nj", "Џ": "Dž"})
 
 # Words that stay in Latin script: product, data-set and system names, technical abbreviations.
-PROTECT = set("""Agrovid SmartAgri Sentinel Sentinel-2 Copernicus CDSE Open-Meteo Meteo NDVI FAO BBCH EUDR GeoJSON JSON PDF
+# The former product name stays Latin too, so older stored texts read as they were (legacy).
+LEGACY_NAMES = ("Agrovid",)  # legacy: former product name
+PROTECT = set(LEGACY_NAMES) | set("""SmartAgri Sentinel Sentinel-2 Copernicus CDSE Open-Meteo Meteo NDVI FAO BBCH EUDR GeoJSON JSON PDF
 CSV HS EORI ET0 ETc Kc AI LLM SMTP TRACES WGS84 ISO EPSG GPS URL API ID Mailpit DejaVu ReportLab reportlab TARAG
 pH N P K Excel UTF-8 BOM KAN NPK UAN MAP DAP AN Urea Claude Anthropic OpenAI sr-Latn sr-Cyrl en true false null
 Push Data Space Ecosystem Google Earth Esri EOX Nominatim Photon OpenStreetMap Apple Android Safari Firefox Chrome""".split())
 # Acronyms written in local Cyrillic in Cyrillic text (spec 053, U12): "EU" -> "ЕУ".
 LOCAL_ACRONYMS = {"EU"}
-# Brand and system names whose inflected forms (Agrovidu, Sentinelom) also stay Latin. "Agrovid" is the former
-# product name (kept so older texts stay as they were).
-PROTECT_PREFIXES = ("Agrovid", "Sentinel", "Copernicus", "Open-Meteo")
+# Brand and system names whose inflected forms (Sentinelom, Copernicusa) also stay Latin, the legacy name included.
+PROTECT_PREFIXES = LEGACY_NAMES + ("Sentinel", "Copernicus", "Open-Meteo")
 # Multi-word names that always stay Latin, as a whole: the product name (since 2026-10-19). They are also left out of
 # the English-sentence check, so "Otvori Open Crop Manager" is still treated as local text.
 PROTECT_PHRASES = ("Open Crop Manager",)

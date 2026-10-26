@@ -357,8 +357,9 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
         return svc.eval_runs(set_name)
 
     @api.get("/eval/rating/next")
-    def rating_next(rater: str = Query(min_length=1)):
-        return svc.rating_next(rater)
+    def rating_next(rater: str = Query(min_length=1), set_name: Optional[str] = Query(default=None, alias="set"),
+                    batch: Optional[List[str]] = Query(default=None)):
+        return call(svc.rating_next, rater, set_name, batch)
 
     @api.post("/eval/rating", status_code=201)
     def rating_save(body: RatingIn):

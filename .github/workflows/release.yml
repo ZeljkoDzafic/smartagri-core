@@ -1,0 +1,106 @@
+# Tag-driven release. Push a tag vX.Y.Z whose version matches backend/pyproject.toml, CITATION.cff and a
+# "## [X.Y.Z]" heading of CHANGELOG.md. The workflow checks that, runs the same checks as CI against the pinned
+# dependency set (Python 3.12, requirements.lock), builds the sdist and wheel, smoke-tests the wheel in a fresh
+# environment and publishes a GitHub Release whose notes are that version's CHANGELOG section.
+# There is no PyPI publishing. With the Zenodo GitHub integration switched on for this repository, Zenodo archives
+# each published release and assigns its DOI (.zenodo.json holds the metadata).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  LLM_PROVIDER: template
+  EMBEDDINGS_PROVIDER: none
+  SMARTAGRI_OFFLINE: "1"
+
+jobs:
+  build:
+    name: check, test and build
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Version consistency (tag, pyproject.toml, CITATION.cff, CHANGELOG.md)
+        run: |
+          python - <<'PY'
+          import os, re, sys, tomllib
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag[1:] if tag.startswith("v") else tag
+          errors = []
+          with open("backend/pyproject.toml", "rb") as fh:
+              pyproject = tomllib.load(fh)["project"]["version"]
+          if pyproject != version:
+              errors.append("backend/pyproject.toml has version %s" % pyproject)
+          cff = re.search(r'^version:\s*"?([^"\n]+)"?\s*$', open("CITATION.cff", encoding="utf-8").read(), re.M)
+          if not cff or cff.group(1).strip() != version:
+              errors.append("CITATION.cff has version %s" % (cff.group(1) if cff else "none"))
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^## \[%s\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\Z)" % re.escape(version), text, re.M | re.S)
+          if not m or not m.group(1).strip():
+              errors.append("CHANGELOG.md has no non-empty section '## [%s]'" % version)
+          else:
+              with open("release-notes.md", "w", encoding="utf-8") as out:
+                  out.write(m.group(1).strip() + "\n")
+          if errors:
+              sys.exit("tag %s does not match: %s" % (tag, "; ".join(errors)))
+          print("version %s consistent" % version)
+          PY
+      - name: Install (pinned)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip setuptools build
+          pip install -c requirements.lock -e ".[dev,api,ingest]"
+      - name: Lint
+        working-directory: backend
+        run: ruff check src tests
+      - name: Test
+        working-directory: backend
+        run: pytest -q
+      - name: Leakage guard on the development set
+        working-directory: backend
+        run: python -m smartagri.evalkit guard --set dev > /dev/null
+      - name: Example (offline, template generator)
+        working-directory: backend
+        run: python ../examples/advise_one_parcel.py
+      - name: Build sdist and wheel
+        working-directory: backend
+        run: python -m build --sdist --wheel --outdir ../dist
+      - name: Smoke-test the wheel in a fresh environment
+        run: |
+          python -m venv /tmp/wheel
+          /tmp/wheel/bin/python -m pip install --upgrade pip
+          /tmp/wheel/bin/python -m pip install -c backend/requirements.lock dist/*.whl
+          /tmp/wheel/bin/python -c "import smartagri, sys; print(smartagri.__version__); sys.exit(smartagri.__version__ != '${GITHUB_REF_NAME#v}')"
+          (cd dist && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/
+            release-notes.md
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *[0-9]a[0-9]*|*[0-9]b[0-9]*|*rc*|*dev*) flags="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "SmartAgri core ${GITHUB_REF_NAME#v}" --notes-file release-notes.md $flags

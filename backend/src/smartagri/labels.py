@@ -17,7 +17,7 @@ ADVICE_TYPES = {
 USER_ADVICE_TYPES = ["irrigation_timing", "irrigation_amount", "fertilization_plan", "field_ops_window", "scouting"]
 
 ACTS = {"recommend": "Preporuka", "conditional": "Uslovna preporuka", "ask": "Dopunsko pitanje", "abstain": "Bez preporuke"}
-RELIABILITY = {"high": "visoka", "medium": "srednja", "low": "niska", "missing": "nedostaje"}
+RELIABILITY = {"high": "visoka", "medium": "srednja", "low": "niska", "missing": "nedostaje", "ungraded": "nije ocenjena"}
 ORIGIN = {"measured": "mereno", "user_reported": "navod korisnika", "modeled": "modelska vrednost",
           "derived": "procena", "unknown": "nepoznato"}
 APPLICABILITY = {"applicable": "primenljiv", "conditional": "uslovno primenljiv", "not_applicable": "neprimenljiv"}

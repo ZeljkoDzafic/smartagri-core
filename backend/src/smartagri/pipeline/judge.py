@@ -37,11 +37,15 @@ class ClaudeJudge:
     """Callable judge(sentence, source) -> Optional[float]. Requires the `anthropic` package."""
     prompt_hash = JUDGE_PROMPT_HASH
 
-    def __init__(self, client=None, model: Optional[str] = None):
+    def __init__(self, client=None, model: Optional[str] = None, strict: bool = False, server_fallback: bool = True):
         import anthropic                      # imported lazily so the package stays optional
         self._anthropic = anthropic
         self.client = client if client is not None else anthropic.Anthropic()
         self.model = model or os.environ.get("JUDGE_MODEL", "claude-opus-5-5")
+        # strict (evaluation): a call without a verdict raises instead of being scored lexically, and no
+        # server-side fallback model is allowed.
+        self.strict, self.server_fallback = strict, server_fallback
+        self.calls = []                       # [{model, request_id}] per request, for the provenance
         self.usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         self.fallbacks = 0                    # pairs scored lexically because the judge gave no verdict
         self._cache: Dict[Tuple[str, str], Optional[float]] = {}
@@ -55,14 +59,21 @@ class ClaudeJudge:
         return self._cache[key]
 
     def _ask(self, sentence: str, source: str) -> Optional[float]:
+        score = self._verdict(sentence, source)
+        if score is None and getattr(self, "strict", False):
+            from ..llm.base import ModelCallError
+            raise ModelCallError("judge: no verdict from %s" % self.model)
+        return score
+
+    def _verdict(self, sentence: str, source: str) -> Optional[float]:
+        kwargs = dict(model=self.model, max_tokens=1024, system=JUDGE_PROMPT,
+                      output_config={"effort": "low", "format": {"type": "json_schema", "schema": JUDGE_SCHEMA}},
+                      messages=[{"role": "user", "content": json.dumps({"source": source, "sentence": sentence},
+                                                                       ensure_ascii=False)}])
+        if getattr(self, "server_fallback", True):
+            kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
         try:
-            response = self.client.beta.messages.create(
-                model=self.model, max_tokens=1024, system=JUDGE_PROMPT,
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-                output_config={"effort": "low", "format": {"type": "json_schema", "schema": JUDGE_SCHEMA}},
-                messages=[{"role": "user", "content": json.dumps({"source": source, "sentence": sentence},
-                                                                 ensure_ascii=False)}],
-            )
+            response = self.client.beta.messages.create(**kwargs)
         except self._anthropic.APIError:
             return None
         usage = getattr(response, "usage", None)
@@ -70,6 +81,11 @@ class ClaudeJudge:
             self.usage["llm_calls"] += 1
             self.usage["input_tokens"] += usage.input_tokens
             self.usage["output_tokens"] += usage.output_tokens
+        actual = getattr(response, "model", None)
+        if hasattr(self, "calls"):
+            self.calls.append({"model": actual, "request_id": getattr(response, "_request_id", None)})
+        if getattr(self, "strict", False) and isinstance(actual, str) and actual != self.model:
+            return None                               # another model answered: no verdict (strict raises)
         if response.stop_reason != "end_turn":      # refusal, max_tokens: no verdict
             return None
         try:
@@ -80,11 +96,15 @@ class ClaudeJudge:
         return min(1.0, max(0.0, score))
 
 
-def make_judge():
-    """GROUNDING_JUDGE=llm returns a ClaudeJudge; anything else (or a missing SDK) returns None = lexical."""
+def make_judge(strict: bool = False, server_fallback: bool = True, model: Optional[str] = None):
+    """GROUNDING_JUDGE=llm returns a ClaudeJudge; anything else returns None = lexical. A missing SDK or credentials
+    give the lexical check interactively, and ModelCallError in strict (evaluation) mode."""
     if os.environ.get("GROUNDING_JUDGE", "lexical") != "llm":
         return None
     try:
-        return ClaudeJudge()
-    except Exception:                         # missing package or credentials: lexical check
+        return ClaudeJudge(model=model, strict=strict, server_fallback=server_fallback)
+    except Exception as exc:                  # missing package or credentials
+        if strict:
+            from ..llm.base import ModelCallError
+            raise ModelCallError("judge unavailable: %s" % exc.__class__.__name__)
         return None

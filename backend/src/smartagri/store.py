@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
-log = logging.getLogger("agrovid.store")
+log = logging.getLogger("smartagri.store")
 
 
 class DatabaseUnavailable(Exception):
@@ -129,7 +129,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS finance_events_record_idx ON finance_events (record_id)",
 ]
 
-# Photo observations (spec 023). The image files live on the `media` volume (AGROVID_MEDIA_DIR), never in the database;
+# Photo observations (spec 023). The image files live on the `media` volume (SMARTAGRI_MEDIA_DIR), never in the database;
 # `media` holds the metadata and the stored description, `media_events` is append-only (no image data).
 # Uniqueness of (parcel_id, sha256) among non-deleted photos is enforced in code (api/media_service.py).
 TABLES.update({
@@ -1080,13 +1080,16 @@ class _SingleConnection:
             self._conn.close()
 
 
-# Advisory lock key of the migration runner (spec 052): "AGROVID" in ASCII, fits a bigint.
+# Advisory lock key of the migration runner (spec 052): a fixed 7-byte ASCII constant that fits a bigint. Never changed,
+# so an older and a newer version of the service share the same lock.
 MIGRATION_LOCK_KEY = 0x4147524F564944
 
 
 def _env_int(name: str, default: int) -> int:
+    """Integer setting SMARTAGRI_<name> (the legacy prefix is read as a fallback, see config.env)."""
+    from .config import env
     try:
-        return int(os.environ.get(name, "") or default)
+        return int(env(name) or default)
     except ValueError:
         return default
 
@@ -1097,7 +1100,7 @@ class PostgresStore(Store):
     Spec 052 (audit REL-1, PERF-2): a connection pool (psycopg_pool) instead of one connection behind a global lock.
     Connections idle for more than IDLE_CHECK_S are checked before use, broken ones are discarded, so the store
     recovers by itself after a database restart; a failed call raises DatabaseUnavailable (HTTP 503). Pool size:
-    AGROVID_DB_POOL_MIN (1) / AGROVID_DB_POOL_MAX (10), wait for a free connection AGROVID_DB_POOL_TIMEOUT s (10)."""
+    SMARTAGRI_DB_POOL_MIN (1) / SMARTAGRI_DB_POOL_MAX (10), wait for a free connection SMARTAGRI_DB_POOL_TIMEOUT s (10)."""
     backend = "postgresql"
     ph = "%s"
     IDLE_CHECK_S = 2.0
@@ -1112,16 +1115,16 @@ class PostgresStore(Store):
         self._local = threading.local()
         self._last_used: Dict[int, float] = {}
         kwargs = {"autocommit": True, "row_factory": dict_row, "connect_timeout": 5}
-        timeout = float(_env_int("AGROVID_DB_POOL_TIMEOUT", 10))
+        timeout = float(_env_int("DB_POOL_TIMEOUT", 10))
         try:
             from psycopg_pool import ConnectionPool
         except ImportError:                             # pragma: no cover - the pg extra installs it
             log.warning("psycopg_pool is not installed; using one reconnecting connection")
             self._pool = _SingleConnection(lambda: psycopg.connect(url, **kwargs))
         else:
-            self._pool = ConnectionPool(url, min_size=_env_int("AGROVID_DB_POOL_MIN", 1),
-                                        max_size=max(1, _env_int("AGROVID_DB_POOL_MAX", 10)), kwargs=kwargs,
-                                        timeout=timeout, check=self._check, open=False, name="agrovid")
+            self._pool = ConnectionPool(url, min_size=_env_int("DB_POOL_MIN", 1),
+                                        max_size=max(1, _env_int("DB_POOL_MAX", 10)), kwargs=kwargs,
+                                        timeout=timeout, check=self._check, open=False, name="smartagri")
             self._pool.open(wait=True, timeout=timeout)
         if migrate:
             from .migrate import schema_up
