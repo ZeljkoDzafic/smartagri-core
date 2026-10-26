@@ -17,6 +17,7 @@
 <script src="static/theme.js"></script>
 <script defer src="static/vendor/leaflet/leaflet.js"></script>
 <script defer src="static/map.js"></script>
+<script defer src="static/i18n.js"></script>
 <script defer src="static/charts.js"></script>
 <script defer src="static/app.js"></script>
 </head>
@@ -87,7 +88,7 @@
         <div class="glass map-title">
           <p class="eyebrow">New parcel · maize</p>
           <h1 id="new-title">Draw the boundary</h1>
-          <p class="hint">Press <b>Draw</b> and click the field’s corners. Finish on the first corner, with a double click, or with <b>Finish</b>. Drag a corner to adjust it.</p>
+          <p data-i18n-html="html:draw_hint" class="hint">Press <b>Draw</b> and click the field’s corners. Finish on the first corner, with a double click, or with <b>Finish</b>. Drag a corner to adjust it.</p>
         </div>
         <div class="map-tools glass" role="toolbar" aria-label="Drawing tools">
           <button type="button" id="d-draw" class="tool primary">Draw</button>
@@ -129,11 +130,15 @@
             <label class="field inline"><span>Irrigation</span>
               <select id="n-irr"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select>
             </label>
+            <label class="field inline"><span>Soil texture <small>(optional)</small></span>
+              <select id="n-texture" aria-describedby="n-texture-hint"><option value="">Unknown</option></select>
+            </label>
             <label class="field inline"><span>Decision date <small>(optional)</small></span>
               <input id="n-pinned" placeholder="2026-07-12T06:00:00" autocomplete="off" aria-describedby="n-pinned-hint">
             </label>
           </div>
           <small id="n-pinned-hint" class="hint">The decision date fixes the moment of the decision: only data available then are used.</small>
+          <small id="n-texture-hint" class="hint">The texture sets the soil water-holding capacity (AWC) used by the water balance and the advice.</small>
           <div class="area-box"><span class="hint">Area</span><strong id="n-area">No boundary yet</strong></div>
           <p id="n-area-hint" class="error" hidden>Supported parcel size: 0.05 to 200 ha.</p>
           <button class="button primary wide" id="n-save" type="submit">Save parcel</button>
@@ -185,13 +190,13 @@
             <button type="button" class="chip" data-q="Is there a weather window for spraying this week?">Weather window for spraying?</button>
             <button type="button" class="chip" data-q="When should I top-dress with nitrogen?">When to top-dress?</button>
           </div>
-          <p class="hint note" id="lang-note">Answers are in English by default. For answers in the local language (Latin script), start the server with <code>SMARTAGRI_LOCALE=sr-Latn</code> or choose it in Settings. Questions in English or the local language are recognised by keyword rules; when a question is not recognised, the system asks which type of advice you need, or you can pick it above. Sources stay in their original language: the passages of the published corpus are in Serbian.</p>
+          <p data-i18n-html="html:lang_note" class="hint note" id="lang-note">Answers are in English by default. For answers in the local language (Latin script), start the server with <code>SMARTAGRI_LOCALE=sr-Latn</code> or choose it in Settings. Questions in English or the local language are recognised by keyword rules; when a question is not recognised, the system asks which type of advice you need, or you can pick it above. Sources stay in their original language: the passages of the published corpus are in Serbian.</p>
           <div id="c-out" class="thread" aria-live="polite"></div>
         </div>
 
         <details class="card vc-card">
           <summary><span>Free AI conversation <span class="hint-inline">baseline VC</span></span></summary>
-          <p class="hint">A free conversation with a language model that sees the same data and sources, answering in the language of your message. It needs <code>LLM_PROVIDER</code>; with the template generator it is unavailable.</p>
+          <p data-i18n-html="html:vc_hint" class="hint">A free conversation with a language model that sees the same data and sources, answering in the language of your message. It needs <code>LLM_PROVIDER</code>; with the template generator it is unavailable.</p>
           <form class="ask-row" id="a-form">
             <label class="field compact"><span class="visually-hidden">Mode</span>
               <select id="a-mode"><option value="baseline">VC (without the decision model)</option><option value="app">With the decision model</option></select>
@@ -223,7 +228,7 @@
       <div>
         <p class="eyebrow">Read-only · from evalkit</p>
         <h1 id="eval-title">Evaluation</h1>
-        <p class="lead">Runs, the V0–V5 ladder, paired differences with bootstrap intervals, rater agreement, the leakage guard and the protocol lock, exactly as <code>python -m smartagri.evalkit report</code> computes them. Development-set runs are labelled as such and are not experiment results.</p>
+        <p data-i18n-html="html:eval_lead" class="lead">Runs, the V0–V5 ladder, paired differences with bootstrap intervals, rater agreement, the leakage guard and the protocol lock, exactly as <code>python -m smartagri.evalkit report</code> computes them. Development-set runs are labelled as such and are not experiment results.</p>
       </div>
     </div>
     <div id="e-out" aria-live="polite"></div>
@@ -253,16 +258,16 @@
       </div>
     </fieldset>
     <fieldset class="field">
-      <legend>Answer language</legend>
-      <div class="segmented small" role="radiogroup" aria-label="Answer language" aria-describedby="s-lang-hint">
+      <legend>Language</legend>
+      <div class="segmented small" role="radiogroup" aria-label="Language" aria-describedby="s-lang-hint">
         <label><input type="radio" name="lang" value="en"> English</label>
-        <label><input type="radio" name="lang" value="sr-Latn"> Local (Latin)</label>
+        <label><input type="radio" name="lang" value="sr-Latn"> Srpski (latinica)</label>
       </div>
-      <small id="s-lang-hint" class="hint">Stored in this browser only; the server default is used until you choose. Blind rating is not affected.</small>
+      <small id="s-lang-hint" class="hint">Interface and answers. Stored in this browser only; the server default is used until you choose. Blind rating is not affected.</small>
     </fieldset>
     <label class="field"><span>Map tile URL</span>
       <input id="s-tiles" spellcheck="false" autocomplete="off" aria-describedby="s-tiles-hint">
-      <small id="s-tiles-hint" class="hint">A template with {z}, {x}, {y}. Leave empty for the server default; type <code>none</code> to turn tiles off. Stored in this browser only.</small>
+      <small data-i18n-html="html:tiles_hint" id="s-tiles-hint" class="hint">A template with {z}, {x}, {y}. Leave empty for the server default; type <code>none</code> to turn tiles off. Stored in this browser only.</small>
     </label>
     <label class="field"><span>Map attribution</span><input id="s-attr" spellcheck="false" autocomplete="off"></label>
     <div class="row end">

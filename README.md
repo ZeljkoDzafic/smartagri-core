@@ -71,12 +71,13 @@ see each input with its origin, age and reliability (q), ask a question under an
 follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes ("Download
 provenance (JSON)" saves the whole answer with its decisions, sources, inputs and hashes). The parcel page also shows
 the stored weather and Sentinel-2 NDVI series with their source and age, and a daily FAO-56 water balance (ET0, Kc,
-ETc = Kc × ET0, rainfall, root-zone deficit) computed in code by the core tools; a missing series stays empty. The
+ETc = Kc × ET0, rainfall, root-zone deficit, capped at TAW when the optional soil texture is given) computed in
+code by the core tools; a missing series stays empty. The
 read-only Evaluation page shows what `python -m smartagri.evalkit report` computes from the stored runs (development
 runs are labelled as such), the leakage guard counts and the protocol lock; it is not linked from the rating screen.
 
-Answers are in English by default. `SMARTAGRI_LOCALE=sr-Latn` switches the answers to the local language (Latin
-script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English
+Answers are in English by default. `SMARTAGRI_LOCALE=sr-Latn` switches the interface and the answers to the local
+language (Latin script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English
 and in the local language. Sources are quoted in their original language: the passages of the published corpus are
 short paraphrases in Serbian, so source titles and excerpts appear in Serbian. Evaluation runs never go through the
 API and always use the default locale, so the answer language does not change any result. The VC chat (a free LLM

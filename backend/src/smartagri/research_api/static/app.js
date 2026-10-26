@@ -2,6 +2,10 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+// Interface language (static/i18n.js): follows the answer language; English unless the server or the browser chose
+// the local language. The blind rating screen is never translated.
+const t = (key, vars) => (window.SmartI18n ? SmartI18n.t(key, vars) : key);
+const intl = () => (window.SmartI18n ? SmartI18n.intl() : "en-GB");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 // Answer language: the server default (SMARTAGRI_LOCALE, English unless set) until the user chooses one in Settings;
 // the choice is sent with every request as X-SmartAgri-Lang. Blind rating always runs in the default locale.
@@ -21,7 +25,7 @@ async function api(path, opts = {}) {
   const lang = r.headers.get("Content-Language");
   if (lang && !path.startsWith("/eval/")) answerLang = lang;
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText || "Request failed");
+  if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText || t("Request failed"));
   return body;
 }
 
@@ -50,8 +54,12 @@ const RELIABILITY = {high: "high", medium: "medium", low: "low", missing: "missi
 const ORIGIN = {measured: "measured", user_reported: "reported by the user", modeled: "model value", derived: "estimate", unknown: "unknown origin"};
 const APPLICABILITY = {applicable: "applicable", conditional: "conditionally applicable", not_applicable: "not applicable"};
 const VALUES = {"nema podatka": "no data", "da": "yes", "ne": "no", "nepoznato": "unknown"};
-const inputName = (key, fallback) => INPUTS[key] || fallback || key;
-const valueText = (v) => VALUES[String(v ?? "").trim()] || v;
+const tr = (map, key, fallback) => (map[key] ? t(map[key]) : (fallback || key));
+const inputName = (key, fallback) => tr(INPUTS, key, fallback);
+// Values come formatted in the answer language; local-language words are mapped only for the English interface.
+const valueText = (v) => (answerLang === "en" ? VALUES[String(v ?? "").trim()] || v : v);
+// Soil texture classes of the core AWC table, labelled in the answer language (GET /meta).
+const textureName = (v) => ((meta && meta.soil_textures) || []).reduce((acc, x) => (x.value === v ? x.label : acc), v);
 const LANG = () => `lang="${esc(answerLang)}"`;
 const CORPUS = 'lang="sr-Latn"';            // passages and their titles are quoted in the corpus language
 
@@ -90,13 +98,16 @@ function focusView() {
 
 // ------------------------------------------------------------------ start
 async function init() {
-  const h = await api("/health");
-  const chips = [["Version", h.version], ["Generator", h.llm], ["Satellite", h.satellite], ["Offline", h.offline ? "yes" : "no"],
-                 ["Database", h.database], ["Retrieval", h.retrieval]];
-  $("health").innerHTML = chips.map(([k, v]) => `<span class="chip-static">${esc(k)} <b>${esc(v)}</b></span>`).join("");
   meta = await api("/meta");
+  if (window.SmartI18n) { SmartI18n.setLang(storedLang() || meta.locale); SmartI18n.apply(document.body); }
+  const h = await api("/health");
+  const chips = [[t("Version"), h.version], [t("Generator"), h.llm], [t("Satellite"), t(h.satellite)], [t("Offline"), h.offline ? t("yes") : t("no")],
+                 [t("Database"), h.database], [t("Retrieval"), h.retrieval]];
+  $("health").innerHTML = chips.map(([k, v]) => `<span class="chip-static">${esc(k)} <b>${esc(v)}</b></span>`).join("");
   $("c-variant").innerHTML = meta.variants.map((v) => `<option ${v === meta.default_variant ? "selected" : ""}>${esc(v)}</option>`).join("");
-  $("c-type").innerHTML += meta.advice_types.map((t) => `<option value="${esc(t.value)}">${esc(ADVICE[t.value] || t.label)}</option>`).join("");
+  $("c-type").innerHTML += meta.advice_types.map((x) => `<option value="${esc(x.value)}">${esc(tr(ADVICE, x.value, x.label))}</option>`).join("");
+  $("n-texture").innerHTML = `<option value="">${esc(t("Unknown"))}</option>` + (meta.soil_textures || []).map((x) =>
+    `<option value="${esc(x.value)}">${esc(x.label)} (${esc(t("AWC {v} mm/m", {v: x.awc_mm_m}))})</option>`).join("");
   if (meta.accounts && meta.accounts.enabled) await initAccount();
   await route();
 }
@@ -111,11 +122,11 @@ function thumb(geometry) {
   const pts = xs.map((x, i) => `${(10 + (x - minX) / span * 44).toFixed(1)},${(10 + (ys[i] - minY) / span * 44).toFixed(1)}`);
   return `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M${pts.join("L")}Z"/></svg>`;
 }
-const fmtHa = (x) => (x == null ? "–" : Number(x).toLocaleString("en", {maximumFractionDigits: 2}) + " ha");
+const fmtHa = (x) => (x == null ? "–" : Number(x).toLocaleString(intl(), {maximumFractionDigits: 2}) + " ha");
 function fmtDate(s) {
   if (!s) return "";
   const d = new Date(String(s).length === 10 ? s + "T00:00:00" : s);
-  return isNaN(d) ? String(s) : d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"});
+  return isNaN(d) ? String(s) : d.toLocaleDateString(intl(), {day: "numeric", month: "short", year: "numeric"});
 }
 
 const EMPTY_ART = `<svg class="empty-art" viewBox="0 0 160 110" aria-hidden="true">
@@ -133,13 +144,13 @@ async function loadParcels() {
   parcelsCache = rows;
   showBanner();
   if (!rows.length) {
-    list.innerHTML = `<div class="empty card">${EMPTY_ART}<h2>No parcels yet</h2><p>Draw a maize field on the map or paste its boundary as GeoJSON. Then fetch its data and ask a question.</p><a class="button primary" href="#/new">Draw your first parcel</a></div>`;
+    list.innerHTML = `<div class="empty card">${EMPTY_ART}<h2>${esc(t("No parcels yet"))}</h2><p>${esc(t("Draw a maize field on the map or paste its boundary as GeoJSON. Then fetch its data and ask a question."))}</p><a class="button primary" href="#/new">${esc(t("Draw your first parcel"))}</a></div>`;
     return;
   }
   list.innerHTML = rows.map((p) => {
     const sow = (p.agronomic || {}).sowing_date;
     return `<a class="parcel-card" href="#/parcel/${encodeURIComponent(p.id)}">${thumb(p.geometry)}
-      <span><span class="name">${esc(p.name)}</span>${unsaved() ? ` <span class="pill unsaved">Not saved</span>` : ""}<br><span class="facts">${esc(fmtHa(p.area_ha))}${sow ? " · sown " + esc(fmtDate(sow)) : ""}</span></span>
+      <span><span class="name">${esc(p.name)}</span>${unsaved() ? ` <span class="pill unsaved">${esc(t("Not saved"))}</span>` : ""}<br><span class="facts">${esc(fmtHa(p.area_ha))}${sow ? " · " + esc(t("sown {date}", {date: fmtDate(sow)})) : ""}</span></span>
       <span class="chev" aria-hidden="true">›</span></a>`;
   }).join("");
 }
@@ -149,13 +160,13 @@ const EXAMPLE = {type: "Polygon", coordinates: [[[19.700, 45.320], [19.710, 45.3
 
 function tileProblem(kind) {
   const note = $("map-note");
-  note.textContent = kind === "off" ? "Map tiles are turned off in Settings. You can still draw on the empty grid or paste GeoJSON."
-                                    : "Map tiles could not be loaded. You can still draw on the empty grid or paste GeoJSON.";
+  note.textContent = kind === "off" ? t("Map tiles are turned off in Settings. You can still draw on the empty grid or paste GeoJSON.")
+                                    : t("Map tiles could not be loaded. You can still draw on the empty grid or paste GeoJSON.");
   note.hidden = false;
 }
 function ensureDrawer() {
   if (!window.SmartMap || !SmartMap.available()) {
-    $("d-status").textContent = "The map library could not be loaded. Use the GeoJSON tab.";
+    $("d-status").textContent = t("The map library could not be loaded. Use the GeoJSON tab.");
     return;
   }
   if (drawer) { setTimeout(() => drawer.invalidate(), 0); return; }
@@ -167,15 +178,15 @@ function onDraw(st, fromLoad) {
   const wrap = $("n-map").parentElement;
   wrap.classList.toggle("drawing", st.drawing);
   $("d-draw").setAttribute("aria-pressed", String(st.drawing));
-  $("d-draw").textContent = st.closed ? "Redraw" : st.drawing ? "Drawing…" : "Draw";
+  $("d-draw").textContent = st.closed ? t("Redraw") : st.drawing ? t("Drawing…") : t("Draw");
   $("d-undo").disabled = !st.count;
   $("d-finish").disabled = !(st.drawing && st.count >= 3);
   $("d-clear").disabled = !st.count;
-  $("d-status").textContent = st.closed ? `Boundary closed: ${st.count} corners. Drag a corner to adjust it.`
-    : st.drawing ? (st.count < 3 ? `Click the corners of the field (${st.count} of at least 3). Keyboard: pan with the arrow keys, then “Add centre point”.`
-                                 : `${st.count} corners. Click the first corner, double click, or press Finish.`)
-    : "No boundary yet. Press Draw to start.";
-  $("n-area").textContent = st.area_ha != null ? `≈ ${fmtHa(st.area_ha)}` : "No boundary yet";
+  $("d-status").textContent = st.closed ? t("Boundary closed: {n} corners. Drag a corner to adjust it.", {n: st.count})
+    : st.drawing ? (st.count < 3 ? t("Click the corners of the field ({n} of at least 3). Keyboard: pan with the arrow keys, then “Add centre point”.", {n: st.count})
+                                 : t("{n} corners. Click the first corner, double click, or press Finish.", {n: st.count}))
+    : t("No boundary yet. Press Draw to start.");
+  $("n-area").textContent = st.area_ha != null ? `≈ ${fmtHa(st.area_ha)}` : t("No boundary yet");
   $("n-area-hint").hidden = !(st.area_ha != null && (st.area_ha < 0.05 || st.area_ha > 200));
   if (st.geojson && !fromLoad) $("n-geom").value = JSON.stringify(st.geojson);
   if (!st.count && !fromLoad && !st.drawing) $("n-geom").value = "";
@@ -188,9 +199,9 @@ $("d-clear").onclick = () => drawer && drawer.clear();
 
 function parseGeom() {
   const text = $("n-geom").value.trim();
-  if (!text) throw new Error("Draw the boundary on the map or paste GeoJSON first.");
+  if (!text) throw new Error(t("Draw the boundary on the map or paste GeoJSON first."));
   let g;
-  try { g = JSON.parse(text); } catch (e) { throw new Error("The boundary is not valid JSON."); }
+  try { g = JSON.parse(text); } catch (e) { throw new Error(t("The boundary is not valid JSON.")); }
   if (g && g.type === "FeatureCollection" && g.features && g.features.length) g = g.features[0];
   if (g && g.type === "Feature") g = g.geometry;
   return g;
@@ -201,7 +212,7 @@ function showGeomOnMap() {
     const g = parseGeom();
     selectTab($("tab-draw"));
     ensureDrawer();
-    if (drawer && !drawer.load(g)) $("g-msg").textContent = "Only a Polygon (or a Feature with a Polygon) can be shown on the map.";
+    if (drawer && !drawer.load(g)) $("g-msg").textContent = t("Only a Polygon (or a Feature with a Polygon) can be shown on the map.");
     else if (drawer) $("n-area").textContent = `≈ ${fmtHa(drawer.state().area_ha)}`;
   } catch (e) { $("g-msg").textContent = e.message; }
 }
@@ -240,10 +251,11 @@ $("n-form").onsubmit = async (e) => {
   $("n-msg").textContent = "";
   const btn = $("n-save");
   try {
-    if (!$("n-name").value.trim()) throw new Error("Enter a name for the parcel.");
+    if (!$("n-name").value.trim()) throw new Error(t("Enter a name for the parcel."));
     const body = {name: $("n-name").value, sowing_date: $("n-sowing").value || null, irrigation_available: $("n-irr").value,
                   geometry: parseGeom()};
     if ($("n-pinned").value) body.pinned_as_of = $("n-pinned").value;
+    if ($("n-texture").value) body.soil_texture = $("n-texture").value;
     btn.setAttribute("aria-busy", "true");
     const p = await api("/parcels", {method: "POST", body: JSON.stringify(body)});
     parcelsCache = [p].concat(parcelsCache.filter((x) => x.id !== p.id));
@@ -254,28 +266,29 @@ $("n-form").onsubmit = async (e) => {
 
 // ------------------------------------------------------------------ parcel
 function qualityList(rows) {
-  if (!rows || !rows.length) return `<p class="hint">No data yet.</p>`;
+  if (!rows || !rows.length) return `<p class="hint">${esc(t("No data yet."))}</p>`;
   const present = rows.filter((r) => r.reliability !== "missing"), missing = rows.filter((r) => r.reliability === "missing");
-  const absent = missing.length ? `<details class="raw missing"><summary>Missing inputs (${missing.length})</summary>
+  const absent = missing.length ? `<details class="raw missing"><summary>${esc(t("Missing inputs ({n})", {n: missing.length}))}</summary>
     <p class="hint">${missing.map((r) => esc(inputName(r.input, r.label))).join(" · ")}</p></details>` : "";
-  if (!present.length) return `<p class="hint">No input is available yet.</p>` + absent;
+  if (!present.length) return `<p class="hint">${esc(t("No input is available yet."))}</p>` + absent;
   return `<ul class="qlist">` + present.map((r) => {
-    const age = r.age_days != null ? `${Number(r.age_days).toLocaleString("en", {maximumFractionDigits: 1})} d old` : "";
+    const age = r.age_days != null ? t("{n} d old", {n: Number(r.age_days).toLocaleString(intl(), {maximumFractionDigits: 1})}) : "";
     return `<li><span class="q-label">${esc(inputName(r.input, r.label))}</span><span class="q-value">${esc(valueText(r.value_text))}</span>
-      <span class="q-meta"><span class="pill rel-${esc(r.reliability)}">${esc(RELIABILITY[r.reliability] || r.reliability_label)}</span>
-      <span>${esc(ORIGIN[r.origin] || r.origin_label)}</span>${age ? `<span>· ${esc(age)}</span>` : ""}</span></li>`;
+      <span class="q-meta"><span class="pill rel-${esc(r.reliability)}">${esc(tr(RELIABILITY, r.reliability, r.reliability_label))}</span>
+      <span>${esc(tr(ORIGIN, r.origin, r.origin_label))}</span>${age ? `<span>· ${esc(age)}</span>` : ""}</span></li>`;
   }).join("") + `</ul>` + absent;
 }
 
 async function openParcel(id) {
   try { parcel = await api("/parcels/" + encodeURIComponent(id)); }
-  catch (e) { $("p-title").textContent = "Parcel not found"; $("p-meta").textContent = e.message; $("p-quality").innerHTML = ""; return; }
+  catch (e) { $("p-title").textContent = t("Parcel not found"); $("p-meta").textContent = e.message; $("p-quality").innerHTML = ""; return; }
   conv = null; aiConv = null; pending = null;
   $("p-temp").hidden = !unsaved();
   const ag = parcel.agronomic || {};
   $("p-title").textContent = parcel.name;
-  $("p-meta").textContent = [fmtHa(parcel.area_ha), ag.sowing_date ? "sown " + fmtDate(ag.sowing_date) : "sowing date unknown",
-                             parcel.pinned_as_of ? "decision date " + fmtDate(parcel.pinned_as_of) : ""].filter(Boolean).join(" · ");
+  $("p-meta").textContent = [fmtHa(parcel.area_ha), ag.sowing_date ? t("sown {date}", {date: fmtDate(ag.sowing_date)}) : t("sowing date unknown"),
+                             parcel.pinned_as_of ? t("decision date {date}", {date: fmtDate(parcel.pinned_as_of)}) : "",
+                             ag.soil_texture ? t("soil: {texture}", {texture: textureName(ag.soil_texture)}) : ""].filter(Boolean).join(" · ");
   $("c-out").innerHTML = ""; $("a-out").innerHTML = "";
   if (window.SmartMap && SmartMap.available()) {
     if (!viewer) viewer = new SmartMap.Viewer($("p-map"), {});
@@ -283,7 +296,7 @@ async function openParcel(id) {
   }
   $("p-quality").innerHTML = `<div class="skeleton"></div>`;
   try { $("p-quality").innerHTML = qualityList((await api(`/parcels/${parcel.id}/profile`)).quality); }
-  catch (e) { $("p-quality").innerHTML = `<p class="hint">${esc(e.message)} Press “Refresh data” to fetch weather and Sentinel-2 for this parcel.</p>`; }
+  catch (e) { $("p-quality").innerHTML = `<p class="hint">${esc(e.message)} ${esc(t("Press “Refresh data” to fetch weather and Sentinel-2 for this parcel."))}</p>`; }
   await loadContext();
 }
 $("p-refresh").onclick = async () => {
@@ -302,56 +315,57 @@ function whyPanel(run) {
   const pol = d.policy || {}, suf = d.sufficiency, q = d.question, gr = d.grounding || {};
   const appl = (d.applicability || []).reduce((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {});
   const qual = Object.values(d.quality || {}).reduce((acc, x) => { acc[x.reliability] = (acc[x.reliability] || 0) + 1; return acc; }, {});
-  const missing = suf && suf.missing ? suf.missing.map((m) => (typeof m === "string" ? inputName(m) : "one of " + (m.one_of || []).map((x) => inputName(x)).join(" / "))) : [];
-  const layer = (sym, name, body) => `<div class="layer"><b>${sym} · ${name}</b>${body}</div>`;
-  const counts = (obj, names) => Object.keys(obj).length ? Object.entries(obj).map(([k, n]) => `${n} ${esc(names[k] || k)}`).join(", ") : "none";
-  return `<details class="why"><summary>Why?</summary>
-    <p class="hint">The deterministic layers decided this before any text was written.</p>
+  const missing = suf && suf.missing ? suf.missing.map((m) => (typeof m === "string" ? inputName(m) : t("one of {list}", {list: (m.one_of || []).map((x) => inputName(x)).join(" / ")}))) : [];
+  const layer = (sym, name, body) => `<div class="layer"><b>${sym} · ${esc(t(name))}</b>${body}</div>`;
+  const counts = (obj, names) => Object.keys(obj).length ? Object.entries(obj).map(([k, n]) => `${n} ${esc(tr(names, k))}`).join(", ") : t("none");
+  const code = (x) => (x ? `<code>${esc(x)}</code>` : "");
+  return `<details class="why"><summary>${esc(t("Why?"))}</summary>
+    <p class="hint">${esc(t("The deterministic layers decided this before any text was written."))}</p>
     <div class="layers">
-      ${layer("δ", "Decision", `${esc(ACTS[pol.act] || pol.act || "–")}<br><span class="hint">${esc(pol.reason_code || "")}${pol.allow_quantity ? " · quantity allowed" : " · no quantity"}</span>`)}
-      ${layer("σ", "Sufficiency", suf ? `${esc(suf.status)}${missing.length ? `<br><span class="hint">missing: ${esc(missing.join("; "))}</span>` : ""}` : "not evaluated")}
-      ${layer("α", "Next question", q && q.input ? esc(inputName(q.input)) : "none")}
+      ${layer("δ", "Decision", `${esc(tr(ACTS, pol.act, pol.act || "–"))}<br><span class="hint">${code(pol.reason_code)} · ${esc(pol.allow_quantity ? t("quantity allowed") : t("no quantity"))}</span>`)}
+      ${layer("σ", "Sufficiency", suf ? `${esc(t(suf.status))}${missing.length ? `<br><span class="hint">${esc(t("missing: {list}", {list: missing.join("; ")}))}</span>` : ""}` : esc(t("not evaluated")))}
+      ${layer("α", "Next question", q && q.input ? esc(inputName(q.input)) : esc(t("none")))}
       ${layer("q", "Input quality", esc(counts(qual, RELIABILITY)))}
-      ${layer("π", "Applicability", `${esc(counts(appl, APPLICABILITY))}<br><span class="hint">${(d.passage_budget || []).length} passages used</span>`)}
-      ${layer("γ", "Grounding", `${esc(gr.action || "–")}<br><span class="hint">${(gr.unsupported_numbers || []).length} unsupported numbers</span>`)}
+      ${layer("π", "Applicability", `${esc(counts(appl, APPLICABILITY))}<br><span class="hint">${esc(t("{n} passages used", {n: (d.passage_budget || []).length}))}</span>`)}
+      ${layer("γ", "Grounding", `${gr.action ? code(gr.action) : "–"}<br><span class="hint">${esc(t("{n} unsupported numbers", {n: (gr.unsupported_numbers || []).length}))}</span>`)}
     </div>
     <div class="layers">
       ${layer("", "As of", esc(p.as_of ? fmtDate(p.as_of) + " " + String(p.as_of).slice(11, 16) : "–"))}
       ${layer("", "Corpus hash", `<code>${esc(short(p.corpus_hash))}</code>`)}
-      ${layer("", "Model / prompt", `${esc(p.model || "–")} · <code>${esc(short(p.prompt_hash))}</code>`)}
+      ${layer("", "Model / prompt", `${esc(p.model === "none" ? t("none") : (p.model || "–"))} · <code>${esc(short(p.prompt_hash))}</code>`)}
       ${layer("", "Weather forecast issued", esc(p.forecast_issued_at || "–"))}
     </div>
-    <p class="row"><button type="button" class="button secondary small prov-dl" data-run="${esc(run.id)}">Download provenance (JSON)</button>
-      <span class="hint">The answer with every decision (π, q, σ, α, δ, γ), its sources, the inputs with age and reliability, and the hashes.</span></p>
-    <details class="raw"><summary>Decisions and provenance (JSON)</summary><pre>${esc(JSON.stringify({decisions: run.decisions, provenance: run.provenance}, null, 2))}</pre></details>
+    <p class="row"><button type="button" class="button secondary small prov-dl" data-run="${esc(run.id)}">${esc(t("Download provenance (JSON)"))}</button>
+      <span class="hint">${esc(t("The answer with every decision (π, q, σ, α, δ, γ), its sources, the inputs with age and reliability, and the hashes."))}</span></p>
+    <details class="raw"><summary>${esc(t("Decisions and provenance (JSON)"))}</summary><pre>${esc(JSON.stringify({decisions: run.decisions, provenance: run.provenance}, null, 2))}</pre></details>
   </details>`;
 }
 
-function section(title, inner, extra = "") {
-  return inner ? `<section class="sheet-group"${extra}><h3>${title}</h3>${inner}</section>` : "";
+function section(title, inner, extra = "", note = "") {
+  return inner ? `<section class="sheet-group"${extra}><h3>${esc(t(title))}${note ? ` <span class="hint-inline">${esc(t(note))}</span>` : ""}</h3>${inner}</section>` : "";
 }
 const ACT_ICON = {recommend: "M5 12.5l4.2 4.2L19 7", conditional: "M12 7v6M12 16.5v.5", ask: "M9.2 9a2.9 2.9 0 1 1 3.9 2.7c-.7.3-1.1.9-1.1 1.6v.4M12 17v.3",
                   abstain: "M7 12h10", refer: "M7 12h10M13 7l5 5-5 5"};
 function answerCard(run) {
   const a = run.answer, act = a.action || {}, L = LANG();
-  const data = (a.data_used || []).map((d) => `<li><span>${esc(inputName(d.input, d.label))}</span><span class="v"><span ${L}>${esc(valueText(d.value_text))}</span> <span class="pill rel-${esc(d.reliability)}">${esc(RELIABILITY[d.reliability] || d.reliability_label)}</span>${d.age_days != null ? `<span class="age">${esc(d.age_days)} d</span>` : ""}</span></li>`).join("");
-  const src = (a.sources || []).map((s) => `<li><span class="src-title" ${CORPUS}>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>` : esc(s.title)}</span> <span class="src-status">π: ${esc(APPLICABILITY[s.applicability] || s.applicability_label)}${s.conditions && s.conditions.length ? `; <span ${L}>${esc(s.conditions.join("; "))}</span>` : ""}</span></li>`).join("");
+  const data = (a.data_used || []).map((d) => `<li><span>${esc(inputName(d.input, d.label))}</span><span class="v"><span ${L}>${esc(valueText(d.value_text))}</span> <span class="pill rel-${esc(d.reliability)}">${esc(tr(RELIABILITY, d.reliability, d.reliability_label))}</span>${d.age_days != null ? `<span class="age">${esc(t("{n} d", {n: d.age_days}))}</span>` : ""}</span></li>`).join("");
+  const src = (a.sources || []).map((s) => `<li><span class="src-title" ${CORPUS}>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>` : esc(s.title)}</span> <span class="src-status">π: ${esc(tr(APPLICABILITY, s.applicability, s.applicability_label))}${s.conditions && s.conditions.length ? `; <span ${L}>${esc(s.conditions.join("; "))}</span>` : ""}</span></li>`).join("");
   const why = (a.rationale || []).map((r) => `<li>${esc(r)}</li>`).join("");
   const calc = (a.calculations || []).map((c) => `<li>${esc(typeof c === "string" ? c : c.text || c.label || JSON.stringify(c))}</li>`).join("");
   const nq = a.next_question;
   const opts = nq ? nq.options.map((o) => `<button type="button" class="chip accent" data-input="${esc(nq.input)}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join("") : "";
-  const kv = act.what || act.quantity ? `<dl class="kv">${act.what ? `<dt>Action</dt><dd ${L}>${esc(act.what)}</dd><dt>When / condition</dt><dd ${L}>${esc(act.when_or_condition)}</dd>` : ""}${act.quantity ? `<dt>Quantity</dt><dd ${L}>${esc(act.quantity)}</dd>` : ""}</dl>` : "";
+  const kv = act.what || act.quantity ? `<dl class="kv">${act.what ? `<dt>${esc(t("Action"))}</dt><dd ${L}>${esc(act.what)}</dd><dt>${esc(t("When / condition"))}</dt><dd ${L}>${esc(act.when_or_condition)}</dd>` : ""}${act.quantity ? `<dt>${esc(t("Quantity"))}</dt><dd ${L}>${esc(act.quantity)}</dd>` : ""}</dl>` : "";
   return `<article class="answer act-${esc(a.act)}">
     <span class="grabber" aria-hidden="true"></span>
     <header><span class="act-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${ACT_ICON[a.act] || ACT_ICON.abstain}"/></svg></span>
-      <span class="act-head"><span class="act-badge">${esc(ACTS[a.act] || a.act_label)}</span><span class="meta">${esc(run.variant)} · ${esc(ADVICE[run.advice_type] || "advice type not yet known")} · ${esc(a.generator)} generator</span></span></header>
+      <span class="act-head"><span class="act-badge">${esc(tr(ACTS, a.act, a.act_label))}</span><span class="meta">${esc(run.variant)} · ${esc(tr(ADVICE, run.advice_type, t("advice type not yet known")))} · ${esc(t("{name} generator", {name: a.generator}))}</span></span></header>
     <p class="summary" ${L}>${esc(a.summary)}</p>
     ${kv}
     ${nq ? `<div class="nextq"><p ${L}>${esc(nq.text)}${nq.how_to_obtain ? `<span class="how">${esc(nq.how_to_obtain)}</span>` : ""}</p><div class="options" ${L}>${opts}</div></div>` : ""}
     ${section("Reasoning", why ? `<ul ${L}>${why}</ul>` : "")}
-    ${section("Calculations <span class=\"hint-inline\">in code, FAO-56</span>", calc ? `<ul ${L}>${calc}</ul>` : "")}
+    ${section("Calculations", calc ? `<ul ${L}>${calc}</ul>` : "", "", "in code, FAO-56")}
     ${section("Based on", a.basis && a.basis.text ? `<p ${L}>${esc(a.basis.text)}</p>` : "")}
-    ${section("Data used <span class=\"hint-inline\">reliability, age</span>", data ? `<ul class="rows">${data}</ul>` : "")}
+    ${section("Data used", data ? `<ul class="rows">${data}</ul>` : "", "", "reliability, age")}
     ${section("Sources and π status", src ? `<ul class="rows src">${src}</ul>` : "")}
     ${section("Referral", a.referral ? `<p ${L}>${esc(typeof a.referral === "string" ? a.referral : a.referral.text || JSON.stringify(a.referral))}</p>` : "")}
     ${(a.limitations || []).length ? `<div class="limits" ${L}>${a.limitations.map(esc).join("<br>")}</div>` : ""}
@@ -381,7 +395,7 @@ $("c-form").onsubmit = (e) => {
   sendChat({text: $("c-text").value, advice_type: $("c-type").value || null});
   $("c-text").value = "";
 };
-document.querySelectorAll(".suggestions .chip").forEach((b) => b.onclick = () => { $("c-text").value = b.dataset.q; $("c-text").focus(); });
+document.querySelectorAll(".suggestions .chip").forEach((b) => b.onclick = () => { $("c-text").value = t(b.dataset.q); $("c-text").focus(); });
 
 $("a-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -395,7 +409,7 @@ $("a-form").onsubmit = async (e) => {
     $("a-text").value = "";
     const shownLang = run.answer.language ? (run.answer.translation && run.answer.translation.shown === "local" ? "sr-Latn" : run.answer.language.detected) : "sr-Latn";
     $("a-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div><article class="answer act-ai"><p class="ai-text" lang="${esc(shownLang)}">${esc(run.answer.text)}</p>
-      <details class="raw"><summary>Provenance</summary><pre>${esc(JSON.stringify(run.provenance, null, 2))}</pre></details></article>`);
+      <details class="raw"><summary>${esc(t("Provenance"))}</summary><pre>${esc(JSON.stringify(run.provenance, null, 2))}</pre></details></article>`);
   } catch (err) { $("a-out").insertAdjacentHTML("beforeend", `<p class="error">${esc(err.message)}</p>`); }
   finally { btn.removeAttribute("aria-busy"); }
 };
@@ -407,75 +421,78 @@ const num = (x, d = 1) => (window.SmartCharts ? SmartCharts.fmtNum(x, d) : (x ==
 function fmtStamp(s) {
   if (!s) return "–";
   const d = new Date(s);
-  return isNaN(d) ? String(s) : d.toLocaleString("en-GB", {day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"});
+  return isNaN(d) ? String(s) : d.toLocaleString(intl(), {day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"});
 }
 function fmtAge(hours) {
   if (hours == null) return "";
-  if (hours < 1) return "under 1 h ago";
-  if (hours < 48) return `${num(hours, 0)} h ago`;
-  return `${num(hours / 24, 0)} d ago`;
+  if (hours < 1) return t("under 1 h ago");
+  if (hours < 48) return t("{n} h ago", {n: num(hours, 0)});
+  return t("{n} d ago", {n: num(hours / 24, 0)});
 }
 function emptyState(title, text) {
-  return `<div class="ctx-empty" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/></svg><div><strong>${esc(title)}</strong><p>${esc(text)}</p></div></div>`;
+  return `<div class="ctx-empty" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/></svg><div><strong>${esc(t(title))}</strong><p>${esc(text)}</p></div></div>`;
 }
 function metaList(pairs) {
-  return `<dl class="ctx-meta">${pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
+  return `<dl class="ctx-meta">${pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(t(k))}</dt><dd>${v}</dd>`).join("")}</dl>`;
 }
 function dataTable(caption, head, rows) {
-  return `<details class="raw tbl"><summary>Show as table</summary><div class="table-wrap" tabindex="0" role="region" aria-label="${esc(caption)}">
-    <table><caption>${esc(caption)}</caption><thead><tr>${head.map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead>
+  return `<details class="raw tbl"><summary>${esc(t("Show as table"))}</summary><div class="table-wrap" tabindex="0" role="region" aria-label="${esc(t(caption))}">
+    <table><caption>${esc(t(caption))}</caption><thead><tr>${head.map((h) => `<th scope="col">${esc(t(h))}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i ? `<td>${c}</td>` : `<th scope="row">${c}</th>`)).join("")}</tr>`).join("")}</tbody></table></div></details>`;
 }
 const NO_PROFILE = "No data have been fetched for this parcel yet. Press “Refresh data” to fetch the weather and Sentinel-2 series.";
+// A forecast for an earlier decision date is the archived forecast of that moment, assembled afterwards.
+const RECONSTRUCTED = "Reconstructed from the Open-Meteo historical-forecast archive: the forecast that was available at the decision moment.";
 
 function renderSeries(s) {
   const w = s.weather, n = s.ndvi;
-  let html = `<h3 class="ctx-sub">Weather <span class="hint-inline">${esc(w.source)}</span></h3>`;
+  let html = `<h3 class="ctx-sub">${esc(t("Weather"))} <span class="hint-inline">${esc(w.source)}</span></h3>`;
   if (w.status !== "ok" || !w.rows.length) {
-    html += emptyState("No weather series", w.message === "no_profile" ? NO_PROFILE : (w.message || "The weather provider returned no data."));
+    html += emptyState("No weather series", w.message === "no_profile" ? t(NO_PROFILE) : (w.message || t("The weather provider returned no data.")));
   } else {
     const hist = w.rows.filter((r) => !r.is_forecast).length, fc = w.rows.length - hist;
     html += metaList([
-      ["Endpoint", esc(w.retrospective_constructed ? `${w.endpoint} (archived forecast, assembled afterwards)` : (w.endpoint || "–"))],
+      ["Endpoint", w.retrospective_constructed ? `<code>${esc(w.endpoint)}</code> ${esc(t("(archived forecast, assembled afterwards)"))}` : (w.endpoint ? `<code>${esc(w.endpoint)}</code>` : "–")],
       ["Retrieved", `${esc(fmtStamp(w.fetched_at))} <span class="hint">${esc(fmtAge(w.age_hours))}</span>`],
       ["Forecast issued", esc(fmtStamp(w.forecast_issued_at))],
-      ["Window", esc(`${hist} days of history, ${fc} forecast days`)],
+      ["Window", esc(t("{hist} days of history, {fc} forecast days", {hist, fc}))],
       ["Decision moment", esc(fmtStamp(s.as_of))],
     ]);
+    if (w.retrospective_constructed) html += `<p class="hint reconstructed">${esc(t(RECONSTRUCTED))}</p>`;
     html += `<div class="ch-host" id="ch-temp"></div><div class="ch-host" id="ch-rain"></div>`;
     html += dataTable("Daily weather of the parcel (Open-Meteo)", ["Date", "T min (°C)", "T max (°C)", "Rain (mm)", "ET0 (mm)", "Kind"],
-      w.rows.map((r) => [esc(fmtDate(r.date)), num(r.tmin_c), num(r.tmax_c), num(r.precip_mm), num(r.et0_mm), r.is_forecast ? "forecast" : "history"]));
+      w.rows.map((r) => [esc(fmtDate(r.date)), num(r.tmin_c), num(r.tmax_c), num(r.precip_mm), num(r.et0_mm), esc(r.is_forecast ? t("forecast") : t("history"))]));
   }
   html += `<h3 class="ctx-sub">NDVI <span class="hint-inline">${esc(n.source)}</span></h3>`;
   if (n.status !== "ok" || !n.rows.length) {
-    html += emptyState("No NDVI series", n.message === "no_profile" ? NO_PROFILE : (n.message || "No usable Sentinel-2 observation."));
+    html += emptyState("No NDVI series", n.message === "no_profile" ? t(NO_PROFILE) : (n.message || t("No usable Sentinel-2 observation.")));
   } else {
     html += metaList([
       ["Retrieved", `${esc(fmtStamp(n.fetched_at))} <span class="hint">${esc(fmtAge(n.age_hours))}</span>`],
-      ["Latest obs_date", `${esc(fmtDate(n.latest_obs_date))} <span class="hint">${esc(n.latest_age_days != null ? n.latest_age_days + " d before the decision moment" : "")}</span>`],
-      ["Cloud mask", esc("SCL per pixel (cloud, shadow, cirrus, snow excluded); valid_px_ratio = usable pixels / all pixels")],
-      ["cloud_flag", esc("not stored per observation")],
-      ["Trend", esc(`observations with valid_px_ratio ≥ ${n.trend_min_share} (core NDVI tool); hollow points are below it`)],
+      ["Latest obs_date", `${esc(fmtDate(n.latest_obs_date))} <span class="hint">${esc(n.latest_age_days != null ? t("{n} d before the decision moment", {n: n.latest_age_days}) : "")}</span>`],
+      ["Cloud mask", esc(t("SCL per pixel (cloud, shadow, cirrus, snow excluded); valid_px_ratio = usable pixels / all pixels"))],
+      ["cloud_flag", esc(t("not stored per observation"))],
+      ["Trend", esc(t("observations with valid_px_ratio ≥ {share} (core NDVI tool); hollow points are below it", {share: n.trend_min_share}))],
     ]);
     html += `<div class="ch-host" id="ch-ndvi"></div>`;
     html += dataTable("Sentinel-2 L2A NDVI observations of the parcel", ["obs_date", "Median", "p10", "p90", "valid_px_ratio", "Used for trend"],
-      n.rows.map((r) => [esc(r.obs_date), num(r.median, 3), num(r.p10, 3), num(r.p90, 3), num(r.valid_px_ratio, 3), r.meets_trend_share ? "yes" : "no"]));
+      n.rows.map((r) => [esc(r.obs_date), num(r.median, 3), num(r.p10, 3), num(r.p90, 3), num(r.valid_px_ratio, 3), r.meets_trend_share ? t("yes") : t("no")]));
   }
   $("p-series").innerHTML = html;
   if (w.status === "ok" && w.rows.length && window.SmartCharts) {
-    SmartCharts.chart($("ch-temp"), {title: "Daily temperature (°C)", unit: "°C", x: "date", forecast: "is_forecast", rows: w.rows,
-      desc: `Daily minimum and maximum air temperature from ${w.source}, ${w.rows.length} days including the forecast.`,
+    SmartCharts.chart($("ch-temp"), {title: t("Daily temperature (°C)"), unit: "°C", x: "date", forecast: "is_forecast", rows: w.rows,
+      desc: t("Daily minimum and maximum air temperature from {source}, {n} days including the forecast.", {source: w.source, n: w.rows.length}),
       series: [{key: "tmax_c", kind: "line", cls: "s-evap", label: "T max"}, {key: "tmin_c", kind: "line", cls: "s-rain", label: "T min"}]});
-    SmartCharts.chart($("ch-rain"), {title: "Rainfall and reference evapotranspiration ET0 (mm/day)", unit: "mm", x: "date", forecast: "is_forecast", rows: w.rows,
-      desc: `Daily rainfall as bars and FAO-56 reference evapotranspiration ET0 as a line, from ${w.source}.`,
-      series: [{key: "precip_mm", kind: "bar", cls: "s-rain", label: "Rain"}, {key: "et0_mm", kind: "line", cls: "s-evap", label: "ET0"}]});
+    SmartCharts.chart($("ch-rain"), {title: t("Rainfall and reference evapotranspiration ET0 (mm/day)"), unit: "mm", x: "date", forecast: "is_forecast", rows: w.rows,
+      desc: t("Daily rainfall as bars and FAO-56 reference evapotranspiration ET0 as a line, from {source}.", {source: w.source}),
+      series: [{key: "precip_mm", kind: "bar", cls: "s-rain", label: t("Rain")}, {key: "et0_mm", kind: "line", cls: "s-evap", label: "ET0"}]});
   }
   if (n.status === "ok" && n.rows.length && window.SmartCharts) {
-    SmartCharts.chart($("ch-ndvi"), {title: "NDVI median per observation, p10–p90 range", x: "obs_date", rows: n.rows, yMin: 0, yMax: 1, digits: 3,
-      desc: `Sentinel-2 L2A NDVI of the parcel, ${n.rows.length} observations; whiskers show the 10th to 90th percentile within the parcel.`,
-      series: [{key: "median", lo: "p10", hi: "p90", kind: "dot", cls: "s-ndvi", label: "NDVI median", hollow: (r) => r.meets_trend_share === false,
+    SmartCharts.chart($("ch-ndvi"), {title: t("NDVI median per observation, p10–p90 range"), x: "obs_date", rows: n.rows, yMin: 0, yMax: 1, digits: 3,
+      desc: t("Sentinel-2 L2A NDVI of the parcel, {n} observations; whiskers show the 10th to 90th percentile within the parcel.", {n: n.rows.length}),
+      series: [{key: "median", lo: "p10", hi: "p90", kind: "dot", cls: "s-ndvi", label: t("NDVI median"), hollow: (r) => r.meets_trend_share === false,
                 note: (r) => `; valid_px_ratio ${num(r.valid_px_ratio, 2)}`}],
-      legendExtra: [{kind: "dot hollow", cls: "s-ndvi", label: `valid_px_ratio below ${n.trend_min_share}`}]});
+      legendExtra: [{kind: "dot hollow", cls: "s-ndvi", label: t("valid_px_ratio below {share}", {share: n.trend_min_share})}]});
   }
 }
 
@@ -485,37 +502,39 @@ const ASSUMPTIONS = {
   no_stage: "No sowing date and no growth stage: Kc, ETc and the deficit cannot be computed.",
   deficit_starts_at_zero: "The deficit starts at 0 mm on the first day (root zone assumed full): an assumption, not a measurement.",
   no_taw_cap: "Soil water-holding capacity unknown: the deficit is not capped at TAW.",
+  taw_cap: "The deficit is capped at the total available water TAW = AWC × Zr (AWC from the soil texture, Zr from the growth stage).",
 };
 function renderWater(b) {
   let html = "";
   if (b.status === "missing") {
-    $("p-water").innerHTML = emptyState("No water balance", b.message === "no_profile" ? NO_PROFILE
-      : (b.message === "no_weather" ? "There is no weather series to balance." : b.message));
+    $("p-water").innerHTML = emptyState("No water balance", b.message === "no_profile" ? t(NO_PROFILE)
+      : (b.message === "no_weather" ? t("There is no weather series to balance.") : b.message));
     return;
   }
-  const t = b.totals || {}, last = b.deficit_last_observed;
+  const tot = b.totals || {}, last = b.deficit_last_observed;
   html += `<div class="tiles">
-    <div class="tile"><span>ET0, ${esc(t.observed_days)} observed days</span><strong>${num(t.et0_observed_mm)} mm</strong></div>
-    <div class="tile"><span>ETc = Kc × ET0</span><strong>${num(t.etc_observed_mm)} mm</strong></div>
-    <div class="tile"><span>Rainfall</span><strong>${num(t.rain_observed_mm)} mm</strong></div>
-    <div class="tile"><span>Deficit${last ? ", " + esc(fmtDate(last.date)) : ""}</span><strong>${last ? num(last.deficit_mm) + " mm" : "–"}</strong>${b.taw_mm != null ? `<small>of TAW ${num(b.taw_mm)} mm</small>` : ""}</div>
+    <div class="tile"><span>${esc(t("ET0, {n} observed days", {n: tot.observed_days}))}</span><strong>${num(tot.et0_observed_mm)} mm</strong></div>
+    <div class="tile"><span>ETc = Kc × ET0</span><strong>${num(tot.etc_observed_mm)} mm</strong></div>
+    <div class="tile"><span>${esc(t("Rainfall"))}</span><strong>${num(tot.rain_observed_mm)} mm</strong></div>
+    <div class="tile"><span>${esc(t("Deficit"))}${last ? ", " + esc(fmtDate(last.date)) : ""}</span><strong>${last ? num(last.deficit_mm) + " mm" : "–"}</strong>${b.taw_mm != null ? `<small>${esc(t("of TAW {v} mm", {v: num(b.taw_mm)}))}</small>` : ""}</div>
   </div>`;
+  if (b.status === "ok" && b.weather_retrospective_constructed) html += `<p class="hint reconstructed">${esc(t(RECONSTRUCTED))}</p>`;
   if (b.status === "ok") html += `<div class="ch-host" id="ch-deficit"></div><div class="ch-host" id="ch-etc"></div>`;
-  html += `<ul class="assumptions">${(b.assumptions || []).map((a) => `<li>${esc(ASSUMPTIONS[a] || a)}</li>`).join("")}</ul>`;
-  html += `<p class="formula"><code>${esc(b.formula_etc)}</code> <span class="hint">${esc(b.source_etc)}; Kc by BBCH from config/kc_maize.yaml</span><br>
-    <code>${esc(b.formula_deficit)}</code> <span class="hint">${esc(b.source_deficit)}</span></p>`;
+  html += `<ul class="assumptions">${(b.assumptions || []).map((a) => `<li>${esc(tr(ASSUMPTIONS, a))}</li>`).join("")}</ul>`;
+  html += `<p class="formula"><code>${esc(b.formula_etc)}</code> <span class="hint">${esc(t(b.source_etc))}; ${esc(t("Kc by BBCH from"))} <code>config/kc_maize.yaml</code></span><br>
+    <code>${esc(b.formula_deficit)}</code> <span class="hint">${esc(t(b.source_deficit))}</span></p>`;
   html += dataTable("Daily FAO-56 water balance of the parcel", ["Date", "BBCH", "ET0 (mm)", "Kc", "ETc (mm)", "Rain (mm)", "Deficit (mm)", "TAW (mm)"],
-    b.rows.map((r) => [esc(fmtDate(r.date)) + (r.is_forecast ? " <span class=\"hint\">forecast</span>" : ""), r.bbch == null ? "–" : esc(r.bbch),
+    b.rows.map((r) => [esc(fmtDate(r.date)) + (r.is_forecast ? ` <span class="hint">${esc(t("forecast"))}</span>` : ""), r.bbch == null ? "–" : esc(r.bbch),
       num(r.et0_mm), num(r.kc, 2), num(r.etc_mm), num(r.rain_mm), num(r.deficit_mm), num(r.taw_mm)]));
   $("p-water").innerHTML = html;
   if (b.status === "ok" && window.SmartCharts) {
-    SmartCharts.chart($("ch-deficit"), {title: "Root-zone deficit (mm)", unit: "mm", x: "date", forecast: "is_forecast", rows: b.rows, yMin: 0,
-      desc: "Daily root-zone depletion from the FAO-56 balance, starting at 0 mm on the first day; the dashed line is the total available water TAW.",
-      series: [{key: "deficit_mm", kind: "line", cls: "s-evap", label: "Deficit"}],
+    SmartCharts.chart($("ch-deficit"), {title: t("Root-zone deficit (mm)"), unit: "mm", x: "date", forecast: "is_forecast", rows: b.rows, yMin: 0,
+      desc: t("Daily root-zone depletion from the FAO-56 balance, starting at 0 mm on the first day; the dashed line is the total available water TAW."),
+      series: [{key: "deficit_mm", kind: "line", cls: "s-evap", label: t("Deficit")}],
       refs: b.taw_mm != null ? [{value: b.taw_mm, label: `TAW ${num(b.taw_mm)} mm`}] : []});
-    SmartCharts.chart($("ch-etc"), {title: "Crop evapotranspiration ETc and rainfall (mm/day)", unit: "mm", x: "date", forecast: "is_forecast", rows: b.rows,
-      desc: "Daily rainfall as bars and crop evapotranspiration ETc = Kc × ET0 as a line.",
-      series: [{key: "rain_mm", kind: "bar", cls: "s-rain", label: "Rain"}, {key: "etc_mm", kind: "line", cls: "s-evap", label: "ETc"}]});
+    SmartCharts.chart($("ch-etc"), {title: t("Crop evapotranspiration ETc and rainfall (mm/day)"), unit: "mm", x: "date", forecast: "is_forecast", rows: b.rows,
+      desc: t("Daily rainfall as bars and crop evapotranspiration ETc = Kc × ET0 as a line."),
+      series: [{key: "rain_mm", kind: "bar", cls: "s-rain", label: t("Rain")}, {key: "etc_mm", kind: "line", cls: "s-evap", label: "ETc"}]});
   }
 }
 
@@ -557,11 +576,11 @@ const pct = (x) => (x == null ? "–" : num(x, 3));
 const ci = (c) => (c && c.length === 2 ? `[${num(c[0], 3)}; ${num(c[1], 3)}]` : "–");
 function evalSet(s) {
   const dev = !s.experiment_result;
-  const badge = dev ? `<span class="pill set-dev">Development set · not experiment results</span>` : `<span class="pill set-test">Test set</span>`;
+  const badge = dev ? `<span class="pill set-dev">${esc(t("Development set · not experiment results"))}</span>` : `<span class="pill set-test">${esc(t("Test set"))}</span>`;
   const runs = s.batches.map((b) => [`<code>${esc(String(b.batch_id).slice(0, 8))}</code>`, esc(b.variant), esc(fmtStamp(b.created_at)), esc(b.n)]);
   const auto = s.ladder.concat(s.variants.filter((v) => !s.ladder.includes(v))).map((v) => {
     const a = s.automatic[v];
-    if (!a) return [esc(v), "–", "–", "–", "–", "–", "–", "–", "–"];
+    if (!a) return [esc(v), "–", "–", "–", "–", "–", "–", "–", "–", "–"];
     return [esc(v), esc(a.n), `${pct(a.act_accuracy)} <span class="hint">n=${esc(a.act_accuracy_n)}</span>`, pct(a.question_target_accuracy),
             pct(a.coverage), pct(a.first_ask_share), pct(a.recall_at_k), pct(a.citation_coverage), pct(a.support_rate), esc(a.failed)];
   });
@@ -571,45 +590,46 @@ function evalSet(s) {
             p ? pct(p.diff) : "–", p ? ci(p.ci95) : "–", p ? esc(`${p.wins} / ${p.ties} / ${p.losses}`) : "–"];
   });
   const raters = Object.keys(s.raters || {});
-  let rated = `<p class="hint">No ratings for this set yet: rubric scores, their paired differences with bootstrap intervals and rater agreement appear after blind rating.</p>`;
+  let rated = `<p class="hint">${esc(t("No ratings for this set yet: rubric scores, their paired differences with bootstrap intervals and rater agreement appear after blind rating."))}</p>`;
   if (raters.length) {
     rated = raters.map((r) => {
       const x = s.raters[r];
       const rows = Object.entries(x.rated).map(([v, m]) => [esc(v), esc(m.n_scenarios), pct(m.rubric_total), pct(m.critical_rate), pct(m.k4_rate)]);
       const st = x.steps.map((q) => [`${esc(q.a)} − ${esc(q.b)}`, q.paired ? esc(q.paired.n_scenarios) : "–", q.paired ? `${pct(q.paired.rubric_diff)} ${ci(q.paired.rubric_ci95)}` : "–",
                                      q.paired ? `${pct(q.paired.critical_rate_diff)} ${ci(q.paired.critical_ci95)}` : "–", q.paired ? esc(q.paired.bootstrap) : "–"]);
-      return `<h4>Rater ${esc(r)}</h4>${table(["Variant", "Scenarios", "Rubric total (0–10)", "Critical error rate", "K4 rate"], rows)}
+      return `<h4>${esc(t("Rater {name}", {name: r}))}</h4>${table(["Variant", "Scenarios", "Rubric total (0–10)", "Critical error rate", "K4 rate"], rows)}
         ${table(["Step", "n", "Rubric difference [95% CI]", "Critical rate difference [95% CI]", "Bootstrap"], st)}`;
     }).join("");
   }
   let agree = "";
-  if (s.agreement && s.agreement.status === "mixed_sets") agree = `<p class="hint">Rater agreement is not shown: the two raters also rated items of another set.</p>`;
+  if (s.agreement && s.agreement.status === "mixed_sets") agree = `<p class="hint">${esc(t("Rater agreement is not shown: the two raters also rated items of another set."))}</p>`;
   else if (s.agreement) {
     agree = table(["Criterion", "Weighted κ (quadratic)", "Percent agreement"],
       ["r1", "r2", "r3", "r4", "r5"].map((c) => [c, pct(s.agreement[c].kappa_quadratic), pct(s.agreement[c].percent_agreement)])
         .concat([["critical (any)", pct(s.agreement.critical_any.kappa), pct(s.agreement.critical_any.percent_agreement)]]));
-    agree = `<h4>Agreement, ${esc(s.agreement.raters.join(" and "))} (n = ${esc(s.agreement.n_items)})</h4>` + agree;
+    agree = `<h4>${esc(t("Agreement, {raters} (n = {n})", {raters: s.agreement.raters.join(" / "), n: s.agreement.n_items}))}</h4>` + agree;
   }
   return `<section class="card eval-set ${dev ? "is-dev" : ""}" aria-labelledby="es-${esc(s.set)}">
-    <div class="eval-head"><h2 id="es-${esc(s.set)}">${esc(s.label.charAt(0).toUpperCase() + s.label.slice(1))}</h2>${badge}</div>
-    ${dev ? `<p class="dev-note">These runs use the development scenarios, which were used to build the system. They show that the pipeline and the measures work; they are not results of the experiment and support no conclusion about the planned comparisons.</p>` : ""}
-    <p class="hint">${esc(s.n_items)} answers in ${esc(s.batches.length)} runs; ${esc(s.n_rated_items)} rated.</p>
-    <h3 class="ctx-sub">Runs</h3>${table(["Run", "Variant", "Created", "Answers"], runs)}
-    <h3 class="ctx-sub">Ladder V0–V5 <span class="hint-inline">automatic measures</span></h3>
+    <div class="eval-head"><h2 id="es-${esc(s.set)}">${esc(t(s.label.charAt(0).toUpperCase() + s.label.slice(1)))}</h2>${badge}</div>
+    ${dev ? `<p class="dev-note">${esc(t("These runs use the development scenarios, which were used to build the system. They show that the pipeline and the measures work; they are not results of the experiment and support no conclusion about the planned comparisons."))}</p>` : ""}
+    <p class="hint">${esc(t("{n} answers in {runs} runs; {rated} rated.", {n: s.n_items, runs: s.batches.length, rated: s.n_rated_items}))}</p>
+    <h3 class="ctx-sub">${esc(t("Runs"))}</h3>${table(["Run", "Variant", "Created", "Answers"], runs)}
+    <h3 class="ctx-sub">${esc(t("Ladder V0–V5"))} <span class="hint-inline">${esc(t("automatic measures"))}</span></h3>
     ${table(["Variant", "n", "Act accuracy", "Question target", "Coverage", "First ask share", "Recall@k", "Citation coverage", "Support rate", "Failed"], auto)}
-    <h3 class="ctx-sub">Steps of the ladder <span class="hint-inline">act correctness, paired by scenario</span></h3>
+    <h3 class="ctx-sub">${esc(t("Steps of the ladder"))} <span class="hint-inline">${esc(t("act correctness, paired by scenario"))}</span></h3>
     ${table(["Step", "Comparison", "n", "Lower rung", "Upper rung", "Difference", "95% CI (bootstrap)", "Wins / ties / losses"], steps)}
-    <p class="hint">Percentile bootstrap of the mean paired difference, 10 000 resamples, seed 7; clusters of scenarios that share a parcel are resampled together (evalkit.report).</p>
-    <h3 class="ctx-sub">Rated measures and rater agreement</h3>${rated}${agree}
-    <details class="raw"><summary>Report tables as printed by <code>evalkit report --format md</code></summary><pre lang="sr-Latn">${esc(s.report_md)}</pre></details>
+    <p class="hint">${esc(t("Percentile bootstrap of the mean paired difference, 10 000 resamples, seed 7; clusters of scenarios that share a parcel are resampled together (evalkit.report)."))}</p>
+    <h3 class="ctx-sub">${esc(t("Rated measures and rater agreement"))}</h3>${rated}${agree}
+    <details class="raw"><summary>${esc(t("Report tables as printed by"))} <code>evalkit report --format md</code></summary><pre lang="sr-Latn">${esc(s.report_md)}</pre></details>
   </section>`;
 }
 function table(head, rows) {
-  if (!rows.length) return `<p class="hint">None.</p>`;
-  return `<div class="table-wrap" tabindex="0" role="region" aria-label="${esc(head.join(", "))}"><table><thead><tr>${head.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead>
+  if (!rows.length) return `<p class="hint">${esc(t("None."))}</p>`;
+  return `<div class="table-wrap" tabindex="0" role="region" aria-label="${esc(head.map((h) => t(h)).join(", "))}"><table><thead><tr>${head.map((h) => `<th scope="col">${esc(t(h))}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i ? `<td>${c}</td>` : `<th scope="row">${c}</th>`)).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 const GUARD = {clean: "clean", hits: "overlap found", absent: "no scenarios in this folder"};
+const LOCK_CHECK = {matches: "The current files match the lock.", differs: "{n} file(s) differ from the lock.", not_verifiable: "Cannot be verified here."};
 async function loadEval() {
   const out = $("e-out");
   out.innerHTML = `<div class="skeleton"></div>`;
@@ -618,18 +638,18 @@ async function loadEval() {
   catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
   const lock = o.lock || {};
   const lockText = lock.status === "locked"
-    ? `${esc(lock.tag)} · set ${esc(lock.set)} · ${esc(fmtStamp(lock.created_at))}<br><code class="hash">${esc(lock.combined_sha256)}</code><br><span class="hint">${esc({matches: "The current files match the lock.", differs: `${lock.n_differences} file(s) differ from the lock.`, not_verifiable: "Cannot be verified here."}[lock.check] || "")}</span>`
-    : lock.status === "not_locked" ? "Not locked yet: there is no protocol lock file. The test set runs only after the lock." : esc(lock.message || lock.status);
-  const guard = (o.guard || []).map((g) => [esc(g.set), esc(GUARD[g.status] || g.status), g.n_fields != null ? esc(g.n_fields) : "–",
+    ? `${esc(lock.tag)} · ${esc(t("set {name}", {name: lock.set}))} · ${esc(fmtStamp(lock.created_at))}<br><code class="hash">${esc(lock.combined_sha256)}</code><br><span class="hint">${esc(LOCK_CHECK[lock.check] ? t(LOCK_CHECK[lock.check], {n: lock.n_differences}) : "")}</span>`
+    : lock.status === "not_locked" ? esc(t("Not locked yet: there is no protocol lock file. The test set runs only after the lock.")) : esc(lock.message || lock.status);
+  const guard = (o.guard || []).map((g) => [esc(g.set), esc(tr(GUARD, g.status)), g.n_fields != null ? esc(g.n_fields) : "–",
     g.n_hits != null ? esc(g.n_hits) : "–", g.n_corpus_passages != null ? esc(g.n_corpus_passages) : "–"]);
   const sets = o.sets.length ? o.sets.map(evalSet).join("")
-    : `<div class="card">${emptyState("No evaluation runs in this database", "Run the development set with python -m smartagri.evalkit run --set dev. The test set runs only under the locked protocol; until then no experiment results exist.")}</div>`;
-  out.innerHTML = `${o.has_test_results ? "" : `<div class="banner eval-banner" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16v.5"/></svg><p>No test-set results yet. Nothing on this page is a result of the experiment.</p></div>`}
+    : `<div class="card">${emptyState("No evaluation runs in this database", t("Run the development set with python -m smartagri.evalkit run --set dev. The test set runs only under the locked protocol; until then no experiment results exist."))}</div>`;
+  out.innerHTML = `${o.has_test_results ? "" : `<div class="banner eval-banner" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16v.5"/></svg><p>${esc(t("No test-set results yet. Nothing on this page is a result of the experiment."))}</p></div>`}
     <div class="eval-grid">
-      <section class="card" aria-labelledby="lock-title"><h2 id="lock-title">Protocol lock</h2><p>${lockText}</p><p class="hint"><code>${esc(o.commands.lock_check)}</code></p></section>
-      <section class="card" aria-labelledby="guard-title"><h2 id="guard-title">Leakage guard</h2>
+      <section class="card" aria-labelledby="lock-title"><h2 id="lock-title">${esc(t("Protocol lock"))}</h2><p>${lockText}</p><p class="hint"><code>${esc(o.commands.lock_check)}</code></p></section>
+      <section class="card" aria-labelledby="guard-title"><h2 id="guard-title">${esc(t("Leakage guard"))}</h2>
         ${table(["Set", "Result", "Text fields", "Overlaps", "Corpus passages"], guard)}
-        <p class="hint">Word 8-gram overlap of scenario texts with the corpus (and, for the test set, with the development scenarios); counts only, no scenario text is shown. The git-isolation checks run with <code>${esc(o.commands.guard)}</code>.</p></section>
+        <p class="hint">${esc(t("Word 8-gram overlap of scenario texts with the corpus (and, for the test set, with the development scenarios); counts only, no scenario text is shown. The git-isolation checks run with"))} <code>${esc(o.commands.guard)}</code>.</p></section>
     </div>
     ${sets}`;
 }
@@ -667,12 +687,12 @@ function renderAccount() {
   const u = account.user;
   $("account").hidden = !account.enabled;
   $("account-icon").hidden = !account.enabled;
-  $("account-name").textContent = u ? u.email : "Sign in";
-  $("account-sub").textContent = u ? "Signed in" : "Parcels are not saved";
+  $("account-name").textContent = u ? u.email : t("Sign in");
+  $("account-sub").textContent = u ? t("Signed in") : t("Parcels are not saved");
   $("account-avatar").textContent = u ? initial(u.email) : "";
   $("account-avatar").classList.toggle("anon", !u);
-  $("account-open").setAttribute("aria-label", u ? `Account: ${u.email}` : "Account: sign in or create an account");
-  $("account-icon").setAttribute("aria-label", u ? `Account: ${u.email}` : "Account: sign in");
+  $("account-open").setAttribute("aria-label", u ? t("Account: {email}", {email: u.email}) : t("Account: sign in or create an account"));
+  $("account-icon").setAttribute("aria-label", u ? t("Account: {email}", {email: u.email}) : t("Account: sign in"));
   $("account-icon").classList.toggle("signed-in", !!u);
   showBanner();
 }
@@ -683,16 +703,16 @@ function showBanner() {
   const n = parcelsCache.length;
   $("anon-banner").hidden = !(unsaved() && n);
   $("anon-banner-text").textContent = n === 1
-    ? "Temporary — this parcel is kept only for this browser session. Create an account to save it."
-    : "Temporary — these parcels are kept only for this browser session. Create an account to save them.";
-  $("banner-signup").textContent = n === 1 ? "Save parcel" : "Save parcels";
+    ? t("Temporary — this parcel is kept only for this browser session. Create an account to save it.")
+    : t("Temporary — these parcels are kept only for this browser session. Create an account to save them.");
+  $("banner-signup").textContent = n === 1 ? t("Save parcel") : t("Save parcels");
   if (parcel) $("p-temp").hidden = !unsaved();
 }
 function accPane(id) {
   for (const p of ACC_PANES) $(p).hidden = p !== id;
   const titles = {"acc-auth": "Account", "acc-forgot-form": "Reset password", "acc-reset-form": "New password",
                   "acc-menu": "Account", "acc-notice": "Account"};
-  $("acc-title").textContent = titles[id];
+  $("acc-title").textContent = t(titles[id]);
 }
 function accSet(mode) {
   accMode = mode;
@@ -700,10 +720,10 @@ function accSet(mode) {
   $("acc-tab-in").setAttribute("aria-selected", String(!up)); $("acc-tab-in").tabIndex = up ? -1 : 0;
   $("acc-tab-up").setAttribute("aria-selected", String(up)); $("acc-tab-up").tabIndex = up ? 0 : -1;
   $("acc-form").setAttribute("aria-labelledby", up ? "acc-tab-up" : "acc-tab-in");
-  $("acc-submit").textContent = up ? "Create account" : "Sign in";
+  $("acc-submit").textContent = up ? t("Create account") : t("Sign in");
   $("acc-password").autocomplete = up ? "new-password" : "current-password";
   $("acc-pw-hint").hidden = !up;
-  $("acc-claim").textContent = "Your parcels from this browser session are saved to your account.";
+  $("acc-claim").textContent = t("Your parcels from this browser session are saved to your account.");
   $("acc-claim").hidden = !(parcelsCache.length);
   $("acc-forgot").hidden = up || !account.email;
   $("acc-msg").textContent = "";
@@ -761,13 +781,13 @@ $("acc-form").onsubmit = async (e) => {
   e.preventDefault();
   const btn = $("acc-submit"), email = $("acc-email").value.trim(), password = $("acc-password").value;
   $("acc-msg").textContent = "";
-  if (!email || !password) { $("acc-msg").textContent = "Enter your email and password."; return; }
-  if (accMode === "signup" && password.length < 10) { $("acc-msg").textContent = "Use a password of at least 10 characters."; return; }
+  if (!email || !password) { $("acc-msg").textContent = t("Enter your email and password."); return; }
+  if (accMode === "signup" && password.length < 10) { $("acc-msg").textContent = t("Use a password of at least 10 characters."); return; }
   btn.setAttribute("aria-busy", "true");
   try {
     const r = await api(accMode === "signup" ? "/auth/signup" : "/auth/signin", {method: "POST", body: JSON.stringify({email, password})});
     $("acc-password").value = "";
-    if (r.verify_sent) { notice(`We have sent a confirmation link to ${email}. Open it, then sign in. Until then your parcels are kept only for this browser session.`); return; }
+    if (r.verify_sent) { notice(t("We have sent a confirmation link to {email}. Open it, then sign in. Until then your parcels are kept only for this browser session.", {email})); return; }
     $("account-sheet").close();
     await afterAuth(r.user);
   } catch (err) { $("acc-msg").textContent = err.message; }
@@ -776,11 +796,11 @@ $("acc-form").onsubmit = async (e) => {
 $("acc-forgot-form").onsubmit = async (e) => {
   e.preventDefault();
   const email = $("acc-forgot-email").value.trim();
-  if (!email) { $("acc-forgot-msg").textContent = "Enter your email."; return; }
+  if (!email) { $("acc-forgot-msg").textContent = t("Enter your email."); return; }
   $("acc-forgot-send").setAttribute("aria-busy", "true");
   try {
     await api("/auth/password/forgot", {method: "POST", body: JSON.stringify({email})});
-    notice(`If an account exists for ${email}, a link to choose a new password is on its way. It is valid for one hour.`);
+    notice(t("If an account exists for {email}, a link to choose a new password is on its way. It is valid for one hour.", {email}));
   } catch (err) { $("acc-forgot-msg").textContent = err.message; }
   finally { $("acc-forgot-send").removeAttribute("aria-busy"); }
 };
@@ -788,13 +808,13 @@ let resetToken = "";
 $("acc-reset-form").onsubmit = async (e) => {
   e.preventDefault();
   const password = $("acc-reset-password").value;
-  if (password.length < 10) { $("acc-reset-msg").textContent = "Use a password of at least 10 characters."; return; }
+  if (password.length < 10) { $("acc-reset-msg").textContent = t("Use a password of at least 10 characters."); return; }
   $("acc-reset-save").setAttribute("aria-busy", "true");
   try {
     const r = await api("/auth/password/reset", {method: "POST", body: JSON.stringify({token: resetToken, password})});
     $("acc-reset-password").value = "";
     await afterAuth(r.user);
-    notice("Your password has been changed and you are signed in.");
+    notice(t("Your password has been changed and you are signed in."));
   } catch (err) { $("acc-reset-msg").textContent = err.message; }
   finally { $("acc-reset-save").removeAttribute("aria-busy"); }
 };
@@ -811,12 +831,12 @@ $("acc-delete").onclick = () => {
 $("acc-delete-form").onsubmit = async (e) => {
   e.preventDefault();
   const password = $("acc-delete-password").value;
-  if (!password) { $("acc-delete-msg").textContent = "Enter your password to confirm."; return; }
+  if (!password) { $("acc-delete-msg").textContent = t("Enter your password to confirm."); return; }
   $("acc-delete-confirm").setAttribute("aria-busy", "true");
   try {
     await api("/auth/account/delete", {method: "POST", body: JSON.stringify({password})});
     await afterAuth(null);
-    notice("Your account and its data have been deleted.");
+    notice(t("Your account and its data have been deleted."));
   } catch (err) { $("acc-delete-msg").textContent = err.message; }
   finally { $("acc-delete-confirm").removeAttribute("aria-busy"); }
 };
@@ -833,7 +853,7 @@ async function accountLink(kind, token) {
   }
   try { await api("/auth/verify", {method: "POST", body: JSON.stringify({token})}); openAccount("signin");
         $("acc-msg").textContent = ""; $("acc-claim").hidden = false;
-        $("acc-claim").textContent = "Your email is confirmed. Sign in to continue."; }
+        $("acc-claim").textContent = t("Your email is confirmed. Sign in to continue."); }
   catch (err) { notice(err.message); }
 }
 
@@ -872,4 +892,4 @@ $("settings-form").onsubmit = () => {
   if (JSON.stringify(SmartMap.tileSettings()) !== before || langChanged) location.reload();   // maps and texts are rebuilt
 };
 
-init().catch((e) => { $("health").classList.add("down"); $("health").textContent = "The research API is not reachable: " + e.message; });
+init().catch((e) => { $("health").classList.add("down"); $("health").textContent = t("The research API is not reachable: ") + e.message; });

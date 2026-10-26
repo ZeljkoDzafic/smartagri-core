@@ -122,7 +122,8 @@ def water_balance(parcel: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> 
     w = profile.get("weather") or {}
     days = w.get("daily") or []
     out.update(profile_id=profile["id"], as_of=profile["as_of"], weather_source=w.get("source"),
-               weather_fetched_at=w.get("fetched_at"))
+               weather_fetched_at=w.get("fetched_at"),
+               weather_retrospective_constructed=bool(w.get("retrospective_constructed")))
     if w.get("status") != "ok" or not days:
         out["message"] = w.get("message") or "no_weather"
         return out
@@ -150,6 +151,8 @@ def water_balance(parcel: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> 
     out["assumptions"].append("deficit_starts_at_zero")
     if awc is None:
         out["assumptions"].append("no_taw_cap")
+    else:
+        out["assumptions"].append("taw_cap")                # TAW = AWC (soil texture or reported) x Zr (stage)
     out["stage_method"] = stage_method
 
     rows: List[Dict[str, Any]] = []

@@ -9,7 +9,9 @@
   const DAY = 86400000;
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
   const time = (d) => Date.parse(String(d).slice(0, 10) + "T00:00:00Z");
-  const dayLabel = (t) => new Date(t).toLocaleDateString("en-GB", {day: "numeric", month: "short", timeZone: "UTC"});
+  const tr = (key) => (window.SmartI18n ? SmartI18n.t(key) : key);
+  const intl = () => (window.SmartI18n ? SmartI18n.intl() : "en-GB");
+  const dayLabel = (t) => new Date(t).toLocaleDateString(intl(), {day: "numeric", month: "short", timeZone: "UTC"});
   let uid = 0;
   const drawn = new Set();
 
@@ -21,7 +23,7 @@
   }
   function fmtNum(x, digits) {
     if (x == null || Number.isNaN(x)) return "–";
-    return Number(x).toLocaleString("en", {maximumFractionDigits: digits == null ? 1 : digits});
+    return Number(x).toLocaleString(intl(), {maximumFractionDigits: digits == null ? 1 : digits});
   }
 
   // opts: {title, desc, unit, rows, x, series: [{key, kind: "bar"|"line"|"dot", cls, label, lo, hi, hollow(row)}],
@@ -54,7 +56,7 @@
       if (f >= 0) {
         const fx = X(ts[f] - DAY / 2);
         parts.push(`<rect class="ch-forecast" x="${fx.toFixed(1)}" y="${m.top}" width="${(m.left + W - fx).toFixed(1)}" height="${H}"/>`);
-        parts.push(`<text class="ch-note" x="${(fx + 4).toFixed(1)}" y="${m.top + 11}">Forecast</text>`);
+        parts.push(`<text class="ch-note" x="${(fx + 4).toFixed(1)}" y="${m.top + 11}">${esc(tr("Forecast"))}</text>`);
       }
     }
     // grid and y axis
@@ -82,7 +84,7 @@
     const bw = Math.max(2, W / Math.max(1, days) - 2);
     const unit = opts.unit ? " " + opts.unit : "";
     for (const s of opts.series) {
-      const tip = (r, v) => `${dayLabel(time(r[opts.x]))}${r[opts.forecast] ? " (forecast)" : ""}: ${s.label} ${fmtNum(v, opts.digits)}${unit}`;
+      const tip = (r, v) => `${dayLabel(time(r[opts.x]))}${r[opts.forecast] ? " (" + tr("forecast") + ")" : ""}: ${s.label} ${fmtNum(v, opts.digits)}${unit}`;
       if (s.kind === "bar") {
         rows.forEach((r, i) => {
           if (r[s.key] == null) return;

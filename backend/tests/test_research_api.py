@@ -472,3 +472,145 @@ def test_a_reply_on_a_parcel_with_a_decision_date_is_dated_on_it(client, store):
     assert store.get_parcel(pid)["agronomic"]["soil_water_reported_on"] == "2026-07-14"
     assert r2["question"] == "Dry"                                       # the option as the user saw it
     assert all((d.get("age_days") or 0) >= 0 for d in r2["answer"]["data_used"])
+
+
+# ---------------------------------------------------------------- soil texture (water balance capped at TAW)
+def test_soil_texture_is_optional_and_listed_from_the_core_table(client):
+    from smartagri import config
+    awc = config.load("rules")["soil"]["awc_by_texture_mm_m"]
+    m = client.get("/api/meta").json()
+    assert [(x["value"], x["awc_mm_m"]) for x in m["soil_textures"]] == list(awc.items())
+    sr = client.get("/api/meta", headers={"X-SmartAgri-Lang": "sr-Latn"}).json()["soil_textures"]
+    assert next(x["label"] for x in sr if x["value"] == "loam") == "ilovača"
+    plain = client.post("/api/parcels", json={"name": "Bez teksture", "geometry": SQUARE, "sowing_date": "2026-04-22"})
+    assert plain.status_code == 201 and "soil_texture" not in plain.json()["agronomic"]
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="n-texture"' in page
+
+
+def test_water_balance_is_capped_at_taw_with_a_texture(client):
+    def balance(texture):
+        body = {"name": "Njiva", "geometry": SQUARE, "sowing_date": (datetime.now() - timedelta(days=78)).date().isoformat()}
+        if texture:
+            body["soil_texture"] = texture
+        pid = client.post("/api/parcels", json=body).json()["id"]
+        client.post("/api/parcels/%s/profile/refresh" % pid)
+        return pid, client.get("/api/parcels/%s/water-balance" % pid).json()
+    pid, capped = balance("loam")
+    assert "taw_cap" in capped["assumptions"] and "no_taw_cap" not in capped["assumptions"]
+    from smartagri.research_api.views import _root_depth
+    for r in capped["rows"]:
+        assert r["taw_mm"] == round(160 * _root_depth(r["bbch"]), 1) and r["deficit_mm"] <= r["taw_mm"]
+    assert any(r["deficit_mm"] == r["taw_mm"] for r in capped["rows"])          # 5 mm/day ET0, 0.5 mm rain: reached
+    quality = {q["input"]: q for q in client.get("/api/parcels/%s/profile" % pid).json()["quality"]}
+    assert quality["soil_awc"]["origin"] == "derived"                            # the texture also feeds q (core)
+    _, uncapped = balance(None)
+    assert "no_taw_cap" in uncapped["assumptions"] and uncapped["taw_mm"] is None
+    assert max(r["deficit_mm"] for r in uncapped["rows"]) > max(r["deficit_mm"] for r in capped["rows"])
+
+
+# ---------------------------------------------------------------- interface language catalogue (static/i18n.js)
+def _catalogue():
+    import json
+    text = (STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    return json.loads(text[text.index("/*CATALOGUE*/") + len("/*CATALOGUE*/"):text.index("/*END*/")])
+
+
+# Names, codes and technical terms that read the same in both languages.
+I18N_SAME = {"SmartAgri", "q", "C", "GeoJSON", "English", "Srpski (latinica)", "T max", "T min", "ET0", "ETc", "BBCH",
+             "Kc", "p10", "p90", "obs_date", "valid_px_ratio", "cloud_flag", "n", "r1", "r2", "r3", "r4", "r5", "°C", "mm",
+             "NDVI"}
+
+
+def _ui_keys():
+    """Every interface string of index.html (outside the blind rating screen) and of app.js / charts.js."""
+    import re
+    from html.parser import HTMLParser
+
+    class Page(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack, self.keys, self.blocks = [], set(), set()
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if a.get("data-i18n-html"):
+                self.blocks.add(a["data-i18n-html"])
+            skip = a.get("id") == "v-rate" or tag in ("script", "style", "code", "textarea") or "data-i18n-html" in a
+            if tag not in ("meta", "link", "input", "img", "br", "path", "circle", "rect"):
+                self.stack.append((tag, skip))
+            if not any(s for _, s in self.stack) and tag != "meta":
+                for k in ("placeholder", "aria-label", "title"):
+                    if a.get(k) and re.search("[A-Za-z]", a[k]) and not a[k].startswith(("{", "20")):
+                        self.keys.add(a[k])
+
+        def handle_endtag(self, tag):
+            while self.stack:
+                if self.stack.pop()[0] == tag:
+                    break
+
+        def handle_data(self, data):
+            text = " ".join(data.split())
+            if text and re.search("[A-Za-z]", text) and not any(s for _, s in self.stack):
+                self.keys.add(text)
+    page = Page()
+    page.feed((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    start = script.index('$("r-next").onclick')
+    script = script[:start] + script[script.index("// ------", start):]            # the rating block is protocol
+    keys = set(page.keys)
+    s = r'"((?:[^"\\]|\\.)*)"'
+    for pattern in (r"\bt\(" + s, r"emptyState\(" + s, r'layer\("[^"]*", ' + s, r"section\(" + s,
+                    r'section\([^\n]*?, "", ' + s, r"^\s+\[" + s + r",", r"dataTable\(" + s):
+        keys.update(re.findall(pattern, script, re.M))
+    for name in ("ACTS", "ADVICE", "INPUTS", "RELIABILITY", "ORIGIN", "APPLICABILITY", "ASSUMPTIONS", "GUARD", "LOCK_CHECK",
+                 "titles"):
+        block = re.search(r"const %s = \{(.*?)\};" % name, script, re.S).group(1)
+        keys.update(re.findall(r':\s*' + s, block))
+    for name in ("NO_PROFILE", "RECONSTRUCTED"):
+        keys.add(re.search(r"const %s = %s;" % (name, s), script).group(1))
+    for arr in re.findall(r"(?:table|dataTable)\((?:\"[^\"]*\", )?\[((?:\"[^\"]*\"(?:, )?)+)\]", script):
+        keys.update(re.findall(s, arr))
+    keys.update({"Development set", "Test set", "sufficient", "partial", "insufficient", "disabled", "cdse", "yes", "no"})
+    from smartagri.core.tools.etc import SOURCE as ETC_SOURCE
+    from smartagri.research_api.views import BALANCE_SOURCE
+    keys.update({ETC_SOURCE, BALANCE_SOURCE})
+    charts = (STATIC_DIR / "charts.js").read_text(encoding="utf-8")
+    keys.update(re.findall(r"\btr\(" + s, charts))
+    return {k for k in keys if "{" not in k or re.search(r"\{\w+\}", k)} - I18N_SAME, page.blocks
+
+
+def test_every_interface_string_has_a_local_translation():
+    sr = _catalogue()
+    keys, blocks = _ui_keys()
+    assert len(keys) > 250
+    missing = sorted(k for k in keys if k not in sr)
+    assert not missing, missing
+    assert blocks and all(b in sr for b in blocks)
+    import re
+    for k, v in sr.items():                     # placeholders survive translation
+        assert sorted(re.findall(r"\{\w+\}", k)) == sorted(re.findall(r"\{\w+\}", v)) or k.startswith("html:"), k
+
+
+def test_local_catalogue_has_no_english_left():
+    import re
+    english = {"the", "and", "of", "is", "are", "with", "from", "for", "not", "yet", "your", "this", "that", "data",
+               "parcel", "parcels", "answer", "answers", "weather", "rain", "rainfall", "forecast", "growth", "stage",
+               "soil", "water", "none", "only", "shown", "click", "press", "missing", "map", "draw", "save", "account",
+               "password", "email", "sign", "deficit by", "set", "run", "runs", "rated", "file", "files", "days"}
+    for key, value in _catalogue().items():
+        text = re.sub(r"<code>.*?</code>|\{\w+\}|python -m [\w.]+(?: [\w-]+)*|[\w.]*_[\w.]*", " ", value)
+        words = set(re.findall(r"[A-Za-z]+", text.lower()))
+        assert not words & english, (key, value, words & english)
+        ijekavian = re.compile(r"\b(vrijem|prije|mjer|mjest|primjen|promjen|vrijed|lijep|bijel|riječ|sjem|mjesec|cijel|"
+                               r"svjetl|gdje|djel|vjer|snijeg|tjed|slijed|procijen|cijen|uvijek)", re.I)
+        assert not ijekavian.search(value), (key, value)                                # ekavian
+    assert "Faza razvoja (BBCH)" in _catalogue().values() and _catalogue()["Water balance"] == "Vodni bilans"
+
+
+def test_blind_rating_screen_is_never_translated():
+    text = (STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    assert 'closest("#v-rate")' in text
+    sr = _catalogue()
+    for word in ("Slepo ocenjivanje", "Sledeća stavka", "Ocenjivač", "Sačuvaj ocenu"):
+        assert word not in sr                    # the protocol screen keeps its own wording, not catalogue entries

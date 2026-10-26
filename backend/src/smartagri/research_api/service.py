@@ -65,7 +65,10 @@ class ResearchService:
         inputs = {k: {"label": lab.INPUTS[k], "options": lab.OPTIONS.get(k, [])} for k in lab.INPUTS}
         return {"variants": sorted(self.variants), "default_variant": DEFAULT_VARIANT, "locale": current(),
                 "advice_types": [{"value": k, "label": lab.ADVICE_TYPES[k]} for k in lab.USER_ADVICE_TYPES],
-                "inputs": inputs, "config_hashes": config.config_hashes(), "corpus_hash": self.corpus.hash}
+                "inputs": inputs, "config_hashes": config.config_hashes(), "corpus_hash": self.corpus.hash,
+                # soil texture classes of the core AWC table (config/rules.yaml, soil.awc_by_texture_mm_m), read only
+                "soil_textures": [{"value": k, "label": lab.TEXTURES.get(k, k), "awc_mm_m": v}
+                                  for k, v in config.load("rules")["soil"]["awc_by_texture_mm_m"].items()]}
 
     # ------------------------------------------------------------ parcels
     @staticmethod
