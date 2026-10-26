@@ -7,6 +7,7 @@ from .. import config
 from .applicability import applicability, select_budget
 from .asking import choose_question
 from .conflicts import detect as detect_conflicts
+from .parcel_features import input_conflicts
 from .policy import decide as decide_act
 from .quality import annotate_quality, values
 from .rules import decide_action_core, soil_status
@@ -78,4 +79,5 @@ def decide(ctx: Context, passages: List[Passage], variant: VariantConfig, budget
         sufficiency=suff, question=question, policy=policy,
         core_action=decide_action_core(t, vals) if in_scope else None,
         tools=run_tools(t, vals), config_hashes=config.config_hashes(), conflicts=conflicts,
+        input_conflicts=input_conflicts(q),
     )

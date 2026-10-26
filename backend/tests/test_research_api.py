@@ -614,3 +614,45 @@ def test_blind_rating_screen_is_never_translated():
     sr = _catalogue()
     for word in ("Slepo ocenjivanje", "Sledeća stavka", "Ocenjivač", "Sačuvaj ocenu"):
         assert word not in sr                    # the protocol screen keeps its own wording, not catalogue entries
+
+
+# Strings of the parcel-feature notices (docs/parcel-features.md): the stage-conflict notice and the NDVI mask fields of
+# the data-and-reliability card, the provenance lines and the extra columns of the NDVI table.
+PARCEL_FEATURE_STRINGS = (
+    "Declared crop (checked)", "Field state (bare soil, harvest)",
+    "Stage conflict: the growth stage in use (BBCH {bbch}, {origin}) lies outside the satellite estimate "
+    "(BBCH {lo}–{hi}, tolerance ±{tol}). Stage reliability is capped at low until the stage is confirmed.",
+    "Field marker conflict: a harvest is detected, but the advice assumes a standing crop. Stage reliability is capped at low.",
+    "Field marker conflict: bare soil is detected now, but the stage in use is BBCH {bbch}. Stage reliability is capped at low.",
+    "Crop check: the producer's classifier disagrees with the declared crop (probability of maize {p}). "
+    "Crop reliability is capped at low.",
+    "cloud or shadow on the parcel", "cloud and shadow {pct} %", "{n} interior pixels", "{pct} % boundary (mixed) pixels",
+    "buffer {m} m", "outliers left out: {dates}", "Grade lowered by the quality thresholds (development defaults)",
+    "not reported for this observation", "Parcel features", "accepted", "rejected", "no document for this parcel and day",
+    "Producer", "Document sha256", "Satellite stage estimate", "BBCH {lo}–{hi} ({method}), {n} clear observations",
+    "no estimate ({status})", "Cloud and shadow share", "Interior pixels", "Mixed-pixel share", "Outlier",
+)
+
+
+def test_the_parcel_feature_strings_are_complete_in_the_english_source_and_the_local_catalogue():
+    import re
+    sr = _catalogue()
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    for key in PARCEL_FEATURE_STRINGS:
+        assert key in sr and sr[key].strip() and sr[key] != key, key                      # translated, not copied
+        assert sorted(re.findall(r"\{\w+\}", key)) == sorted(re.findall(r"\{\w+\}", sr[key])), key    # same placeholders
+        assert '"%s"' % key.replace('"', '\\"') in script, "unused string: " + key       # no dead catalogue entry
+    keys, _blocks = _ui_keys()
+    assert set(PARCEL_FEATURE_STRINGS) <= keys | {"Producer", "accepted", "rejected"}      # found by the completeness scan
+    for word in ("sukob", "Pokazatelji parcele"):
+        assert any(word.lower() in v.lower() for v in sr.values())                         # local wording present
+    assert "Stage conflict" in script and "conflictNotice" in script and "ndviChips" in script
+
+
+def test_the_client_names_the_new_inputs_in_both_languages():
+    import re
+    sr = _catalogue()
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    block = re.search(r"const INPUTS = \{(.*?)\};", script, re.S).group(1)
+    for name, english in (("crop_identity", "Declared crop (checked)"), ("field_state", "Field state (bare soil, harvest)")):
+        assert '%s: "%s"' % (name, english) in block and sr[english]

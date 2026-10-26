@@ -11,6 +11,32 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 
 ## [Unreleased]
 
+### Added
+- Parcel features: the `parcel_features` data contract (schema version 1, JSON Schema in `docs/parcel-features.md` and in
+  `core/parcel_features.py`), a validator, a geometry hash and the producer's hashes, a generic provider interface that
+  reads precomputed files (`providers/parcel_features.py`, `SMARTAGRI_PARCEL_FEATURES_DIR`), loading from scenario files
+  (`context.S.parcel_features`) and from the research API. Only observations dated before the decision moment are
+  accepted. The features live inside S, so the `V5-satellite` ablation removes them.
+- NDVI observation quality metadata: cloud and shadow shares, `cloud_flag` (now stored), interior buffer and pixel
+  counts, mixed-pixel share and temporal-outlier screening; q lowers the grade by thresholds in
+  `config/parcel_features.yaml` (development defaults). The web client shows them in the data-and-reliability card and
+  the NDVI table (English and Serbian catalogues).
+- Stage-conflict rule in q: when the stage in use disagrees with a satellite stage interval beyond a tolerance, the
+  stage reliability is capped at low and the conflict is recorded (quality row, `Decision.input_conflicts`, provenance).
+  It acts through σ, α and π; it is dormant until a document carries a stage estimate.
+- Consumer side of a crop plausibility check and of bare-soil and harvest markers, switched off
+  (`enabled: false`): recorded in the provenance, no effect on any decision.
+- `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
+
+### Changed
+- `config/parcel_features.yaml` is a new configuration file: it is hashed in `config.config_hashes()` (a seventh key) and
+  bound by the protocol lock, so the lock fingerprint and every run's `config_hashes` differ from 0.2.0. No act of the
+  development scenarios changes; the dev-set decisions are identical apart from the new hash.
+- `Quality` has an optional `detail`, `Observation` an optional `detail`, `NdviObservation` optional quality fields,
+  `SatelliteSummary` an optional `parcel_features`, `Decision` an `input_conflicts` list; all default to empty.
+- π reads the crop check through the input `crop_identity` when it exists (only when the crop plausibility check is
+  switched on); otherwise the crop check is unchanged.
+
 ## [0.2.0] - 2026-10-26
 
 This version changes the decision model's ablation ladder, the evaluation harness and the configuration that the

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "parcel_id": "t",
+  "geometry_sha256": "8add6fa5641dd6859ced242634d9bdc4341ea9759ce4b950e01147c47954c23e",
+  "as_of": "2026-07-12T06:00:00",
+  "computed_at": "2026-07-12T07:30:00",
+  "source_obs_dates": [
+    "2026-07-04",
+    "2026-07-09"
+  ],
+  "producer": {
+    "name": "example-producer",
+    "version": "1.0.0",
+    "commit": "abc1234",
+    "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "model_sha256": null,
+    "run_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "data_access": "stac-cog"
+  },
+  "ndvi_observations": [
+    {
+      "obs_date": "2026-07-04",
+      "median": 0.71,
+      "p10": 0.62,
+      "p90": 0.8,
+      "usable_share": 0.9,
+      "n_px_total": 60,
+      "n_px_interior": 44,
+      "n_px_valid": 40,
+      "interior_buffer_m": 10.0,
+      "mixed_px_share": 0.27,
+      "cloud_px_share": 0.05,
+      "shadow_px_share": 0.02,
+      "cloud_flag": false,
+      "temporal_outlier": false,
+      "mask_layers": [
+        "scl",
+        "dilation_2px"
+      ]
+    },
+    {
+      "obs_date": "2026-07-09",
+      "median": 0.74,
+      "p10": 0.66,
+      "p90": 0.81,
+      "usable_share": 0.95,
+      "n_px_total": 60,
+      "n_px_interior": 44,
+      "n_px_valid": 42,
+      "interior_buffer_m": 10.0,
+      "mixed_px_share": 0.27,
+      "cloud_px_share": 0.0,
+      "shadow_px_share": 0.0,
+      "cloud_flag": false,
+      "temporal_outlier": false,
+      "mask_layers": [
+        "scl",
+        "dilation_2px"
+      ]
+    }
+  ],
+  "stage_estimate": {
+    "method": "example_causal_v1",
+    "status": "estimated",
+    "bbch_min": 60,
+    "bbch_max": 69,
+    "greenup_date": "2026-05-06",
+    "greenup_date_ci_days": [
+      -3,
+      4
+    ],
+    "last_clear_obs_date": "2026-07-09",
+    "n_clear_obs": 9,
+    "longest_gap_days": 10.0
+  },
+  "crop_plausibility": {
+    "season_year": 2026,
+    "cutoff_doy": 190,
+    "p_maize": 0.93,
+    "prediction_set": [
+      "maize"
+    ],
+    "alpha": 0.1,
+    "coverage_guarantee": false,
+    "aoa_fraction": 0.97,
+    "n_px_interior": 44,
+    "decision": "agreement",
+    "transfer_validated": false,
+    "training_overlap_m": 1200.0
+  },
+  "events": {
+    "data_sufficiency": "s2",
+    "bare_soil_now": false,
+    "bare_soil_since": null,
+    "harvest_detected": false,
+    "harvest_date": null,
+    "harvest_evidence": "",
+    "confidence": 0.7,
+    "greenup_date": "2026-05-06"
+  }
+}

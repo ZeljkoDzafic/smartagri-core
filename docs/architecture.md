@@ -55,7 +55,7 @@ repeated byte for byte from a cache snapshot.
 |---|---|
 | `core/` | types, π, q, σ, α, δ, rules, conflicts, grounding, FAO-56 tools |
 | `retrieval/` | corpus loading, BM25, vectors, fusion, ingest, coverage |
-| `providers/` | Open-Meteo weather, Sentinel-2 statistics |
+| `providers/` | Open-Meteo weather, Sentinel-2 statistics, precomputed parcel features read from files (see [parcel-features.md](parcel-features.md)) |
 | `pipeline/` | intent, profile, run (variants), generation, judge, LLM chat baseline |
 | `llm/` | provider interface and adapters (template, Anthropic SDK, OpenAI-compatible, local CLI, HTTP bridge) |
 | `evalkit/` | scenario runner, rating queue, reports, leakage guard, sweep, protocol lock |

@@ -164,13 +164,47 @@ class NdviObservation(Record):
     median: Optional[float] = None
     p10: Optional[float] = None
     p90: Optional[float] = None
-    usable_share: float = 0.0
+    usable_share: float = 0.0              # = valid_px_ratio: usable pixels / pixels considered, in [0, 1]
+    # Optional quality metadata (parcel_features, docs/parcel-features.md). None = not reported; an observation that
+    # carries none of them is graded exactly as before.
+    cloud_px_share: Optional[float] = None     # share of the interior pixels masked as cloud, in [0, 1]
+    shadow_px_share: Optional[float] = None    # share masked as cloud shadow, in [0, 1]
+    cloud_flag: Optional[bool] = None          # a cloud or shadow (after dilation) touches or lies in the parcel
+    interior_buffer_m: Optional[float] = None  # metres removed from the boundary before the statistics
+    n_px_total: Optional[int] = None
+    n_px_interior: Optional[int] = None
+    n_px_valid: Optional[int] = None
+    mixed_px_share: Optional[float] = None     # share of the parcel's pixels that are boundary (mixed) pixels
+    temporal_outlier: Optional[bool] = None    # screened out by the producer's multi-temporal check
+    mask_layers: Optional[List[str]] = None    # masks applied, e.g. ["scl", "cloud_probability", "dilation"]
+
+
+@dataclass
+class ParcelFeatures(Record):
+    """A validated `parcel_features` document (schema_version 1) from an external parcel feature provider.
+
+    Built only by `core.parcel_features.parse`, which checks the contract, the decision moment and, when the
+    geometry is known, its hash. The producer's own hashes travel with it as data."""
+    schema_version: int = 1
+    parcel_id: str = ""
+    geometry_sha256: str = ""
+    as_of: str = ""
+    computed_at: str = ""
+    source_obs_dates: List[str] = field(default_factory=list)
+    producer: Dict[str, Any] = field(default_factory=dict)
+    ndvi_observations: List[NdviObservation] = field(default_factory=list)
+    stage_estimate: Optional[Dict[str, Any]] = None
+    crop_plausibility: Optional[Dict[str, Any]] = None
+    events: Optional[Dict[str, Any]] = None
+    document_sha256: str = ""                  # sha256 of the canonical JSON of the document as received
 
 
 @dataclass
 class SatelliteSummary(Record):
     ndvi_series: List[NdviObservation] = field(default_factory=list)
     scene_ids: List[str] = field(default_factory=list)
+    # Inside S on purpose: the ablation that removes the satellite context removes the features with it.
+    parcel_features: Optional[ParcelFeatures] = None
 
 
 @dataclass
@@ -201,6 +235,15 @@ class Context(Record):
         as_of = d.get("as_of")
         if as_of is not None and not isinstance(as_of, datetime):
             as_of = datetime.fromisoformat(str(as_of))
+        if s.get("parcel_features") is not None:
+            # A scenario file is an authoring artefact: a features block that breaks the contract (or the decision
+            # moment) is an error, never silently dropped. The provider path rejects instead (providers/parcel_features).
+            from .parcel_features import merge_ndvi, parse
+            pf = s["parcel_features"]
+            pf = pf if isinstance(pf, ParcelFeatures) else parse(
+                pf, as_of=as_of, parcel_id=(d.get("P") or {}).get("parcel_id"))
+            s["parcel_features"] = pf
+            s["ndvi_series"] = merge_ndvi(s["ndvi_series"], pf)
         return Context(
             P=ParcelInfo(**(d.get("P") or {})),
             A=Agronomic(**(d.get("A") or {})),
@@ -224,6 +267,8 @@ class Observation(Record):
     coverage: Optional[float] = None
     count: Optional[int] = None
     source_ref: str = ""
+    # Facts the grading rules may only use to LOWER a grade (NDVI quality fields, a stage conflict); None = none.
+    detail: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -235,6 +280,9 @@ class Quality(Record):
     reliability: Reliability
     basis: str = ""
     source_ref: str = ""
+    # What lowered the grade or what the grade rests on beyond (origin, age, coverage): NDVI quality fields, the
+    # stage conflict. Recorded in the run's decisions (provenance). None when there is nothing to add.
+    detail: Optional[Dict[str, Any]] = None
 
 
 QualityProfile = Dict[str, Quality]
@@ -376,3 +424,6 @@ class Decision(Record):
     tools: List[ToolResult]
     config_hashes: Dict[str, str]
     conflicts: List["SourceConflict"] = field(default_factory=list)
+    # Conflicts between INPUTS (not passages): e.g. the stage the user gave against the satellite stage estimate.
+    # Read from the quality profile; they already lowered the grade, this is the evidence.
+    input_conflicts: List[Dict[str, Any]] = field(default_factory=list)

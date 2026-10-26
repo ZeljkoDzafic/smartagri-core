@@ -5,6 +5,7 @@ import dataclasses
 import time
 from typing import Any, Dict
 
+from ..core import parcel_features
 from ..core.decide import decide
 from ..i18n import L
 from ..core.types import AdviceType, Context, SatelliteSummary, VariantConfig, WeatherSummary
@@ -61,6 +62,9 @@ def advise(ctx: Context, corpus: Corpus, retriever: Retriever, variant: VariantC
     decisions["grounding"] = grounding
     scene_dates = [o.obs_date for o in ctx.S.ndvi_series]
     provenance_extra: Dict[str, Any] = {}
+    features = parcel_features.provenance(ctx, d.quality)     # None without parcel features (and for V5-satellite)
+    if features is not None:
+        provenance_extra["parcel_features"] = features
     call = getattr(generator, "last_call", None)
     if call:                                  # what actually answered: provider, model, request id, tokens
         provenance_extra["llm_call"] = dict(call)

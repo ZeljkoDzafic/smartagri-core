@@ -1,11 +1,13 @@
 """Input-quality profile q(x) = (origin, age, coverage, reliability)."""
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from typing import Any, Dict, Optional
 
 from .. import config
+from . import parcel_features as pfm
 from .tools import estimate_bbch, ndvi_summary
 from .types import Context, Observation, Origin, Quality, QualityProfile, Reliability, to_date
 
@@ -56,14 +58,34 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
     if candidates:
         obs["phenophase"] = max(candidates, key=lambda o: grade("phenophase", o).reliability.rank)
 
+    # External parcel features (docs/parcel-features.md). They never change a VALUE used by the decision; they can only
+    # lower a grade (apply_detail in annotate_quality) when a second source contradicts the stage in use.
+    features, _rejected = pfm.usable(ctx)
+    if features is not None:
+        state = pfm.field_state(features, ctx.as_of)
+        crop = pfm.crop_identity(a.crop, features)
+        if obs["phenophase"].value is not None:
+            conflicts = [c for c in (pfm.stage_conflict(obs["phenophase"], features, ctx.as_of),
+                                     pfm.marker_conflict(state, obs["phenophase"], ctx.Q.advice_type.value)) if c]
+            if conflicts:
+                obs["phenophase"] = dataclasses.replace(obs["phenophase"], detail={"conflicts": conflicts})
+        if state is not None:
+            obs["field_state"] = state
+        if crop is not None:
+            obs["crop_identity"] = crop
+
     nd = ndvi_summary(ctx.S.ndvi_series, as_of).output
     if nd:
         ref = "ndvi:" + nd["latest_date"]
+        detail = dict(nd.get("quality") or {})
+        if nd.get("outliers_excluded"):
+            detail["outliers_excluded"] = nd["outliers_excluded"]
+        detail = detail or None
         obs["ndvi_latest"] = Observation(nd["latest_value"], Origin.MEASURED, nd["age_days"], nd["usable_share"],
-                                         source_ref=ref)
+                                         source_ref=ref, detail=detail)
         if nd["spatial_contrast"] is not None:
             obs["ndvi_spatial_contrast"] = Observation(nd["spatial_contrast"], Origin.MEASURED, nd["age_days"],
-                                                       nd["usable_share"], source_ref=ref)
+                                                       nd["usable_share"], source_ref=ref, detail=detail)
         if nd["trend_14d"] is not None:
             obs["ndvi_trend"] = Observation(nd["trend_14d"], Origin.MEASURED, nd["age_days"],
                                             count=nd["trend_count"], source_ref=ref)
@@ -163,6 +185,8 @@ def grade(name: str, o: Observation) -> Quality:
     """Deterministic reliability grade from (origin, age, coverage, count) and the threshold table."""
     if o.value is None:
         return Quality(name, Origin.UNKNOWN, None, None, Reliability.MISSING, "not available")
+    if name in pfm.FEATURE_INPUTS:
+        return pfm.grade_feature_input(name, o)
     spec = config.load("thresholds")["inputs"].get(name, {})
     limit = spec.get("missing_after_days")
     if limit is not None and o.age_days is not None and o.age_days > limit:
@@ -195,13 +219,14 @@ def annotate_quality(ctx: Context, quality_aware: bool = True) -> QualityProfile
     profile: QualityProfile = {}
     for name, o in observe_all(ctx).items():
         if quality_aware:
-            profile[name] = grade(name, o)
+            profile[name] = pfm.apply_detail(grade(name, o), o)
             small = ctx.P.area_ha is not None and ctx.P.area_ha < SMALL_PARCEL_HA
             if small and name.startswith("ndvi") and profile[name].reliability == Reliability.HIGH:
                 # Under 0.3 ha a parcel has fewer than about 30 Sentinel-2 pixels of 10 m.
                 q = profile[name]
                 profile[name] = Quality(q.input, q.origin, q.age_days, q.coverage, Reliability.MEDIUM,
-                                        q.basis + "; capped: parcel under %.1f ha" % SMALL_PARCEL_HA, q.source_ref)
+                                        q.basis + "; capped: parcel under %.1f ha" % SMALL_PARCEL_HA, q.source_ref,
+                                        q.detail)
         elif o.value is None:
             profile[name] = Quality(name, Origin.UNKNOWN, None, None, Reliability.MISSING, "not available")
         else:

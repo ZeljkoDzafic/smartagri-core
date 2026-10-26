@@ -25,6 +25,8 @@ from ..pipeline.profile import context_from
 from ..providers import satellite, weather
 from ..store import Store, now_iso
 
+NDVI_QUALITY_FIELDS = ("cloud_flag", "cloud_px_share", "shadow_px_share", "interior_buffer_m", "n_px_interior",
+                       "mixed_px_share", "temporal_outlier")
 SCL_MASK = "Sentinel-2 scene classification (SCL) per pixel: no data, saturated, cloud shadow, cloud (medium, high), " \
            "cirrus and snow are excluded"
 BALANCE_FORMULA = "Dr[i] = min(TAW, max(0, Dr[i-1] + ETc[i] - P[i])); Dr[0] = 0 (assumption); TAW = AWC x Zr"
@@ -74,12 +76,14 @@ def series(parcel: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> Dict[st
     }
     s = profile.get("satellite") or {}
     rows = []
-    for o in s.get("series") or []:
-        share = o.get("usable_share")
-        rows.append({"obs_date": o.get("obs_date"), "median": o.get("median"), "p10": o.get("p10"), "p90": o.get("p90"),
-                     "valid_px_ratio": share,
+    # The profile's series with the observations of the parcel features, if any (same merge as the decision context).
+    for o in context_from(parcel, profile).S.ndvi_series:
+        share = o.usable_share
+        rows.append({"obs_date": o.obs_date, "median": o.median, "p10": o.p10, "p90": o.p90, "valid_px_ratio": share,
                      # the core NDVI tool uses an observation for the 14-day trend only at this share (ndvi_stats.py)
-                     "meets_trend_share": None if share is None else share >= MIN_SHARE_FOR_TREND})
+                     "meets_trend_share": None if share is None else share >= MIN_SHARE_FOR_TREND,
+                     # mask metadata from the parcel feature provider; None = not reported for this observation
+                     **{k: getattr(o, k) for k in NDVI_QUALITY_FIELDS}})
     latest = rows[-1]["obs_date"] if rows else None
     as_of = to_date(profile["as_of"])
     out["ndvi"] = {
@@ -87,10 +91,19 @@ def series(parcel: Dict[str, Any], profile: Optional[Dict[str, Any]]) -> Dict[st
         "fetched_at": s.get("fetched_at"), "age_hours": _age_hours(s.get("fetched_at")), "request_hash": s.get("request_hash"),
         "latest_obs_date": latest,
         "latest_age_days": (as_of - to_date(latest)).days if latest and as_of else None,
-        "lookback_days": satellite.LOOKBACK_DAYS, "cloud_mask": SCL_MASK, "cloud_flag": None,
-        "cloud_flag_note": "not stored per observation; cloudy pixels are masked per pixel and counted in valid_px_ratio",
+        "lookback_days": satellite.LOOKBACK_DAYS, "cloud_mask": SCL_MASK,
+        "cloud_flag": rows[-1]["cloud_flag"] if rows else None,
+        "cloud_flag_note": "stored per observation when the parcel feature provider reports it (cloud_flag, cloud and "
+                           "shadow shares, interior pixels); the Statistical API path does not report it, its cloudy "
+                           "pixels are masked per pixel and counted in valid_px_ratio",
         "trend_min_share": MIN_SHARE_FOR_TREND, "summary": s.get("summary"), "rows": rows,
     }
+    stored = profile.get("parcel_features")
+    if stored:                                     # present only when a parcel feature provider is configured
+        doc = stored.get("document") or {}
+        out["parcel_features"] = {"status": stored.get("status"), "message": stored.get("message") or "",
+                                  "source": stored.get("source"), "document_sha256": stored.get("document_sha256"),
+                                  "producer": stored.get("producer"), "stage_estimate": doc.get("stage_estimate")}
     return out
 
 

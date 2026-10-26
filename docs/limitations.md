@@ -32,6 +32,33 @@ any result produced with this version; results should be read together with it.
 - **Region classes.** `geo.py` (`region_class`) assigns `pannonian`, `mediterranean` or `hilly_mountain` from latitude
   and elevation with a placeholder rule.
 
+## Parcel features
+
+- **No satellite stage estimator.** The stage-conflict rule of q (`core/parcel_features.py`, `stage_conflict`) compares the
+  stage in use with a satellite stage interval carried by a `parcel_features` document. The estimator that would produce
+  it does not exist in this repository or yet on the provider side, so the rule is dormant: it is tested with synthetic
+  documents only. Its tolerance (10 BBCH units) and maximum estimate age (14 days) are development defaults with no
+  measurement behind them (`config/parcel_features.yaml`).
+- **Crop and marker checks are switched off until validated.** The consumer side of the crop plausibility check and of
+  the bare-soil and harvest markers is implemented and tested, but `crop_plausibility.enabled` and
+  `field_markers.enabled` are `false`: the producer's classifier has not been validated for transfer to another season
+  and has no coverage guarantee, and the marker thresholds have only been tried on synthetic series. While off, the
+  blocks are recorded in the provenance and change no decision. The required inputs R_t do not include `crop_identity`
+  or `field_state`.
+- **The provider reads files only.** `providers/parcel_features.py` reads precomputed documents from a folder
+  (`SMARTAGRI_PARCEL_FEATURES_DIR`); there is no live producer, no service call and no network use. The producer's
+  hashes are copied, not verified.
+- **Quality fields are empty for the fetched series.** The Sentinel Hub Statistical API path (`providers/satellite.py`)
+  masks cloud, shadow and snow per pixel but returns no cloud or shadow share, no interior-pixel count and no
+  `cloud_flag`; only a feature provider fills them. Observations without them are graded as before.
+- **Thresholds are development defaults.** The NDVI quality caps (masked share 0.20 and 0.50, mixed-pixel share 0.30
+  and 0.60, 30 and 10 interior pixels) are first guesses, not measured, and are reviewed and locked with the protocol.
+- **Sweeps do not vary the features.** `evalkit sweep` shifts the dates and shares of `S.ndvi_series` only; the
+  `parcel_features` block of a scenario is copied unchanged (`evalkit/sweep.py`). No development scenario carries one.
+- **Wall-clock comparison.** Observation times and the decision moment are compared as wall-clock values; a date alone
+  counts as the end of its day, so an observation on the decision day is accepted only with a time before the decision
+  moment.
+
 ## Water balance and quantities
 
 - **Quantity advice is disabled.** `config/rules.yaml` sets `irrigation.quantity_validated: false`; with it,

@@ -7,8 +7,10 @@ from .. import config
 from .types import (AdviceType, Applicability, ApplicabilityResult, Context, Passage, QualityProfile,
                     Reliability, to_date)
 
-# check name -> tracked input it depends on (None = depends on nothing uncertain)
-INPUT_FOR_CHECK = {"crop": None, "advice_type": None, "phenophase": "phenophase", "region": None,
+# check name -> tracked input it depends on (None = depends on nothing uncertain). `crop_identity` exists in the quality
+# profile only when the crop plausibility check of the parcel features is switched on (config/parcel_features.yaml); a
+# profile without it leaves the crop check exactly as it was.
+INPUT_FOR_CHECK = {"crop": "crop_identity", "advice_type": None, "phenophase": "phenophase", "region": None,
                    "agroecology": "irrigation_available", "date": None, "weather_consistency": "precip_forecast_3d",
                    "soil": None}
 ALWAYS_HARD = ("crop", "advice_type")
@@ -91,7 +93,8 @@ def applicability(p: Passage, ctx: Context, q: QualityProfile, vals: Dict[str, A
     unverifiable: List[str] = []
     hard_fail = None
     for name, dep in INPUT_FOR_CHECK.items():
-        rel = q[dep].reliability if (dep and from_parcel and quality_aware) else None
+        graded = q.get(dep) if dep else None
+        rel = graded.reliability if (graded is not None and from_parcel and quality_aware) else None
         result = _check(name, p, cond, t, ctx.as_of)
         if result is None:
             # Without the q layer a system does not notice a missing condition: it lets the passage through.

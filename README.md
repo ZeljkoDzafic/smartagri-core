@@ -205,6 +205,7 @@ OpenStreetMap tiles. Each keeps its own licence and terms; see [NOTICE](NOTICE) 
 | Document | Content |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | flow of one question, storage, packages |
+| [docs/parcel-features.md](docs/parcel-features.md) | the `parcel_features` data contract, causality rule, hashes, provider and how q uses it |
 | [docs/layers.md](docs/layers.md) | every layer (C, π, q, σ, α, δ, γ) and agronomic tool mapped to code, configuration and tests; the four acts |
 | [docs/limitations.md](docs/limitations.md) | what this version does not do, with the files to check |
 | [docs/evaluation.md](docs/evaluation.md) | variants, comparisons and measures |

@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 import yaml
 
-CONFIG_FILES = ("thresholds", "requirements", "variants", "asking", "kc_maize", "rules")
+CONFIG_FILES = ("thresholds", "requirements", "variants", "asking", "kc_maize", "rules", "parcel_features")
 
 # Environment variables are named SMARTAGRI_<NAME>. Deployments of the earlier product still set the former prefix,
 # which is read as a fallback so they keep working.

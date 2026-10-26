@@ -49,6 +49,7 @@ const INPUTS = {
   yield_target: "Target yield", operation: "Planned work", advice_type: "Type of advice",
   irrigation_capacity: "Irrigation system capacity", previous_crop: "Previous crop", manure: "Manure (last 12 months)",
   hybrid_fao: "Hybrid maturity group (FAO)", plant_density: "Plant density", field_observation: "Field observations (last 7 days)",
+  crop_identity: "Declared crop (checked)", field_state: "Field state (bare soil, harvest)",
 };
 const RELIABILITY = {high: "high", medium: "medium", low: "low", missing: "missing", ungraded: "not graded"};
 const ORIGIN = {measured: "measured", user_reported: "reported by the user", modeled: "model value", derived: "estimate", unknown: "unknown origin"};
@@ -265,17 +266,51 @@ $("n-form").onsubmit = async (e) => {
 };
 
 // ------------------------------------------------------------------ parcel
+// Notices about the quality rules of the parcel features (docs/parcel-features.md): a conflict between two sources of
+// one input (the reliability is capped, never raised) and the NDVI mask fields behind a lowered grade. Built from the
+// structured `detail` of a quality row, so they follow the interface language.
+function conflictNotice(c) {
+  if (c.rule === "stage_conflict") {
+    const s = c.satellite || {}, u = c.in_use || {};
+    return t("Stage conflict: the growth stage in use (BBCH {bbch}, {origin}) lies outside the satellite estimate (BBCH {lo}–{hi}, tolerance ±{tol}). Stage reliability is capped at low until the stage is confirmed.",
+      {bbch: u.bbch, origin: tr(ORIGIN, u.origin, u.origin), lo: s.bbch_min, hi: s.bbch_max, tol: c.tolerance_bbch});
+  }
+  if (c.rule === "field_markers") {
+    return c.field_state === "harvested"
+      ? t("Field marker conflict: a harvest is detected, but the advice assumes a standing crop. Stage reliability is capped at low.")
+      : t("Field marker conflict: bare soil is detected now, but the stage in use is BBCH {bbch}. Stage reliability is capped at low.", {bbch: (c.in_use || {}).bbch});
+  }
+  if (c.rule === "crop_plausibility") {
+    return t("Crop check: the producer's classifier disagrees with the declared crop (probability of maize {p}). Crop reliability is capped at low.", {p: num(c.p_maize, 2)});
+  }
+  return "";
+}
+function ndviChips(d) {
+  const pct = (x) => num(x * 100, 0), out = [];
+  if (d.cloud_flag) out.push(t("cloud or shadow on the parcel"));
+  if (d.cloud_px_share != null || d.shadow_px_share != null) out.push(t("cloud and shadow {pct} %", {pct: pct((d.cloud_px_share || 0) + (d.shadow_px_share || 0))}));
+  if (d.n_px_interior != null) out.push(t("{n} interior pixels", {n: d.n_px_interior}));
+  if (d.mixed_px_share != null) out.push(t("{pct} % boundary (mixed) pixels", {pct: pct(d.mixed_px_share)}));
+  if (d.interior_buffer_m != null) out.push(t("buffer {m} m", {m: num(d.interior_buffer_m, 0)}));
+  if (d.outliers_excluded && d.outliers_excluded.length) out.push(t("outliers left out: {dates}", {dates: d.outliers_excluded.map(fmtDate).join(", ")}));
+  return out;
+}
 function qualityList(rows) {
   if (!rows || !rows.length) return `<p class="hint">${esc(t("No data yet."))}</p>`;
+  const conflicts = rows.flatMap((r) => ((r.detail || {}).conflicts || []));
+  const alert = conflicts.length ? `<div class="q-notice" role="status">${conflicts.map((c) => `<p>${esc(conflictNotice(c))}</p>`).join("")}</div>` : "";
   const present = rows.filter((r) => r.reliability !== "missing"), missing = rows.filter((r) => r.reliability === "missing");
   const absent = missing.length ? `<details class="raw missing"><summary>${esc(t("Missing inputs ({n})", {n: missing.length}))}</summary>
     <p class="hint">${missing.map((r) => esc(inputName(r.input, r.label))).join(" · ")}</p></details>` : "";
-  if (!present.length) return `<p class="hint">${esc(t("No input is available yet."))}</p>` + absent;
-  return `<ul class="qlist">` + present.map((r) => {
+  if (!present.length) return alert + `<p class="hint">${esc(t("No input is available yet."))}</p>` + absent;
+  return alert + `<ul class="qlist">` + present.map((r) => {
     const age = r.age_days != null ? t("{n} d old", {n: Number(r.age_days).toLocaleString(intl(), {maximumFractionDigits: 1})}) : "";
+    const chips = (r.input || "").startsWith("ndvi") && r.detail ? ndviChips(r.detail) : [];
+    const lowered = r.detail && r.detail.capped_by && r.detail.capped_by.length ? t("Grade lowered by the quality thresholds (development defaults)") : "";
+    const extra = chips.length || lowered ? `<span class="q-meta q-chips">${chips.map((c) => `<span>${esc(c)}</span>`).join("")}${lowered ? `<span class="q-lowered">${esc(lowered)}</span>` : ""}</span>` : "";
     return `<li><span class="q-label">${esc(inputName(r.input, r.label))}</span><span class="q-value">${esc(valueText(r.value_text))}</span>
       <span class="q-meta"><span class="pill rel-${esc(r.reliability)}">${esc(tr(RELIABILITY, r.reliability, r.reliability_label))}</span>
-      <span>${esc(tr(ORIGIN, r.origin, r.origin_label))}</span>${age ? `<span>· ${esc(age)}</span>` : ""}</span></li>`;
+      <span>${esc(tr(ORIGIN, r.origin, r.origin_label))}</span>${age ? `<span>· ${esc(age)}</span>` : ""}</span>${extra}</li>`;
   }).join("") + `</ul>` + absent;
 }
 
@@ -471,12 +506,26 @@ function renderSeries(s) {
       ["Retrieved", `${esc(fmtStamp(n.fetched_at))} <span class="hint">${esc(fmtAge(n.age_hours))}</span>`],
       ["Latest obs_date", `${esc(fmtDate(n.latest_obs_date))} <span class="hint">${esc(n.latest_age_days != null ? t("{n} d before the decision moment", {n: n.latest_age_days}) : "")}</span>`],
       ["Cloud mask", esc(t("SCL per pixel (cloud, shadow, cirrus, snow excluded); valid_px_ratio = usable pixels / all pixels"))],
-      ["cloud_flag", esc(t("not stored per observation"))],
+      ["cloud_flag", esc(n.cloud_flag === true ? t("yes") : n.cloud_flag === false ? t("no") : t("not reported for this observation"))],
       ["Trend", esc(t("observations with valid_px_ratio ≥ {share} (core NDVI tool); hollow points are below it", {share: n.trend_min_share}))],
     ]);
+    const pf = s.parcel_features;
+    if (pf) {
+      const se = pf.stage_estimate, pr = pf.producer || {};
+      html += metaList([
+        ["Parcel features", esc(pf.status === "ok" ? t("accepted") : pf.status === "rejected" ? `${t("rejected")}: ${pf.message}` : t("no document for this parcel and day"))],
+        ["Producer", pr.name ? esc([pr.name, pr.version].filter(Boolean).join(" ")) : ""],
+        ["Document sha256", pf.document_sha256 ? `<code>${esc(String(pf.document_sha256).slice(0, 16))}…</code>` : ""],
+        ["Satellite stage estimate", se ? esc(se.bbch_min != null ? t("BBCH {lo}–{hi} ({method}), {n} clear observations", {lo: se.bbch_min, hi: se.bbch_max, method: se.method, n: se.n_clear_obs ?? "–"}) : t("no estimate ({status})", {status: se.status})) : ""],
+      ]);
+    }
     html += `<div class="ch-host" id="ch-ndvi"></div>`;
-    html += dataTable("Sentinel-2 L2A NDVI observations of the parcel", ["obs_date", "Median", "p10", "p90", "valid_px_ratio", "Used for trend"],
-      n.rows.map((r) => [esc(r.obs_date), num(r.median, 3), num(r.p10, 3), num(r.p90, 3), num(r.valid_px_ratio, 3), r.meets_trend_share ? t("yes") : t("no")]));
+    const dash = (v, f) => (v == null ? "–" : f(v));
+    html += dataTable("Sentinel-2 L2A NDVI observations of the parcel", ["obs_date", "Median", "p10", "p90", "valid_px_ratio", "Used for trend", "cloud_flag", "Cloud and shadow share", "Interior pixels", "Mixed-pixel share", "Outlier"],
+      n.rows.map((r) => [esc(r.obs_date), num(r.median, 3), num(r.p10, 3), num(r.p90, 3), num(r.valid_px_ratio, 3), r.meets_trend_share ? t("yes") : t("no"),
+        dash(r.cloud_flag, (v) => (v ? t("yes") : t("no"))),
+        r.cloud_px_share == null && r.shadow_px_share == null ? "–" : num((r.cloud_px_share || 0) + (r.shadow_px_share || 0), 2),
+        dash(r.n_px_interior, (v) => String(v)), dash(r.mixed_px_share, (v) => num(v, 2)), dash(r.temporal_outlier, (v) => (v ? t("yes") : t("no")))]));
   }
   $("p-series").innerHTML = html;
   if (w.status === "ok" && w.rows.length && window.SmartCharts) {

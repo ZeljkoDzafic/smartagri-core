@@ -7,8 +7,10 @@ from typing import Any, Dict, List, Optional
 from ..i18n import L
 from ..core.quality import annotate_quality, observe_all
 from ..core.tools import ndvi_summary
-from ..core.types import Agronomic, Context, NdviObservation, ParcelInfo, Question, SatelliteSummary, WeatherSummary
-from ..providers import satellite, weather
+from ..core.types import (Agronomic, Context, NdviObservation, ParcelFeatures, ParcelInfo, Question, SatelliteSummary,
+                          WeatherSummary)
+from ..core import parcel_features as features_contract
+from ..providers import parcel_features as features_provider, satellite, weather
 from ..providers.base import ProviderUnavailable
 from ..store import Store, new_id, now_iso
 
@@ -20,18 +22,31 @@ def context_from(parcel: Dict[str, Any], profile: Dict[str, Any], question: Opti
                  agronomic_override: Optional[Dict[str, Any]] = None) -> Context:
     a = {k: v for k, v in dict(parcel.get("agronomic") or {}, **(agronomic_override or {})).items() if k in AGRONOMIC_FIELDS}
     w = (profile.get("weather") or {}).get("summary") or {}
-    series = (profile.get("satellite") or {}).get("series") or []
+    series = [NdviObservation(**o) for o in (profile.get("satellite") or {}).get("series") or []]
+    features = _stored_features(profile)
     return Context(
         P=ParcelInfo(parcel["id"], parcel.get("area_ha"), parcel["centroid"]["lat"], parcel["centroid"]["lon"],
                      parcel.get("region_class")),
         A=Agronomic(**a),
         W=WeatherSummary(**w),
-        S=SatelliteSummary(ndvi_series=[NdviObservation(**o) for o in series]),
+        S=SatelliteSummary(ndvi_series=features_contract.merge_ndvi(series, features), parcel_features=features),
         Q=question or Question(),
         as_of=datetime.fromisoformat(profile["as_of"]),
         questions_asked=questions_asked,
         declined_inputs=list(declined or []),
     )
+
+
+def _stored_features(profile: Dict[str, Any]) -> Optional[ParcelFeatures]:
+    """The parcel features a profile holds (already validated against the parcel when the profile was built); they are
+    checked again against the profile's decision moment, and an unusable document is left out."""
+    stored = profile.get("parcel_features") or {}
+    if stored.get("status") != "ok" or not stored.get("document"):
+        return None
+    try:
+        return features_contract.parse(stored["document"], as_of=datetime.fromisoformat(profile["as_of"]))
+    except features_contract.ParcelFeaturesError:
+        return None
 
 
 def quality_rows(ctx: Context, log_sources: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
@@ -43,11 +58,14 @@ def quality_rows(ctx: Context, log_sources: Optional[Dict[str, List[str]]] = Non
         text = L().value_text(name, obs[name].value)
         if name == "ndvi_latest" and obs[name].value is not None:
             text += " (%s)" % L().fmt_date(quality.source_ref.split(":", 1)[-1])
-        rows.append({"input": name, "label": L().INPUTS.get(name, name), "value_text": text,
-                     "origin": quality.origin.value, "origin_label": L().ORIGIN[quality.origin.value],
-                     "age_days": quality.age_days, "coverage": quality.coverage,
-                     "reliability": quality.reliability.value,
-                     "reliability_label": L().RELIABILITY[quality.reliability.value], "basis": quality.basis})
+        row = {"input": name, "label": L().INPUTS.get(name, name), "value_text": text,
+               "origin": quality.origin.value, "origin_label": L().ORIGIN[quality.origin.value],
+               "age_days": quality.age_days, "coverage": quality.coverage,
+               "reliability": quality.reliability.value,
+               "reliability_label": L().RELIABILITY[quality.reliability.value], "basis": quality.basis}
+        if quality.detail:                      # NDVI mask fields, the stage conflict: structured, labelled by the client
+            row["detail"] = quality.detail
+        rows.append(row)
     if log_sources:
         from ..activities import log_rows
         rows = log_rows(rows, log_sources)
@@ -95,6 +113,20 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
     except ProviderUnavailable as exc:
         s["message"] = str(exc)
 
+    # Precomputed parcel features (a generic provider; docs/parcel-features.md). Only a configured provider adds
+    # anything to the profile; a document that breaks the contract is recorded as rejected, with the reasons.
+    pf: Optional[Dict[str, Any]] = None
+    if features_provider.configured():
+        pf = {"status": "absent", "message": "", "source": features_provider.SOURCE, "document": None,
+              "document_sha256": None, "producer": None}
+        try:
+            doc = features_provider.load_document(parcel["id"], parcel["geometry"], as_of)
+            if doc is not None:
+                pf.update(status="ok", document=doc, document_sha256=features_contract.document_sha256(doc),
+                          producer=doc.get("producer"))
+        except ProviderUnavailable as exc:
+            pf.update(status="rejected", message=str(exc))
+
     profile = {"id": new_id(), "parcel_id": parcel["id"], "as_of": as_of.isoformat(), "created_at": now_iso(),
                "weather": w, "satellite": s,
                "provenance": {"as_of": as_of.isoformat(), "weather_request_hash": w["request_hash"],
@@ -102,5 +134,9 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
                               "weather_retrospective_constructed": w["retrospective_constructed"],
                               "satellite_request_hash": s["request_hash"],
                               "scene_dates": [o["obs_date"] for o in s["series"]]}}
+    if pf is not None:
+        profile["parcel_features"] = pf
+        profile["provenance"].update(parcel_features_status=pf["status"], parcel_features_sha256=pf["document_sha256"],
+                                     parcel_features_producer=pf["producer"], parcel_features_message=pf["message"])
     profile["quality"] = quality_rows(context_from(parcel, profile))
     return store.save_profile(profile)

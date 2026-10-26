@@ -1,0 +1,49 @@
+# Parcel features (external parcel indicators) read by the quality layer q. DEVELOPMENT DEFAULTS, NOT LOCKED.
+# Every value below is a first guess with no measurement behind it. Set on development scenarios and reviewed by the
+# agronomist, then locked (hashed) with the protocol before any measurement on the test set.
+# Every rule here can only LOWER a reliability grade (a minimum over caps); none ever raises one.
+# Without a parcel_features block (or without the optional quality fields of an NDVI observation) nothing here applies.
+schema_version: 1
+
+# NDVI observation quality (the optional fields of an observation: cloud and shadow shares, interior pixels, ...).
+ndvi_quality:
+  enabled: true
+  status: development_default
+  # Shares are of the parcel's interior pixels (after the interior buffer), in [0, 1].
+  max_masked_share_for_high: 0.20       # cloud + shadow share above this: at most medium
+  max_masked_share_for_medium: 0.50     # above this: low
+  max_mixed_share_for_high: 0.30        # share of boundary (mixed) pixels above this: at most medium
+  max_mixed_share_for_medium: 0.60      # above this: low
+  min_interior_px_for_high: 30          # fewer interior valid pixels: at most medium (about 0.3 ha at 10 m)
+  min_interior_px_for_medium: 10        # fewer: low
+  cloud_flag_caps_at: medium            # a cloud or shadow touching the parcel: no "high"
+  exclude_temporal_outliers: true       # an observation screened as an outlier is left out of the NDVI summary
+
+# Two stage sources that disagree (the farmer-reported or sowing-derived stage against the satellite stage estimate
+# carried by parcel_features): the stage reliability is capped and the conflict is recorded.
+stage_conflict:
+  enabled: true
+  status: development_default
+  tolerance_bbch: 10                    # BBCH units outside the satellite interval that still count as agreeing
+  max_estimate_age_days: 14             # an older satellite estimate is recorded but not compared
+  cap_reliability_at: low
+
+# Consumer side only; the producer's classifier is not validated (no transfer check for the season, no in-season
+# window). SWITCHED OFF: the parts are recorded in the provenance and have no effect on any decision.
+crop_plausibility:
+  enabled: false
+  status: not_validated
+  cap_reliability_at: low               # when enabled: decision == discrepancy and transfer_validated, cap crop_identity
+
+# Bare-soil and harvest markers (Sentinel-2 only for bare soil). SWITCHED OFF, as above.
+field_markers:
+  enabled: false
+  status: not_validated
+  bare_soil_conflict_min_bbch: 10       # when enabled: bare soil now with a stage at or above this is a conflict
+  min_reliability_for_conflict: medium  # when enabled: only a field state graded at least this counts as a conflict
+  harvest_conflicting_advice: [irrigation_timing, irrigation_amount, fertilization_plan, fertilization_timing]
+  cap_reliability_at: low
+  grades:                               # reliability of the field_state input from the producer's confidence
+    - {reliability: high, min_confidence: 0.80, data_sufficiency: ["s2+s1"]}
+    - {reliability: medium, min_confidence: 0.50, data_sufficiency: ["s2+s1", "s2", "s1"]}
+  default: low
