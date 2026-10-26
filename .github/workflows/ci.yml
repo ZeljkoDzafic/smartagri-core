@@ -19,7 +19,8 @@ env:
 jobs:
   test:
     name: tests (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Python 3.9 has no prebuilt build for Ubuntu 26.04 (actions/python-versions), so that leg stays on 24.04.
+    runs-on: ${{ matrix.python == '3.9' && 'ubuntu-24.04' || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +54,7 @@ jobs:
 
   audit:
     name: dependency audit (pip-audit, requirements.lock)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,7 +65,7 @@ jobs:
 
   website:
     name: website check (links, anchors, screenshots)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,7 +75,7 @@ jobs:
 
   docker:
     name: container image (build and health check)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
       - name: Build
