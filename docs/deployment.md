@@ -14,6 +14,8 @@ Create `/srv/smartagri/.env` (never commit it; readable only by root and the ser
 ```bash
 SMARTAGRI_ACCOUNTS=optional
 SMARTAGRI_PUBLIC_URL=https://app.smartagri.rs.ba
+# Anonymous (not saved) parcels are deleted after this many hours without activity (default 24).
+SMARTAGRI_ANON_TTL_HOURS=24
 # The proxy runs on the same host and the container port is published on 127.0.0.1 only, so the forwarded client
 # address can be trusted. Without this, every visitor shares the proxy's address and the per-address rate limits.
 FORWARDED_ALLOW_IPS=*
@@ -94,6 +96,7 @@ server { listen 80; server_name app.smartagri.rs.ba; return 301 https://$host$re
   other subdomain. Do not add `Domain=.smartagri.rs.ba` in the proxy: the presentation site at `smartagri.rs.ba` must
   never receive session cookies.
 - All cookies are `HttpOnly` (except `sa_csrf`, which the page must read), `SameSite=Lax`, and `Secure` on https.
+  `sa_browser`, which identifies an anonymous visitor's temporary work, is a session cookie (no expiry date).
 - The web app is served by the same origin as its API, so no CORS headers are sent and none are needed. Do not add
   `Access-Control-Allow-Origin` in the proxy. Browsers on other sites cannot read the API, and state-changing requests
   from them are refused: a request must carry the `X-CSRF-Token` header that matches the `sa_csrf` cookie, and its
@@ -132,4 +135,7 @@ copy a backup to `/data/smartagri.sqlite` in the volume, start it, and check `/a
 - Parcels created while accounts were off are hidden until assigned:
   `docker exec smartagri python -m smartagri.research_api --assign-unowned you@example.org`.
 - Logs never contain passwords or tokens; email-sending failures are logged without addresses.
-- Anonymous parcels are kept until the operator removes them; there is no automatic expiry yet.
+- Anonymous parcels are temporary. They and their conversations are deleted after `SMARTAGRI_ANON_TTL_HOURS`
+  (default 24) without activity: lazily by the running app (at most every 10 minutes), and on demand with
+  `docker exec smartagri python -m smartagri.research_api --purge-anonymous` (for example from a daily cron job).
+  Saved (account) parcels and parcels from before accounts were turned on are never purged.

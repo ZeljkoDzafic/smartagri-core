@@ -146,7 +146,8 @@ def test_secure_cookie_on_https(env, monkeypatch):
     r = c.get("/api/auth/me")
     for part in r.headers.get_list("set-cookie"):
         assert "Secure" in part and "Domain" not in part
-    assert any(p.startswith("sa_browser=") and "HttpOnly" in p for p in r.headers.get_list("set-cookie"))
+    assert any(p.startswith("sa_browser=") and "HttpOnly" in p and "Max-Age" not in p
+               for p in r.headers.get_list("set-cookie"))
     assert any(p.startswith("sa_csrf=") and "HttpOnly" not in p for p in r.headers.get_list("set-cookie"))
 
 
@@ -399,6 +400,83 @@ def test_account_ui_is_hidden_unless_the_server_turns_it_on():
     for start in ('<div id="account" class="account" hidden>', 'id="account-icon"', '<div id="anon-banner"'):
         tag = page[page.index(start):page.index(">", page.index(start))]
         assert " hidden" in tag, start
-    assert "Your parcels are saved in this browser. Create an account to keep them." in page
+    assert "Temporary — this parcel is kept only for this browser session. Create an account to save it." in page
+    assert 'id="p-save">Save parcel</button>' in page and 'class="pill unsaved">Not saved</span>' in page
     script = (static / "app.js").read_text(encoding="utf-8")
     assert "if (meta.accounts && meta.accounts.enabled) await initAccount();" in script
+
+
+# ------------------------------------------------------------------------------------------------ temporary anonymous work
+def test_anonymous_browser_cookie_is_a_session_cookie(env, monkeypatch):
+    app, _ = _app(env, monkeypatch)
+    r = TestClient(app).get("/api/auth/me")
+    browser_cookie = [h for h in r.headers.get_list("set-cookie") if h.startswith("sa_browser=")]
+    assert browser_cookie and "Max-Age" not in browser_cookie[0] and "expires" not in browser_cookie[0].lower()
+    assert "HttpOnly" in browser_cookie[0]
+
+
+def _stale_setup(env, monkeypatch, clock):
+    app, svc = _app(env, monkeypatch, clock=clock)
+    unowned = svc.create_parcel({"name": "Before accounts", "geometry": SQUARE})
+    user = browser(app)
+    post(user, "/api/auth/signup", {"email": "keep@example.org", "password": PW})
+    saved = new_parcel(user, "Saved")
+    anon = browser(app)
+    temp = new_parcel(anon, "Temporary")
+    run = post(anon, "/api/parcels/%s/chat" % temp["id"], {"text": "Da li da navodnjavam kukuruz?",
+                                                           "advice_type": "irrigation_timing"}).json()
+    return app, user, anon, unowned, saved, temp, run
+
+
+def test_purge_removes_only_stale_anonymous_work(env, monkeypatch):
+    clock = Clock()
+    app, user, anon, unowned, saved, temp, run = _stale_setup(env, monkeypatch, clock)
+    accounts = auth.Accounts(env, mailer=False, clock=clock)
+    assert accounts.purge_anonymous() == 0                                     # fresh: kept
+    clock.t += 23 * 3600
+    assert ids(anon) == [temp["id"]]                                           # activity keeps it alive
+    clock.t += 23 * 3600
+    assert accounts.purge_anonymous() == 0
+    clock.t += 24 * 3600 + 1
+    assert accounts.purge_anonymous() == 1
+    assert env.get_parcel(temp["id"]) is None and env.get_run(run["id"]) is None
+    assert env.get_conversation(run["conversation_id"]) is None and env.get("core_owners", temp["id"]) is None
+    assert env.get_parcel(saved["id"]) and env.get_parcel(unowned["id"])          # account and unowned data stay
+    assert env.get("core_owners", saved["id"])["owner"].startswith("u:")
+    assert anon.get("/api/parcels/" + temp["id"]).status_code == 404            # a purged parcel is gone
+    assert ids(anon) == [] and ids(user) == [saved["id"]]
+
+
+def test_purge_runs_lazily_on_requests(env, monkeypatch):
+    clock = Clock()
+    app, user, anon, unowned, saved, temp, run = _stale_setup(env, monkeypatch, clock)
+    clock.t += 25 * 3600
+    assert user.get("/api/parcels").status_code == 200                         # any API request may purge
+    assert env.get_parcel(temp["id"]) is None and env.get_parcel(saved["id"]) and env.get_parcel(unowned["id"])
+
+
+def test_anonymous_ttl_comes_from_the_environment(env, monkeypatch):
+    monkeypatch.setenv("SMARTAGRI_ANON_TTL_HOURS", "2")
+    assert auth.anon_ttl_hours() == 2
+    clock = Clock()
+    app, user, anon, unowned, saved, temp, run = _stale_setup(env, monkeypatch, clock)
+    accounts = auth.Accounts(env, mailer=False, clock=clock)
+    clock.t += 3600
+    assert accounts.purge_anonymous() == 0
+    clock.t += 3601
+    assert accounts.purge_anonymous() == 1 and env.get_parcel(temp["id"]) is None
+    for bad in ("0", "-1", "x"):
+        monkeypatch.setenv("SMARTAGRI_ANON_TTL_HOURS", bad)
+        assert auth.anon_ttl_hours() == 24
+
+
+def test_claimed_parcels_are_saved_and_never_purged(env, monkeypatch):
+    clock = Clock()
+    app, _ = _app(env, monkeypatch, clock=clock)
+    c = browser(app)
+    p = new_parcel(c, "Save me")
+    assert env.get("core_owners", p["id"])["touched_at"]
+    assert post(c, "/api/auth/signup", {"email": "saver@example.org", "password": PW}).status_code == 201
+    assert ids(c) == [p["id"]] and not env.get("core_owners", p["id"]).get("touched_at")
+    clock.t += 1000 * 3600
+    assert auth.Accounts(env, mailer=False, clock=clock).purge_anonymous() == 0 and env.get_parcel(p["id"])

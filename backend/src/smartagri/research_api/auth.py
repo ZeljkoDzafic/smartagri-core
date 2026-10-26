@@ -2,10 +2,13 @@
 
 SMARTAGRI_ACCOUNTS
     off       (default) local single-user use, exactly as before: no accounts, no cookies, everyone sees every parcel.
-    optional  accounts with e-mail and password, and per-browser isolation for everyone else:
-              - without an account, parcels belong to the browser (an anonymous httpOnly cookie token; the server
-                stores only its sha256 in `core_owners`);
-              - on sign-up or sign-in, that browser's parcels are claimed by the account;
+    optional  accounts with e-mail and password; anonymous work is temporary:
+              - without an account, parcels belong to the browser session (an anonymous httpOnly session cookie,
+                ended when the browser closes; the server stores only its sha256 in `core_owners`). They are not
+                saved: anonymous parcels with their conversations and runs are purged after
+                SMARTAGRI_ANON_TTL_HOURS (default 24) without activity (lazily on requests, or
+                `python -m smartagri.research_api --purge-anonymous`);
+              - to save them, the user creates an account or signs in: that browser's parcels are claimed;
               - each user sees only their own parcels; conversations and runs follow their parcel.
               Parcels stored before accounts were turned on have no owner and are not shown to anyone; the operator
               can hand them to an account: `python -m smartagri.research_api --assign-unowned EMAIL`.
@@ -49,7 +52,9 @@ SESSION_COOKIE = "sa_session"
 BROWSER_COOKIE = "sa_browser"
 CSRF_COOKIE = "sa_csrf"
 CSRF_HEADER = "x-csrf-token"
-BROWSER_DAYS = 365
+BROWSER_DAYS = 365                      # the CSRF cookie; the anonymous browser cookie is a session cookie
+TOUCH_EVERY_S = 300                     # an anonymous browser's activity is recorded at most every 5 minutes
+PURGE_EVERY_S = 600                     # lazy purge of stale anonymous work at most every 10 minutes per process
 # Paths outside accounts, cookies and CSRF: the blind rating protocol.
 EXEMPT_PATHS = ("/api/eval/",)
 UNSAFE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
@@ -92,6 +97,14 @@ def enabled() -> bool:
 
 def public_url() -> str:
     return (os.environ.get("SMARTAGRI_PUBLIC_URL") or "").strip().rstrip("/")
+
+
+def anon_ttl_hours() -> float:
+    try:
+        value = float(os.environ.get("SMARTAGRI_ANON_TTL_HOURS") or 24)
+    except ValueError:
+        return 24.0
+    return value if value > 0 else 24.0
 
 
 def session_days() -> int:
@@ -233,6 +246,7 @@ class Accounts:
         self.clock = clock
         self.mailer = mailer if mailer is not None else (SmtpMailer() if smtp_configured() else None)
         self._dummy_hash: Optional[str] = None
+        self._last_purge = 0.0
 
     @property
     def email_enabled(self) -> bool:
@@ -439,7 +453,43 @@ class Accounts:
 
     # ------------------------------------------------------------ ownership
     def own(self, parcel_id: str, owner: str) -> None:
-        self.store.put("core_owners", {"id": parcel_id, "created_at": now_iso(), "owner": owner, "kind": "parcel"})
+        row = {"id": parcel_id, "created_at": now_iso(), "owner": owner, "kind": "parcel"}
+        if owner.startswith("b:"):
+            row["touched_at"] = _utc(self.clock())
+        self.store.put("core_owners", row)
+
+    # ------------------------------------------------------------ temporary anonymous work
+    def touch(self, owner: Optional[str]) -> None:
+        """Record activity of an anonymous browser (at most every TOUCH_EVERY_S, one statement)."""
+        if not owner or not owner.startswith("b:"):
+            return
+        now = self.clock()
+        self.store._exec(self.store._q("UPDATE core_owners SET touched_at = ? WHERE owner = ? AND "
+                                       "(touched_at IS NULL OR touched_at < ?)"),
+                         (_utc(now), owner, _utc(now - TOUCH_EVERY_S)))
+
+    def purge_anonymous(self, ttl_hours: Optional[float] = None) -> int:
+        """Delete anonymous parcels (with profiles, conversations and runs) idle longer than the TTL. Account-owned
+        parcels and parcels without an owner are never touched. Returns the number of deleted parcels."""
+        now = self.clock()
+        self._last_purge = now
+        cutoff = _utc(now - (ttl_hours if ttl_hours is not None else anon_ttl_hours()) * 3600)
+        # rows written before touched_at existed get a full TTL from now
+        self.store._exec(self.store._q("UPDATE core_owners SET touched_at = ? WHERE owner LIKE ? AND "
+                                       "touched_at IS NULL"), (_utc(now), "b:%"))
+        stale = self.store._rows(self.store._q("SELECT id FROM core_owners WHERE owner LIKE ? AND kind = ? "
+                                               "AND touched_at < ?"), ("b:%", "parcel", cutoff))
+        for row in stale:
+            self.store.delete_parcel(row["id"])
+            self.store._exec(self.store._q("DELETE FROM core_owners WHERE id = ? AND owner LIKE ?"), (row["id"], "b:%"))
+        return len(stale)
+
+    def maybe_purge(self) -> None:
+        if self.clock() - self._last_purge >= PURGE_EVERY_S:
+            try:
+                self.purge_anonymous()
+            except Exception as exc:                                   # never fail a request because of cleanup
+                log.warning("purge of anonymous parcels failed: %s", exc.__class__.__name__)
 
     def owns(self, owner: Optional[str], parcel_id: Optional[str]) -> bool:
         if not owner or not parcel_id:
@@ -461,6 +511,7 @@ class Accounts:
         rows = self.store.find("core_owners", owner=browser_owner)
         for row in rows:
             row["owner"] = user_owner(user)
+            row.pop("touched_at", None)                                   # saved: no longer temporary
             self.store.put("core_owners", row)
         return len(rows)
 

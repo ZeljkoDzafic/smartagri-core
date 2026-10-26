@@ -90,10 +90,12 @@ Accounts are optional and off by default. `SMARTAGRI_ACCOUNTS` selects the mode:
 | Mode | Behaviour |
 |---|---|
 | `off` (default) | Local single-user use, unchanged: no accounts, no cookies, every parcel is visible to everyone who can reach the server. |
-| `optional` | For a public server. Anyone can still use the app without an account: parcels and their conversations then belong to the browser (an anonymous, HttpOnly cookie; the server keeps only its hash). Signing up or signing in moves that browser's parcels to the account. Each user sees only their own parcels, and each anonymous browser only its own. |
+| `optional` | For a public server. Anyone can draw a parcel and ask for advice without an account, but to **save** a parcel they create an account or sign in. Until then the parcel and its conversations are temporary: they belong to the browser session (an anonymous, HttpOnly session cookie that ends when the browser closes; the server keeps only its hash) and are deleted after `SMARTAGRI_ANON_TTL_HOURS` (default 24) without activity. Signing up or signing in saves that session's parcels to the account. Each user sees only their own parcels, and each anonymous session only its own. |
 
-With accounts on, the sidebar shows **Sign in** (or the signed-in email, with Sign out and Delete account), and
-anonymous visitors see a short note that their parcels are kept in this browser. Accounts use an email address and a
+With accounts on, the sidebar shows **Sign in** (or the signed-in email, with Sign out and Delete account). For an
+anonymous visitor every parcel is marked **Not saved**, with a **Save parcel** action and the note "Temporary — this
+parcel is kept only for this browser session. Create an account to save it."; leaving the page with unsaved parcels
+asks for confirmation. Accounts use an email address and a
 password (at least 10 characters, stored as a scrypt hash). Email confirmation and password reset are available only
 when SMTP is configured; without SMTP an account works as soon as it is created.
 
@@ -110,6 +112,7 @@ operator gives them to an account: `python -m smartagri.research_api --assign-un
 |---|---|
 | `SMARTAGRI_ACCOUNTS` | `off` (default) or `optional` |
 | `SMARTAGRI_PUBLIC_URL` | public address, e.g. `https://app.smartagri.rs.ba`; used for email links, the Origin check and Secure cookies |
+| `SMARTAGRI_ANON_TTL_HOURS` | hours without activity after which anonymous (not saved) parcels are deleted (default 24); purged lazily on requests and by `python -m smartagri.research_api --purge-anonymous` |
 | `SMARTAGRI_SESSION_DAYS` | session lifetime in days (default 30) |
 | `SMARTAGRI_COOKIE_SECURE` | `1` forces Secure cookies (automatic on https) |
 | `SMARTAGRI_AUTH_RATE_FACTOR` | multiplies the per-address rate limits (default 1), e.g. many users behind one NAT |
@@ -118,15 +121,16 @@ operator gives them to an account: `python -m smartagri.research_api --assign-un
 ### Privacy
 
 With accounts on, the server stores: the email address and a password hash of each account; hashes of session and
-one-time link tokens (never the tokens); the hash of each anonymous browser token that created a parcel; and the
-parcels themselves (name, boundary, agronomic inputs), their data profiles, conversations and answers. Three cookies
+one-time link tokens (never the tokens); the hash of each anonymous session token that created a parcel, with the
+time of its last activity; and the parcels themselves (name, boundary, agronomic inputs), their data profiles, conversations and answers. Three cookies
 are set, all strictly necessary and first-party: `sa_session` (sign-in), `sa_browser` (anonymous ownership) and
-`sa_csrf` (request check). There is no analytics and no tracking. The browser loads map tiles from the configured tile
+`sa_csrf` (request check); `sa_browser` is a session cookie and ends when the browser closes. There is no analytics and no tracking. The browser loads map tiles from the configured tile
 server (OpenStreetMap by default), which sees the visitor's address; the server sends parcel coordinates to
 Open-Meteo and, when configured, to Copernicus Data Space, and questions with parcel data to a language model only
 when `LLM_PROVIDER` is set. **Delete account** removes the account, its sessions and links, and its parcels with their
-profiles, conversations and answers. Parcels of anonymous browsers stay on the server until the operator removes
-them; signing out starts a new, empty anonymous browser. Whoever runs a public server is responsible for its privacy
+profiles, conversations and answers. Anonymous parcels, with their profiles, conversations and answers, are deleted
+automatically after `SMARTAGRI_ANON_TTL_HOURS` (default 24) without activity; signing out starts a new, empty
+anonymous session. Whoever runs a public server is responsible for its privacy
 notice and its backups, which keep deleted data until they expire.
 
 ## Website

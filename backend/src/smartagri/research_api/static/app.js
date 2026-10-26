@@ -135,7 +135,7 @@ async function loadParcels() {
   list.innerHTML = rows.map((p) => {
     const sow = (p.agronomic || {}).sowing_date;
     return `<a class="parcel-card" href="#/parcel/${encodeURIComponent(p.id)}">${thumb(p.geometry)}
-      <span><span class="name">${esc(p.name)}</span><br><span class="facts">${esc(fmtHa(p.area_ha))}${sow ? " · sown " + esc(fmtDate(sow)) : ""}</span></span>
+      <span><span class="name">${esc(p.name)}</span>${unsaved() ? ` <span class="pill unsaved">Not saved</span>` : ""}<br><span class="facts">${esc(fmtHa(p.area_ha))}${sow ? " · sown " + esc(fmtDate(sow)) : ""}</span></span>
       <span class="chev" aria-hidden="true">›</span></a>`;
   }).join("");
 }
@@ -242,7 +242,7 @@ $("n-form").onsubmit = async (e) => {
     if ($("n-pinned").value) body.pinned_as_of = $("n-pinned").value;
     btn.setAttribute("aria-busy", "true");
     const p = await api("/parcels", {method: "POST", body: JSON.stringify(body)});
-    parcelsCache = [];
+    parcelsCache = [p].concat(parcelsCache.filter((x) => x.id !== p.id));
     location.hash = "#/parcel/" + encodeURIComponent(p.id);
   } catch (err) { $("n-msg").textContent = err.message; }
   finally { btn.removeAttribute("aria-busy"); }
@@ -267,6 +267,7 @@ async function openParcel(id) {
   try { parcel = await api("/parcels/" + encodeURIComponent(id)); }
   catch (e) { $("p-title").textContent = "Parcel not found"; $("p-meta").textContent = e.message; $("p-quality").innerHTML = ""; return; }
   conv = null; aiConv = null; pending = null;
+  $("p-temp").hidden = !unsaved();
   const ag = parcel.agronomic || {};
   $("p-title").textContent = parcel.name;
   $("p-meta").textContent = [fmtHa(parcel.area_ha), ag.sowing_date ? "sown " + fmtDate(ag.sowing_date) : "sowing date unknown",
@@ -425,7 +426,7 @@ function renderAccount() {
   $("account").hidden = !account.enabled;
   $("account-icon").hidden = !account.enabled;
   $("account-name").textContent = u ? u.email : "Sign in";
-  $("account-sub").textContent = u ? "Signed in" : "Parcels are kept in this browser";
+  $("account-sub").textContent = u ? "Signed in" : "Parcels are not saved";
   $("account-avatar").textContent = u ? initial(u.email) : "";
   $("account-avatar").classList.toggle("anon", !u);
   $("account-open").setAttribute("aria-label", u ? `Account: ${u.email}` : "Account: sign in or create an account");
@@ -433,9 +434,17 @@ function renderAccount() {
   $("account-icon").classList.toggle("signed-in", !!u);
   showBanner();
 }
-function bannerDismissed() { try { return sessionStorage.getItem("smartagri.banner") === "off"; } catch (e) { return false; } }
+// Anonymous work is temporary: kept for this browser session (and removed by the server after a period without
+// activity) until the user creates an account or signs in, which saves it.
+function unsaved() { return account.enabled && !account.user; }
 function showBanner() {
-  $("anon-banner").hidden = !(account.enabled && !account.user && !bannerDismissed());
+  const n = parcelsCache.length;
+  $("anon-banner").hidden = !(unsaved() && n);
+  $("anon-banner-text").textContent = n === 1
+    ? "Temporary — this parcel is kept only for this browser session. Create an account to save it."
+    : "Temporary — these parcels are kept only for this browser session. Create an account to save them.";
+  $("banner-signup").textContent = n === 1 ? "Save parcel" : "Save parcels";
+  if (parcel) $("p-temp").hidden = !unsaved();
 }
 function accPane(id) {
   for (const p of ACC_PANES) $(p).hidden = p !== id;
@@ -452,7 +461,7 @@ function accSet(mode) {
   $("acc-submit").textContent = up ? "Create account" : "Sign in";
   $("acc-password").autocomplete = up ? "new-password" : "current-password";
   $("acc-pw-hint").hidden = !up;
-  $("acc-claim").textContent = "Parcels you created in this browser move to your account.";
+  $("acc-claim").textContent = "Your parcels from this browser session are saved to your account.";
   $("acc-claim").hidden = !(parcelsCache.length);
   $("acc-forgot").hidden = up || !account.email;
   $("acc-msg").textContent = "";
@@ -477,15 +486,19 @@ function notice(text) {
 }
 async function afterAuth(user) {
   account.user = user;
-  parcelsCache = [];
+  if (user === null) parcelsCache = [];
   renderAccount();
-  if (!$("v-parcels").hidden) await loadParcels();
+  if (!$("v-parcels").hidden) { parcelsCache = []; await loadParcels(); }
   else if (!$("v-parcel").hidden && user === null) location.hash = "#/parcels";
 }
 $("account-open").onclick = () => openAccount();
 $("account-icon").onclick = () => openAccount();
 $("banner-signup").onclick = () => openAccount("signup");
-$("banner-close").onclick = () => { try { sessionStorage.setItem("smartagri.banner", "off"); } catch (e) { /* none */ } showBanner(); };
+$("p-save").onclick = () => openAccount("signup");
+// Leaving the page with parcels that are not saved: the browser's own confirmation (no custom text is possible).
+window.addEventListener("beforeunload", (e) => {
+  if (unsaved() && parcelsCache.length) { e.preventDefault(); e.returnValue = ""; }
+});
 $("acc-close").onclick = () => $("account-sheet").close();
 $("acc-notice-ok").onclick = () => $("account-sheet").close();
 $("acc-tab-in").onclick = () => accSet("signin");
@@ -512,7 +525,7 @@ $("acc-form").onsubmit = async (e) => {
   try {
     const r = await api(accMode === "signup" ? "/auth/signup" : "/auth/signin", {method: "POST", body: JSON.stringify({email, password})});
     $("acc-password").value = "";
-    if (r.verify_sent) { notice(`We have sent a confirmation link to ${email}. Open it, then sign in. Until then your parcels stay in this browser.`); return; }
+    if (r.verify_sent) { notice(`We have sent a confirmation link to ${email}. Open it, then sign in. Until then your parcels are kept only for this browser session.`); return; }
     $("account-sheet").close();
     await afterAuth(r.user);
   } catch (err) { $("acc-msg").textContent = err.message; }

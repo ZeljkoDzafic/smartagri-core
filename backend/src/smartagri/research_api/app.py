@@ -140,13 +140,15 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
                 raise HTTPException(404, _message(NotFound("Razgovor nije pronađen.")))
 
     if accounts:
-        def cookie(response, request: Request, name: str, value: Optional[str], days: float, http_only: bool = True):
+        def cookie(response, request: Request, name: str, value: Optional[str], days: Optional[float],
+                   http_only: bool = True):
+            """days=None: a session cookie (no Max-Age/Expires), ended when the browser closes."""
             secure = auth.secure_request(request.url.scheme)
             if value is None:
                 response.delete_cookie(name, path="/", httponly=http_only, samesite="lax", secure=secure)
             else:
-                response.set_cookie(name, value, max_age=int(days * 86400), path="/", httponly=http_only,
-                                    samesite="lax", secure=secure)
+                response.set_cookie(name, value, max_age=None if days is None else int(days * 86400), path="/",
+                                    httponly=http_only, samesite="lax", secure=secure)
 
         @app.middleware("http")
         async def _accounts(request: Request, call_next):
@@ -177,6 +179,10 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
             request.state.browser_owner = auth.browser_owner(browser)
             request.state.owner = auth.user_owner(user) if user else request.state.browser_owner
             request.state.cookies = new_cookies                       # routes add their own changes here
+            if path.startswith("/api/"):
+                if user is None:
+                    accounts.touch(request.state.browser_owner)           # anonymous work stays alive while used
+                accounts.maybe_purge()                                    # and expires after SMARTAGRI_ANON_TTL_HOURS
             response = await call_next(request)
             for name, value in request.state.cookies.items():
                 if name == auth.SESSION_COOKIE:
@@ -184,7 +190,7 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
                 elif name == auth.CSRF_COOKIE:
                     cookie(response, request, name, value, auth.BROWSER_DAYS, http_only=False)
                 else:
-                    cookie(response, request, name, value, auth.BROWSER_DAYS)
+                    cookie(response, request, name, value, None)              # anonymous browser: session cookie
             if path.startswith("/api/"):
                 response.headers["Cache-Control"] = "no-store"
             return response

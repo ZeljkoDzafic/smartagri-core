@@ -547,3 +547,10 @@ dialog[open] { animation: pop 0.45s var(--spring); }
 #acc-notice p { margin: 0 0 16px; line-height: 1.5; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .button.danger { color: #1c0606; } }
 :root[data-theme="dark"] .button.danger { color: #1c0606; }
+/* temporary anonymous work: "Not saved" marks and the session notice */
+.pill.unsaved { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); vertical-align: 2px; }
+.banner { background: color-mix(in srgb, var(--orange) 9%, var(--surface)); }
+.banner svg { stroke: var(--orange); }
+.parcel-banner { margin: 14px 0 0; }
+.parcel-banner p { line-height: 1.45; }
+.parcel-banner .pill { margin-right: 4px; }

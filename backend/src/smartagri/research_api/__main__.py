@@ -1,4 +1,4 @@
-"""python -m smartagri.research_api [--host 127.0.0.1] [--port 8100] [--assign-unowned EMAIL]"""
+"""python -m smartagri.research_api [--host 127.0.0.1] [--port 8100] [--assign-unowned EMAIL] [--purge-anonymous]"""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,16 @@ def main() -> None:
     p.add_argument("--assign-unowned", metavar="EMAIL",
                    help="accounts on (SMARTAGRI_ACCOUNTS=optional): give every parcel stored before accounts were "
                         "turned on to the account with this email, then exit")
+    p.add_argument("--purge-anonymous", action="store_true",
+                   help="delete anonymous (not saved) parcels idle longer than SMARTAGRI_ANON_TTL_HOURS (default 24), "
+                        "with their conversations and runs, then exit")
     a = p.parse_args()
+    if a.purge_anonymous:
+        from ..store import make_store
+        from .auth import Accounts, anon_ttl_hours
+        n = Accounts(make_store(), mailer=False).purge_anonymous()
+        print("%d anonymous parcel(s) idle for more than %g h deleted" % (n, anon_ttl_hours()))
+        return
     if a.assign_unowned:
         from ..store import make_store
         from .auth import Accounts, AuthError

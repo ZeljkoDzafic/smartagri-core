@@ -538,11 +538,16 @@ TABLES.update({
     "core_tokens": ["user_id", "purpose", "expires_at"],
     "core_owners": ["owner", "kind"],
 })
+# Anonymous work is temporary: touched_at (UTC text, sortable) is the last activity of an anonymous browser's parcel;
+# research_api/auth.py purges anonymous parcels idle longer than SMARTAGRI_ANON_TTL_HOURS. Additive key column (schema
+# sync); account-owned rows do not use it.
+TABLES["core_owners"] = TABLES["core_owners"] + ["touched_at"]
 INDEXES += [
     "CREATE UNIQUE INDEX IF NOT EXISTS core_users_email_idx ON core_users (email)",
     "CREATE INDEX IF NOT EXISTS core_sessions_user_idx ON core_sessions (user_id)",
     "CREATE INDEX IF NOT EXISTS core_tokens_user_idx ON core_tokens (user_id, purpose)",
     "CREATE INDEX IF NOT EXISTS core_owners_owner_idx ON core_owners (owner, kind)",
+    "CREATE INDEX IF NOT EXISTS core_owners_touched_idx ON core_owners (touched_at)",
 ]
 
 

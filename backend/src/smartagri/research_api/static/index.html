@@ -51,7 +51,7 @@
       <p class="side-label">Account</p>
       <button type="button" id="account-open" class="account-item" aria-haspopup="dialog">
         <span class="avatar" id="account-avatar" aria-hidden="true"></span>
-        <span class="account-text"><span id="account-name">Sign in</span><span id="account-sub">Parcels are kept in this browser</span></span>
+        <span class="account-text"><span id="account-name">Sign in</span><span id="account-sub">Parcels are not saved</span></span>
       </button>
     </div>
     <p class="side-label">System</p>
@@ -70,10 +70,9 @@
       <a class="button primary" href="#/new"><span aria-hidden="true">+</span> New parcel</a>
     </div>
     <div id="anon-banner" class="banner" role="note" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 4.5 6.5v5c0 4.4 3.1 7.9 7.5 9 4.4-1.1 7.5-4.6 7.5-9v-5z"/></svg>
-      <p>Your parcels are saved in this browser. Create an account to keep them.</p>
-      <button type="button" class="button secondary small" id="banner-signup">Create account</button>
-      <button type="button" class="banner-close" id="banner-close" aria-label="Dismiss">×</button>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+      <p id="anon-banner-text">Temporary — parcels are kept only for this browser session. Create an account to save them.</p>
+      <button type="button" class="button secondary small" id="banner-signup">Save parcels</button>
     </div>
     <div id="parcel-list" class="parcel-grid" aria-live="polite"></div>
   </section>
@@ -151,6 +150,11 @@
         <p class="meta-line" id="p-meta"></p>
         <button type="button" class="button secondary small" id="p-refresh">Refresh data <span class="hint-inline">weather, Sentinel-2</span></button>
       </div>
+    </div>
+    <div id="p-temp" class="banner parcel-banner" role="note" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+      <p><span class="pill unsaved">Not saved</span> Temporary — this parcel is kept only for this browser session. Create an account to save it.</p>
+      <button type="button" class="button primary small" id="p-save">Save parcel</button>
     </div>
 
     <div class="parcel-layout">
@@ -259,7 +263,7 @@
         <label class="field"><span>Email</span><input id="acc-email" type="email" autocomplete="username" inputmode="email" required></label>
         <label class="field"><span>Password</span><input id="acc-password" type="password" autocomplete="current-password" required aria-describedby="acc-pw-hint"></label>
         <small id="acc-pw-hint" class="hint" hidden>At least 10 characters.</small>
-        <p id="acc-claim" class="hint" hidden>Parcels you created in this browser move to your account.</p>
+        <p id="acc-claim" class="hint" hidden>Your parcels from this browser session are saved to your account.</p>
         <button type="submit" class="button primary wide" id="acc-submit">Sign in</button>
         <p id="acc-msg" class="error" role="alert"></p>
         <p class="sheet-links"><button type="button" class="link-button" id="acc-forgot" hidden>Forgot password?</button></p>
