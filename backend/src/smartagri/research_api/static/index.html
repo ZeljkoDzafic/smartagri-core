@@ -17,6 +17,7 @@
 <script src="static/theme.js"></script>
 <script defer src="static/vendor/leaflet/leaflet.js"></script>
 <script defer src="static/map.js"></script>
+<script defer src="static/charts.js"></script>
 <script defer src="static/app.js"></script>
 </head>
 <body>
@@ -44,6 +45,7 @@
     <p class="side-label" aria-hidden="true">Workspace</p>
     <a href="#/parcels" data-nav="parcels"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span>Parcels</span></a>
     <a href="#/new" data-nav="new"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8v8M8 12h8"/></svg><span>New parcel</span></a>
+    <a href="#/eval" data-nav="eval"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h15"/><path d="M7 16.5v-5M12 16.5v-9M17 16.5v-7"/></svg><span>Evaluation</span></a>
     <a href="#/rate" data-nav="rate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.6.9 5.1L12 16.3l-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/></svg><span>Blind rating</span></a>
   </nav>
   <div class="side-foot">
@@ -202,6 +204,29 @@
         </details>
       </div>
     </div>
+    <div class="context-layout">
+      <section class="card ctx-card" aria-labelledby="w-title">
+        <h2 id="w-title">Weather and NDVI <span class="sym" title="decision context">C</span><span class="sym" title="quality layer">q</span></h2>
+        <p class="hint">The series stored with the parcel’s data, with source, time of retrieval and age. Nothing is filled in: a missing series stays empty.</p>
+        <div id="p-series" aria-live="polite"></div>
+      </section>
+      <section class="card ctx-card" aria-labelledby="wb-title">
+        <h2 id="wb-title">Water balance <span class="hint-inline">computed in code (FAO-56)</span></h2>
+        <p class="hint">ET0, crop coefficient Kc, ETc = Kc × ET0, rainfall and root-zone deficit per day, from the core FAO-56 tools. An illustration of the inputs: the advice uses the core irrigation calculations, not this series.</p>
+        <div id="p-water" aria-live="polite"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="v-eval" class="view" hidden aria-labelledby="eval-title">
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Read-only · from evalkit</p>
+        <h1 id="eval-title">Evaluation</h1>
+        <p class="lead">Runs, the V0–V5 ladder, paired differences with bootstrap intervals, rater agreement, the leakage guard and the protocol lock, exactly as <code>python -m smartagri.evalkit report</code> computes them. Development-set runs are labelled as such and are not experiment results.</p>
+      </div>
+    </div>
+    <div id="e-out" aria-live="polite"></div>
   </section>
 
   <section id="v-rate" class="view rate" hidden lang="sr-Latn">

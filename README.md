@@ -29,7 +29,7 @@ by the language model.
 | `backend/src/smartagri/retrieval/` | corpus loading, BM25 + vector retrieval with rank fusion, corpus ingest and coverage |
 | `backend/src/smartagri/pipeline/`, `providers/`, `llm/` | answer generation and judge, weather and satellite adapters, LLM providers |
 | `backend/src/smartagri/evalkit/` | `python -m smartagri.evalkit run / report / export / guard / sweep / lock` |
-| `backend/src/smartagri/research_api/` | minimal HTTP API and the web app (map drawing, profile, advice, provenance, blind rating) |
+| `backend/src/smartagri/research_api/` | minimal HTTP API and the web app (map drawing, profile, weather and NDVI, water balance, advice, provenance, evaluation overview, blind rating) |
 | `backend/config/` | rules, thresholds, variants, question bank, Kc table (locked with the evaluation protocol) |
 | `backend/corpus/` | corpus manifest (licence per document) and passages |
 | `backend/eval/scenarios/dev/` | development scenarios; held-out test scenarios are published only after the protocol lock |
@@ -68,7 +68,12 @@ research tool should. For a public server, see [Accounts](#accounts) and [`docs/
 
 Open `http://127.0.0.1:8100`. Draw a parcel on the map (or paste or import a GeoJSON polygon), fetch its profile and
 see each input with its origin, age and reliability (q), ask a question under any variant V0–V5, answer the
-follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes.
+follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes ("Download
+provenance (JSON)" saves the whole answer with its decisions, sources, inputs and hashes). The parcel page also shows
+the stored weather and Sentinel-2 NDVI series with their source and age, and a daily FAO-56 water balance (ET0, Kc,
+ETc = Kc × ET0, rainfall, root-zone deficit) computed in code by the core tools; a missing series stays empty. The
+read-only Evaluation page shows what `python -m smartagri.evalkit report` computes from the stored runs (development
+runs are labelled as such), the leakage guard counts and the protocol lock; it is not linked from the rating screen.
 
 Answers are in English by default. `SMARTAGRI_LOCALE=sr-Latn` switches the answers to the local language (Latin
 script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English

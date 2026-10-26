@@ -322,3 +322,137 @@ def test_ai_chat_answers_in_the_language_of_the_message(client, monkeypatch):
     local = client.post("/api/parcels/%s/ai-chat" % p["id"], json={"message": "Kada da navodnjavam kukuruz?"}).json()
     assert fake.systems == [ai_chat.SYSTEM_PROMPT]                       # a local message: no translation call
     assert "translation" not in local["answer"] and "language" not in local["answer"]
+
+
+# ---------------------------------------------------------------- read-only views: series, water balance, evaluation,
+# provenance export (no network: weather is the fake above, satellite is not configured)
+def _fake_satellite(store, geometry, as_of, refresh=False):
+    days = [(as_of - timedelta(days=o)).date().isoformat() for o in (25, 15, 5)]
+    def item(day, nodata):
+        return {"interval": {"from": day + "T00:00:00Z"},
+                "outputs": {"ndvi": {"bands": {"B0": {"stats": {"sampleCount": 100, "noDataCount": nodata,
+                                                                  "percentiles": {"10.0": 0.5, "50.0": 0.7, "90.0": 0.8}}}}}}}
+    return {"raw": {"data": [item(days[0], 10), item(days[1], 60), item(days[2], 100)]},
+            "fetched_at": as_of.isoformat(), "request_hash": "sat-test"}
+
+
+def test_series_without_profile_is_an_honest_empty_state(client):
+    p = _parcel(client)
+    s = client.get("/api/parcels/%s/series" % p["id"]).json()
+    assert s["weather"]["status"] == "missing" and s["weather"]["rows"] == []
+    assert s["ndvi"]["status"] == "missing" and s["ndvi"]["rows"] == []
+    wb = client.get("/api/parcels/%s/water-balance" % p["id"]).json()
+    assert wb["status"] == "missing" and wb["rows"] == [] and wb["used_by_advice"] is False
+    assert client.get("/api/parcels/nope/series").status_code == 404
+    assert client.get("/api/parcels/nope/water-balance").status_code == 404
+
+
+def test_series_show_the_stored_rows_with_source_and_age(client):
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    s = client.get("/api/parcels/%s/series" % p["id"]).json()
+    w = s["weather"]
+    assert w["status"] == "ok" and w["source"] == "Open-Meteo" and w["fetched_at"] and w["age_hours"] is not None
+    assert len(w["rows"]) == 37 and sum(r["is_forecast"] for r in w["rows"]) == 7
+    assert {r["et0_mm"] for r in w["rows"]} == {5.0} and {r["precip_mm"] for r in w["rows"]} == {0.5}
+    n = s["ndvi"]                                       # CDSE not configured: the stored message, no values
+    assert n["status"] == "missing" and n["rows"] == [] and "CDSE" in n["message"]
+
+
+def test_ndvi_series_carries_valid_pixel_ratio(client, monkeypatch):
+    from smartagri.providers import satellite
+    monkeypatch.setattr(satellite, "fetch", _fake_satellite)
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    n = client.get("/api/parcels/%s/series" % p["id"]).json()["ndvi"]
+    assert n["status"] == "ok" and [r["valid_px_ratio"] for r in n["rows"]] == [0.9, 0.4]   # the empty day is dropped
+    assert [r["meets_trend_share"] for r in n["rows"]] == [True, False] and n["cloud_flag"] is None
+    assert n["latest_age_days"] == 15 and n["rows"][0]["obs_date"] and n["summary"]["latest_value"] == 0.7
+
+
+def test_water_balance_uses_the_core_tools(client):
+    from smartagri.core.tools import crop_evapotranspiration, estimate_bbch
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    wb = client.get("/api/parcels/%s/water-balance" % p["id"]).json()
+    assert wb["status"] == "ok" and wb["computed_in"] == "code" and wb["method"] == "FAO-56"
+    assert wb["stage_method"] == "days_since_sowing" and wb["used_by_advice"] is False
+    sowing = datetime.fromisoformat(p["agronomic"]["sowing_date"]).date()
+    for r in wb["rows"]:
+        bbch = estimate_bbch(None, (datetime.fromisoformat(r["date"]).date() - sowing).days).output["bbch"]
+        tool = crop_evapotranspiration(bbch, r["et0_mm"]).output
+        assert r["bbch"] == bbch and r["kc"] == tool["kc"] and r["etc_mm"] == tool["etc_mm"]
+    # loam: AWC 160 mm/m; the deficit never leaves [0, TAW] and grows by ETc - rain while below TAW
+    first, second = wb["rows"][0], wb["rows"][1]
+    assert first["deficit_mm"] == round(max(0.0, first["etc_mm"] - 0.5), 1)
+    assert all(0 <= r["deficit_mm"] <= r["taw_mm"] for r in wb["rows"])
+    assert second["deficit_mm"] == round(min(second["taw_mm"], first["deficit_mm"] + second["etc_mm"] - 0.5), 1)
+    assert wb["totals"]["et0_observed_mm"] == 150.0 and wb["totals"]["rain_observed_mm"] == 15.0
+
+
+def test_water_balance_without_a_stage_leaves_etc_empty(client):
+    r = client.post("/api/parcels", json={"name": "Bez setve", "geometry": SQUARE})
+    pid = r.json()["id"]
+    client.post("/api/parcels/%s/profile/refresh" % pid)
+    wb = client.get("/api/parcels/%s/water-balance" % pid).json()
+    assert wb["status"] == "partial" and "no_stage" in wb["assumptions"]
+    assert all(x["kc"] is None and x["etc_mm"] is None and x["deficit_mm"] is None for x in wb["rows"])
+    assert all(x["et0_mm"] == 5.0 for x in wb["rows"])
+
+
+def test_evaluation_overview_reads_evalkit(client, store):
+    from smartagri.evalkit import report as rep
+    from smartagri.evalkit import tables
+    empty = client.get("/api/evaluation/overview").json()
+    assert empty["sets"] == [] and empty["has_test_results"] is False
+    assert empty["lock"]["status"] in ("not_locked", "locked")
+    dev_guard = next(g for g in empty["guard"] if g["set"] == "dev")
+    assert dev_guard["status"] in ("clean", "hits") and "hits" not in dev_guard     # counts only, never texts
+    items = []
+    for variant, act in (("V3", "ask"), ("V4", "conditional")):
+        for k in range(3):
+            items.append(store.save_eval_item({
+                "id": "%s-%d" % (variant, k), "batch_id": "b-" + variant, "scenario_id": "S%d" % k, "variant": variant,
+                "repeat": 1, "set": "dev", "created_at": "2026-10-26T08:00:00+02:00", "first_act": act,
+                "final_act": act, "n_turns": 1, "first_question_input": None, "expect": {"act": "conditional"},
+                "turns": [{"answer": {"act": act, "next_question": None, "sources": []}}], "records": []}))
+    o = client.get("/api/evaluation/overview").json()
+    (dev,) = o["sets"]
+    assert dev["set"] == "dev" and dev["label"] == "development set" and dev["experiment_result"] is False
+    assert o["has_test_results"] is False and dev["variants"] == ["V3", "V4"]
+    auto = rep.automatic(store.list_eval_items())
+    assert dev["automatic"]["V4"]["act_accuracy"] == auto["V4"]["act_accuracy"] == 1.0
+    step = next(s for s in dev["steps"] if (s["a"], s["b"]) == ("V4", "V3"))
+    expected = rep.paired_measure(rep.scenario_scores(store, items, None), "V4", "V3", "act_correct",
+                                  rep.scenario_meta(items))
+    assert step["comparison"] == "E1" and step["paired"]["diff"] == expected["diff"] == 1.0
+    assert step["paired"]["ci95"] == list(expected["ci95"])
+    assert dev["report_md"] == tables.render(store, items, None, None)
+    assert dev["raters"] == {} and dev["agreement"] is None
+
+
+def test_provenance_export_holds_decisions_sources_and_hashes(client):
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    run = client.post("/api/parcels/%s/chat" % p["id"],
+                      json={"text": "When should I irrigate?", "advice_type": "irrigation_timing"}).json()
+    r = client.get("/api/runs/%s/provenance" % run["id"])
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    doc = r.json()
+    assert doc["format"] == "smartagri-provenance/1" and doc["run"]["id"] == run["id"]
+    assert set(doc["decisions"]) >= {"quality", "applicability", "sufficiency", "question", "policy", "grounding"}
+    assert doc["hashes"]["config"] == run["provenance"]["config_hashes"] and doc["hashes"]["corpus"]
+    assert doc["hashes"]["code_version"]["recorded_with_run"] is False
+    assert doc["inputs"] == run["answer"]["data_used"] and doc["sources"] == run["answer"]["sources"]
+    assert doc["profile"]["id"] == run["provenance"]["profile_id"] and doc["profile"]["weather"]["source"] == "Open-Meteo"
+    assert client.get("/api/runs/nope/provenance").status_code == 404
+
+
+def test_evaluation_view_is_not_linked_from_the_rating_screen():
+    import re
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    section = re.search(r'<section id="v-rate".*?</section>', page, re.S).group(0)
+    assert "eval" not in section.replace("Slepo", "").lower().replace("ocenjiva", "")
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    block = script[script.index('$("r-next").onclick'):script.index("// ------", script.index('$("r-next").onclick'))]
+    assert "#/eval" not in block and "/evaluation" not in block

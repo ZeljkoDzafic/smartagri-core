@@ -320,6 +320,30 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
             guard_conversation(request, found.get("conversation_id") if found else None)
         return call(svc.get_run, run_id)
 
+    @api.get("/runs/{run_id}/provenance")
+    def run_provenance(request: Request, run_id: str):
+        """The answer with every decision, its sources, inputs and hashes, as a downloadable JSON document."""
+        if accounts:
+            found = svc.store.get_run(run_id)
+            guard_conversation(request, found.get("conversation_id") if found else None)
+        body = call(svc.run_provenance, run_id)
+        return JSONResponse(body, headers={"Content-Disposition": 'attachment; filename="provenance-%s.json"' % run_id})
+
+    @api.get("/parcels/{parcel_id}/series")
+    def parcel_series(request: Request, parcel_id: str):
+        guard_parcel(request, parcel_id)
+        return call(svc.parcel_series, parcel_id)
+
+    @api.get("/parcels/{parcel_id}/water-balance")
+    def parcel_water_balance(request: Request, parcel_id: str):
+        guard_parcel(request, parcel_id)
+        return call(svc.parcel_water_balance, parcel_id)
+
+    @api.get("/evaluation/overview")
+    def evaluation_overview():
+        """Read-only evaluation overview from evalkit (separate from the blind rating endpoints under /eval/)."""
+        return svc.eval_overview()
+
     @api.get("/llm")
     def llm():
         return svc.llm_info()

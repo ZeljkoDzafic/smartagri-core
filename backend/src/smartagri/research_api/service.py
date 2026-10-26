@@ -22,9 +22,15 @@ from ..providers import satellite
 from ..providers.base import offline
 from ..retrieval import load_corpus, make_retriever
 from ..store import Store, make_store, new_id, now_iso
+from . import views
 
 DEFAULT_VARIANT = "V5"
 PROFILE_MAX_AGE_HOURS = 6
+
+
+def _shown_message(text: str) -> str:
+    """A stored provider message (default locale) in the request locale."""
+    return i18n.translate_message(text) if text and not i18n.is_default() else text
 
 
 class NotFound(Exception):
@@ -367,6 +373,26 @@ class ResearchService:
         if not run:
             raise NotFound("Odgovor nije pronađen.")
         return run
+
+    # ------------------------------------------------------------ read-only views (views.py)
+    def parcel_series(self, parcel_id: str) -> Dict[str, Any]:
+        """Weather and NDVI series of the latest stored profile (nothing is fetched)."""
+        out = views.series(self._parcel(parcel_id), self.store.latest_profile(parcel_id))
+        for key in ("weather", "ndvi"):                 # stored provider messages are in the default locale
+            out[key]["message"] = _shown_message(out[key]["message"])
+        return out
+
+    def parcel_water_balance(self, parcel_id: str) -> Dict[str, Any]:
+        """FAO-56 daily water balance over the stored weather window, computed in code (core tools)."""
+        out = views.water_balance(self._parcel(parcel_id), self.store.latest_profile(parcel_id))
+        out["message"] = _shown_message(out["message"])
+        return out
+
+    def run_provenance(self, run_id: str) -> Dict[str, Any]:
+        return views.provenance(self.store, self.get_run(run_id))
+
+    def eval_overview(self) -> Dict[str, Any]:
+        return views.eval_overview(self.store)
 
     # ------------------------------------------------------------ LLM and evaluation
     def llm_info(self) -> Dict[str, Any]:
