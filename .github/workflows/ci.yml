@@ -71,3 +71,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/check_presentation_site.py
+
+  docker:
+    name: container image (build and health check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t smartagri-core .
+      - name: Start and check
+        run: |
+          docker run -d --name smartagri -p 127.0.0.1:8100:8100 -e SMARTAGRI_OFFLINE=1 smartagri-core
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8100/api/health && break; sleep 2; done
+          curl -fs http://127.0.0.1:8100/api/meta | python3 -c "import json, sys; assert json.load(sys.stdin)['accounts']['enabled']"
+          docker logs smartagri

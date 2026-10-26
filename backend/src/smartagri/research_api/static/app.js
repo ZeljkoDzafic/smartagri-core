@@ -7,10 +7,17 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<
 // the choice is sent with every request as X-SmartAgri-Lang. Blind rating always runs in the default locale.
 function storedLang() { try { return localStorage.getItem("smartagri.lang") || ""; } catch (e) { return ""; } }
 let answerLang = "en";
+// With accounts on (SMARTAGRI_ACCOUNTS=optional) every state-changing request carries the CSRF token of the sa_csrf
+// cookie (double submit); the session and browser cookies are HttpOnly and sent by the browser itself.
+function csrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)sa_csrf=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
 async function api(path, opts = {}) {
   const headers = {"Content-Type": "application/json"};
   if (storedLang()) headers["X-SmartAgri-Lang"] = storedLang();
-  const r = await fetch("api" + path, {...opts, headers});
+  if (opts.method && opts.method !== "GET" && csrfToken()) headers["X-CSRF-Token"] = csrfToken();
+  const r = await fetch("api" + path, {...opts, headers, credentials: "same-origin"});
   const lang = r.headers.get("Content-Language");
   if (lang && !path.startsWith("/eval/")) answerLang = lang;
   const body = await r.json().catch(() => ({}));
@@ -63,6 +70,7 @@ function show(view) {
 async function route() {
   const parts = (location.hash || "#/parcels").replace(/^#\/?/, "").split("/");
   const view = parts[0] || "parcels";
+  if ((view === "verify" || view === "reset") && parts[1]) { accountLink(view, decodeURIComponent(parts[1])); return; }
   if (view === "parcel" && parts[1]) { show("parcel"); await openParcel(decodeURIComponent(parts[1])); }
   else if (view === "new") { show("new"); ensureDrawer(); }
   else if (view === "rate") show("rate");
@@ -85,6 +93,7 @@ async function init() {
   meta = await api("/meta");
   $("c-variant").innerHTML = meta.variants.map((v) => `<option ${v === meta.default_variant ? "selected" : ""}>${esc(v)}</option>`).join("");
   $("c-type").innerHTML += meta.advice_types.map((t) => `<option value="${esc(t.value)}">${esc(ADVICE[t.value] || t.label)}</option>`).join("");
+  if (meta.accounts && meta.accounts.enabled) await initAccount();
   await route();
 }
 
@@ -118,6 +127,7 @@ async function loadParcels() {
   try { rows = await api("/parcels"); }
   catch (e) { list.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
   parcelsCache = rows;
+  showBanner();
   if (!rows.length) {
     list.innerHTML = `<div class="empty card">${EMPTY_ART}<h2>No parcels yet</h2><p>Draw a maize field on the map or paste its boundary as GeoJSON. Then fetch its data and ask a question.</p><a class="button primary" href="#/new">Draw your first parcel</a></div>`;
     return;
@@ -396,6 +406,181 @@ $("r-next").onclick = async () => {
     catch (e) { $("r-msg").textContent = e.message; }
   };
 };
+
+// ------------------------------------------------------------------ account (only when the server has accounts on)
+let account = {enabled: false, user: null, email: false};
+let accMode = "signin";
+const ACC_PANES = ["acc-auth", "acc-forgot-form", "acc-reset-form", "acc-menu", "acc-notice"];
+const initial = (email) => (email || "?").trim().charAt(0).toUpperCase();
+
+async function initAccount() {
+  account.enabled = true;
+  account.email = !!meta.accounts.email;
+  try { const me = await api("/auth/me"); account.user = me.user; account.email = !!me.email; }
+  catch (e) { account.user = null; }
+  renderAccount();
+}
+function renderAccount() {
+  const u = account.user;
+  $("account").hidden = !account.enabled;
+  $("account-icon").hidden = !account.enabled;
+  $("account-name").textContent = u ? u.email : "Sign in";
+  $("account-sub").textContent = u ? "Signed in" : "Parcels are kept in this browser";
+  $("account-avatar").textContent = u ? initial(u.email) : "";
+  $("account-avatar").classList.toggle("anon", !u);
+  $("account-open").setAttribute("aria-label", u ? `Account: ${u.email}` : "Account: sign in or create an account");
+  $("account-icon").setAttribute("aria-label", u ? `Account: ${u.email}` : "Account: sign in");
+  $("account-icon").classList.toggle("signed-in", !!u);
+  showBanner();
+}
+function bannerDismissed() { try { return sessionStorage.getItem("smartagri.banner") === "off"; } catch (e) { return false; } }
+function showBanner() {
+  $("anon-banner").hidden = !(account.enabled && !account.user && !bannerDismissed());
+}
+function accPane(id) {
+  for (const p of ACC_PANES) $(p).hidden = p !== id;
+  const titles = {"acc-auth": "Account", "acc-forgot-form": "Reset password", "acc-reset-form": "New password",
+                  "acc-menu": "Account", "acc-notice": "Account"};
+  $("acc-title").textContent = titles[id];
+}
+function accSet(mode) {
+  accMode = mode;
+  const up = mode === "signup";
+  $("acc-tab-in").setAttribute("aria-selected", String(!up)); $("acc-tab-in").tabIndex = up ? -1 : 0;
+  $("acc-tab-up").setAttribute("aria-selected", String(up)); $("acc-tab-up").tabIndex = up ? 0 : -1;
+  $("acc-form").setAttribute("aria-labelledby", up ? "acc-tab-up" : "acc-tab-in");
+  $("acc-submit").textContent = up ? "Create account" : "Sign in";
+  $("acc-password").autocomplete = up ? "new-password" : "current-password";
+  $("acc-pw-hint").hidden = !up;
+  $("acc-claim").textContent = "Parcels you created in this browser move to your account.";
+  $("acc-claim").hidden = !(parcelsCache.length);
+  $("acc-forgot").hidden = up || !account.email;
+  $("acc-msg").textContent = "";
+}
+function openAccount(mode) {
+  if (account.user) {
+    accPane("acc-menu");
+    $("acc-email-shown").textContent = account.user.email;
+    $("acc-avatar").textContent = initial(account.user.email);
+    $("acc-delete-form").hidden = true; $("acc-delete").setAttribute("aria-expanded", "false");
+    $("acc-delete-password").value = ""; $("acc-delete-msg").textContent = "";
+  } else {
+    accPane("acc-auth");
+    accSet(mode || "signin");
+  }
+  if (!$("account-sheet").open) $("account-sheet").showModal();
+}
+function notice(text) {
+  accPane("acc-notice");
+  $("acc-notice-text").textContent = text;
+  if (!$("account-sheet").open) $("account-sheet").showModal();
+}
+async function afterAuth(user) {
+  account.user = user;
+  parcelsCache = [];
+  renderAccount();
+  if (!$("v-parcels").hidden) await loadParcels();
+  else if (!$("v-parcel").hidden && user === null) location.hash = "#/parcels";
+}
+$("account-open").onclick = () => openAccount();
+$("account-icon").onclick = () => openAccount();
+$("banner-signup").onclick = () => openAccount("signup");
+$("banner-close").onclick = () => { try { sessionStorage.setItem("smartagri.banner", "off"); } catch (e) { /* none */ } showBanner(); };
+$("acc-close").onclick = () => $("account-sheet").close();
+$("acc-notice-ok").onclick = () => $("account-sheet").close();
+$("acc-tab-in").onclick = () => accSet("signin");
+$("acc-tab-up").onclick = () => accSet("signup");
+[$("acc-tab-in"), $("acc-tab-up")].forEach((t) => t.onkeydown = (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  e.preventDefault();
+  const next = accMode === "signin" ? "signup" : "signin";
+  accSet(next); $(next === "signup" ? "acc-tab-up" : "acc-tab-in").focus();
+});
+$("acc-forgot").onclick = () => {
+  accPane("acc-forgot-form");
+  $("acc-forgot-email").value = $("acc-email").value; $("acc-forgot-msg").textContent = "";
+  $("acc-forgot-email").focus();
+};
+$("acc-back").onclick = () => { accPane("acc-auth"); accSet("signin"); };
+$("acc-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $("acc-submit"), email = $("acc-email").value.trim(), password = $("acc-password").value;
+  $("acc-msg").textContent = "";
+  if (!email || !password) { $("acc-msg").textContent = "Enter your email and password."; return; }
+  if (accMode === "signup" && password.length < 10) { $("acc-msg").textContent = "Use a password of at least 10 characters."; return; }
+  btn.setAttribute("aria-busy", "true");
+  try {
+    const r = await api(accMode === "signup" ? "/auth/signup" : "/auth/signin", {method: "POST", body: JSON.stringify({email, password})});
+    $("acc-password").value = "";
+    if (r.verify_sent) { notice(`We have sent a confirmation link to ${email}. Open it, then sign in. Until then your parcels stay in this browser.`); return; }
+    $("account-sheet").close();
+    await afterAuth(r.user);
+  } catch (err) { $("acc-msg").textContent = err.message; }
+  finally { btn.removeAttribute("aria-busy"); }
+};
+$("acc-forgot-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $("acc-forgot-email").value.trim();
+  if (!email) { $("acc-forgot-msg").textContent = "Enter your email."; return; }
+  $("acc-forgot-send").setAttribute("aria-busy", "true");
+  try {
+    await api("/auth/password/forgot", {method: "POST", body: JSON.stringify({email})});
+    notice(`If an account exists for ${email}, a link to choose a new password is on its way. It is valid for one hour.`);
+  } catch (err) { $("acc-forgot-msg").textContent = err.message; }
+  finally { $("acc-forgot-send").removeAttribute("aria-busy"); }
+};
+let resetToken = "";
+$("acc-reset-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const password = $("acc-reset-password").value;
+  if (password.length < 10) { $("acc-reset-msg").textContent = "Use a password of at least 10 characters."; return; }
+  $("acc-reset-save").setAttribute("aria-busy", "true");
+  try {
+    const r = await api("/auth/password/reset", {method: "POST", body: JSON.stringify({token: resetToken, password})});
+    $("acc-reset-password").value = "";
+    await afterAuth(r.user);
+    notice("Your password has been changed and you are signed in.");
+  } catch (err) { $("acc-reset-msg").textContent = err.message; }
+  finally { $("acc-reset-save").removeAttribute("aria-busy"); }
+};
+$("acc-signout").onclick = async () => {
+  try { await api("/auth/signout", {method: "POST"}); $("account-sheet").close(); await afterAuth(null); }
+  catch (err) { notice(err.message); }
+};
+$("acc-delete").onclick = () => {
+  const open = $("acc-delete-form").hidden;
+  $("acc-delete-form").hidden = !open;
+  $("acc-delete").setAttribute("aria-expanded", String(open));
+  if (open) $("acc-delete-password").focus();
+};
+$("acc-delete-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const password = $("acc-delete-password").value;
+  if (!password) { $("acc-delete-msg").textContent = "Enter your password to confirm."; return; }
+  $("acc-delete-confirm").setAttribute("aria-busy", "true");
+  try {
+    await api("/auth/account/delete", {method: "POST", body: JSON.stringify({password})});
+    await afterAuth(null);
+    notice("Your account and its data have been deleted.");
+  } catch (err) { $("acc-delete-msg").textContent = err.message; }
+  finally { $("acc-delete-confirm").removeAttribute("aria-busy"); }
+};
+// Links from e-mails: #/verify/<token> and #/reset/<token>. The token stays in the fragment (never sent to a server log).
+async function accountLink(kind, token) {
+  history.replaceState(null, "", location.pathname + location.search + "#/parcels");
+  show("parcels"); loadParcels();
+  if (!account.enabled) return;
+  if (kind === "reset") {
+    resetToken = token;
+    accPane("acc-reset-form"); $("acc-reset-msg").textContent = ""; $("acc-reset-password").value = "";
+    $("account-sheet").showModal(); $("acc-reset-password").focus();
+    return;
+  }
+  try { await api("/auth/verify", {method: "POST", body: JSON.stringify({token})}); openAccount("signin");
+        $("acc-msg").textContent = ""; $("acc-claim").hidden = false;
+        $("acc-claim").textContent = "Your email is confirmed. Sign in to continue."; }
+  catch (err) { notice(err.message); }
+}
 
 // ------------------------------------------------------------------ settings
 function storedTheme() { try { return localStorage.getItem("smartagri.theme") || "auto"; } catch (e) { return "auto"; } }

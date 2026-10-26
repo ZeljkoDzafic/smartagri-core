@@ -1,0 +1,14 @@
+.git
+.github
+website
+tools
+**/.venv*
+**/__pycache__
+**/*.pyc
+**/*.sqlite
+**/*.sqlite3
+**/.pytest_cache
+**/.ruff_cache
+.env
+.env.*
+backend/eval/runs

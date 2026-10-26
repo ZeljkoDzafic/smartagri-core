@@ -1,0 +1,8 @@
+// Cloudflare deployment of the static presentation website (website/) as a Worker with static assets.
+// Deploy: npx wrangler deploy  (or the workflow .github/workflows/cloudflare-pages.yml).
+// Custom domain: add "routes": [{ "pattern": "smartagri.rs.ba", "custom_domain": true }] once the zone is on Cloudflare.
+{
+  "name": "smartagri-core",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./website", "not_found_handling": "404-page" }
+}

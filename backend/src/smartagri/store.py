@@ -527,6 +527,24 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS messaging_inbound_day_idx ON messaging_inbound (received_on)",
 ]
 
+# Optional accounts of the research web app (research_api/auth.py; off by default, SMARTAGRI_ACCOUNTS=optional).
+# Separate from the product's users/sessions tables: a research database never mixes the two. Secrets are never
+# stored: core_sessions and core_tokens use sha256 of the secret as id; the password hash lives in the document.
+# core_owners maps a parcel id (= row id) to its owner: "u:<user id>" or "b:<sha256 of an anonymous browser token>".
+# Additive document tables created by migration 0014; no back-fill (parcels created before stay unowned).
+TABLES.update({
+    "core_users": ["email"],
+    "core_sessions": ["user_id", "expires_at"],
+    "core_tokens": ["user_id", "purpose", "expires_at"],
+    "core_owners": ["owner", "kind"],
+})
+INDEXES += [
+    "CREATE UNIQUE INDEX IF NOT EXISTS core_users_email_idx ON core_users (email)",
+    "CREATE INDEX IF NOT EXISTS core_sessions_user_idx ON core_sessions (user_id)",
+    "CREATE INDEX IF NOT EXISTS core_tokens_user_idx ON core_tokens (user_id, purpose)",
+    "CREATE INDEX IF NOT EXISTS core_owners_owner_idx ON core_owners (owner, kind)",
+]
+
 
 def _typed_schema(backend: str) -> List[str]:
     """Typed time-series tables of spec 035 (weather_hourly, station_observations; monthly partitions on PostgreSQL),

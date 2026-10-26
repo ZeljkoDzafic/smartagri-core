@@ -8,4 +8,7 @@ scope, crop packs, activity log, sensors, ...). The experiment itself does not r
 
     pip install -e ".[api]"
     python -m smartagri.research_api            # http://127.0.0.1:8100 (local research use, no accounts)
+
+Optional accounts for a public deployment (SMARTAGRI_ACCOUNTS=optional) live in `auth.py`, written for this module;
+they do not change the evaluation, the blind rating protocol or anything the experiment reads.
 """

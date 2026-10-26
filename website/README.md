@@ -2,11 +2,11 @@
 
 A standalone, English, static presentation of SmartAgri core. No build step, no framework, no external font,
 no CDN and no analytics. All paths are relative, so the folder works on a domain root and on a project subpath
-such as GitHub Pages (`https://zeljkodzafic.github.io/smartagri-core/`).
+such as GitHub Pages (`https://zeljkodzafic.github.io/smartagri-core/`), and on Cloudflare (see below).
 
 The website is separate from the web app: the web app is served by the research API
-(`python -m smartagri.research_api`) and is shipped inside the Python package. GitHub Pages serves only these
-static files and runs no Python.
+(`python -m smartagri.research_api`) and is shipped inside the Python package. GitHub Pages and Cloudflare serve
+only these static files and run no Python.
 
 ## Preview
 
@@ -45,7 +45,25 @@ paraphrases in Serbian.
 When the web app changes, capture new screenshots, update `assets/screenshots.json` (commit and sha256) and run
 the check.
 
-## Publish on GitHub Pages (manual)
+## Publish on Cloudflare
+
+The site is deployed as static assets of a Cloudflare Worker named `smartagri-core` (`wrangler.jsonc` at the
+repository root, assets directory `./website`). It is live at <https://smartagri-core.calm-silence-b9f5.workers.dev>.
+
+- Automatic: the workflow `.github/workflows/cloudflare-pages.yml` checks the site and runs `wrangler deploy` on every
+  push to `main` that changes `website/` (and on demand). It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, an
+  API token with the **Workers Scripts: Edit** permission, and `CLOUDFLARE_ACCOUNT_ID`. Without them the site is only
+  checked, not deployed. The account ID is a secret of the repository, never a value in a file.
+- By hand, from the repository root: `python3 tools/check_presentation_site.py && npx wrangler deploy` (wrangler asks
+  you to log in, or reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment).
+- Custom domain `smartagri.rs.ba`: once the `smartagri.rs.ba` zone is on Cloudflare, add
+  `"routes": [{ "pattern": "smartagri.rs.ba", "custom_domain": true }]` to `wrangler.jsonc` and deploy again;
+  Cloudflare creates the DNS record and the certificate.
+
+The web app itself is not part of this site (it needs the Python server); a public deployment of it is described in
+`docs/deployment.md`.
+
+## Publish on GitHub Pages (manual alternative)
 
 The workflow `.github/workflows/pages.yml` runs only when started by hand.
 

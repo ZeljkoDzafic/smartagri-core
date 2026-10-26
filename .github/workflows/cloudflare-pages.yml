@@ -1,0 +1,42 @@
+# Deploy the static presentation website (website/) to Cloudflare as Worker static assets (wrangler.jsonc, "smartagri-core").
+# Runs on changes to website/ on main and on demand. Needs two repository secrets:
+#   CLOUDFLARE_API_TOKEN   API token with the "Workers Scripts: Edit" permission
+#   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account ID
+# Without them the deploy step is skipped and the job only validates the site.
+name: Deploy website to Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths: ["website/**", "wrangler.jsonc", "tools/check_presentation_site.py", ".github/workflows/cloudflare-pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate the website
+        run: python tools/check_presentation_site.py
+      - name: Deploy to Cloudflare
+        if: env.HAS_TOKEN == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+      - name: Deploy skipped
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are not set; the site was validated but not deployed."

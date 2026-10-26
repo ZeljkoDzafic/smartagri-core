@@ -34,7 +34,8 @@ by the language model.
 | `backend/corpus/` | corpus manifest (licence per document) and passages |
 | `backend/eval/scenarios/dev/` | development scenarios; held-out test scenarios are published only after the protocol lock |
 | `docs/` | architecture overview, evaluation protocol, rater guide |
-| `website/`, `tools/check_presentation_site.py` | static presentation site and its check (published manually to GitHub Pages) |
+| `website/`, `tools/check_presentation_site.py`, `wrangler.jsonc` | static presentation site, its check and its Cloudflare deployment |
+| `Dockerfile`, `docs/deployment.md` | container image and guide for a public deployment of the web app with accounts |
 
 ## Install and test
 
@@ -58,6 +59,9 @@ cd backend && . .venv/bin/activate
 python -m smartagri.research_api            # http://127.0.0.1:8100 — local use, no accounts
 ```
 
+Locally there are no accounts and no cookies: everyone who can reach the server sees every parcel, as a single-user
+research tool should. For a public server, see [Accounts](#accounts) and [`docs/deployment.md`](docs/deployment.md).
+
 ## Web app
 
 ![SmartAgri web app: the question "When should I irrigate?" and an answer card with a conditional recommendation, its follow-up question, the reasoning, the calculations and the data used with their reliability](website/assets/images/web-advice.png)
@@ -79,11 +83,59 @@ The client has no build step and loads nothing from a CDN; Leaflet 1.9.4 is vend
 `SMARTAGRI_TILE_URL` sets another tile server (`none` turns tiles off; drawing still works) and
 `SMARTAGRI_TILE_ATTRIBUTION` its attribution. Light and dark themes follow the system or the settings sheet.
 
+## Accounts
+
+Accounts are optional and off by default. `SMARTAGRI_ACCOUNTS` selects the mode:
+
+| Mode | Behaviour |
+|---|---|
+| `off` (default) | Local single-user use, unchanged: no accounts, no cookies, every parcel is visible to everyone who can reach the server. |
+| `optional` | For a public server. Anyone can still use the app without an account: parcels and their conversations then belong to the browser (an anonymous, HttpOnly cookie; the server keeps only its hash). Signing up or signing in moves that browser's parcels to the account. Each user sees only their own parcels, and each anonymous browser only its own. |
+
+With accounts on, the sidebar shows **Sign in** (or the signed-in email, with Sign out and Delete account), and
+anonymous visitors see a short note that their parcels are kept in this browser. Accounts use an email address and a
+password (at least 10 characters, stored as a scrypt hash). Email confirmation and password reset are available only
+when SMTP is configured; without SMTP an account works as soon as it is created.
+
+Protection: rate limits on every sign-in, sign-up and reset endpoint, login throttling per email and per address,
+generic error messages, HttpOnly + SameSite=Lax cookies (Secure on https, host-only), sessions that expire
+(`SMARTAGRI_SESSION_DAYS`, default 30) and end on sign-out, and a CSRF check (double-submit token and Origin) on every
+state-changing request. The blind rating screen and its endpoints do not depend on accounts at all, and evaluation
+runs never go through the API.
+
+Parcels stored while accounts were off have no owner; with accounts on they are not shown to anyone until the
+operator gives them to an account: `python -m smartagri.research_api --assign-unowned you@example.org`.
+
+| Variable | Meaning |
+|---|---|
+| `SMARTAGRI_ACCOUNTS` | `off` (default) or `optional` |
+| `SMARTAGRI_PUBLIC_URL` | public address, e.g. `https://app.smartagri.rs.ba`; used for email links, the Origin check and Secure cookies |
+| `SMARTAGRI_SESSION_DAYS` | session lifetime in days (default 30) |
+| `SMARTAGRI_COOKIE_SECURE` | `1` forces Secure cookies (automatic on https) |
+| `SMARTAGRI_AUTH_RATE_FACTOR` | multiplies the per-address rate limits (default 1), e.g. many users behind one NAT |
+| `SMARTAGRI_SMTP_HOST`, `_PORT`, `_TLS`, `_USER`, `_PASSWORD`, `_FROM` | outgoing email; confirmation and reset are on only when host, sender and `SMARTAGRI_PUBLIC_URL` are set |
+
+### Privacy
+
+With accounts on, the server stores: the email address and a password hash of each account; hashes of session and
+one-time link tokens (never the tokens); the hash of each anonymous browser token that created a parcel; and the
+parcels themselves (name, boundary, agronomic inputs), their data profiles, conversations and answers. Three cookies
+are set, all strictly necessary and first-party: `sa_session` (sign-in), `sa_browser` (anonymous ownership) and
+`sa_csrf` (request check). There is no analytics and no tracking. The browser loads map tiles from the configured tile
+server (OpenStreetMap by default), which sees the visitor's address; the server sends parcel coordinates to
+Open-Meteo and, when configured, to Copernicus Data Space, and questions with parcel data to a language model only
+when `LLM_PROVIDER` is set. **Delete account** removes the account, its sessions and links, and its parcels with their
+profiles, conversations and answers. Parcels of anonymous browsers stay on the server until the operator removes
+them; signing out starts a new, empty anonymous browser. Whoever runs a public server is responsible for its privacy
+notice and its backups, which keep deleted data until they expire.
+
 ## Website
 
-A static presentation of the project lives in [`website/`](website/) and is meant for
-<https://zeljkodzafic.github.io/smartagri-core/>. It is published only by running the
-`Deploy website to GitHub Pages` workflow by hand; see [`website/README.md`](website/README.md).
+A static presentation of the project lives in [`website/`](website/). It is deployed to Cloudflare as static assets
+of a Worker (`wrangler.jsonc`, workflow `Deploy website to Cloudflare`), currently at
+<https://smartagri-core.calm-silence-b9f5.workers.dev>, with the custom domain `smartagri.rs.ba` to follow. GitHub
+Pages remains an alternative (workflow `Deploy website to GitHub Pages`, run by hand). See
+[`website/README.md`](website/README.md).
 
 ## Evaluation
 

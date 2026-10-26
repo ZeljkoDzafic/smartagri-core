@@ -61,6 +61,8 @@ VERSIONS: List[Tuple[str, str, Callable[[Any], None]]] = [
              "only)", lambda store: store.sync_schema()),
     ("0013", "messaging channel links, link codes, delivery log, inbound deduplication and rate-limit counters (spec 060; "
              "additive tables only)", lambda store: store.sync_schema()),
+    ("0014", "optional accounts of the research web app: users, sessions, one-time tokens, parcel owners (additive "
+             "tables only)", lambda store: store.sync_schema()),
 ]
 
 
