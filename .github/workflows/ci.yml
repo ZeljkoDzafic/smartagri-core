@@ -1,0 +1,63 @@
+# Continuous integration: lint, tests (SQLite, offline, no keys) on Python 3.9 and 3.12, the leakage guard on the
+# development set, and a dependency audit of the pinned set. Dependencies are pinned by requirements.lock (3.12) and
+# constraints-py39.txt (3.9).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  LLM_PROVIDER: template
+  EMBEDDINGS_PROVIDER: none
+  SMARTAGRI_OFFLINE: "1"
+
+jobs:
+  test:
+    name: tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.lock
+            backend/constraints-py39.txt
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.python }}" = "3.9" ]; then PIN=constraints-py39.txt; else PIN=requirements.lock; fi
+          pip install -c "$PIN" -e ".[dev,api,ingest]"
+      - name: Compile
+        run: python -m compileall -q src
+      - name: Lint (ruff, backend/ruff.toml)
+        run: ruff check src tests
+      - name: Test
+        run: pytest -q
+      - name: Leakage guard on the development set
+        run: python -m smartagri.evalkit guard --set dev > /dev/null
+
+  audit:
+    name: dependency audit (pip-audit, requirements.lock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pip-audit
+      - run: pip-audit -r backend/requirements.lock --no-deps --disable-pip
