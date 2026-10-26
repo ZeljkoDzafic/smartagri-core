@@ -61,3 +61,13 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip pip-audit
       - run: pip-audit -r backend/requirements.lock --no-deps --disable-pip
+
+  website:
+    name: website check (links, anchors, screenshots)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/check_presentation_site.py

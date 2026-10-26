@@ -4,7 +4,8 @@
 
 SmartAgri is an open, testable core for **active, uncertainty-aware agronomic advice**. It answers a farmer's
 question about one parcel (maize) and decides, before any text is generated, whether it may advise at all: recommend,
-give a conditional answer, ask a follow-up question, abstain, or refer to an expert.
+give a conditional answer, ask a follow-up question, or abstain (with a referral to the extension service when the
+question is out of scope or the corpus does not cover it).
 
 The decision is made by explicit, deterministic layers; a language model (optional) only phrases the answer.
 
@@ -28,11 +29,12 @@ by the language model.
 | `backend/src/smartagri/retrieval/` | corpus loading, BM25 + vector retrieval with rank fusion, corpus ingest and coverage |
 | `backend/src/smartagri/pipeline/`, `providers/`, `llm/` | answer generation and judge, weather and satellite adapters, LLM providers |
 | `backend/src/smartagri/evalkit/` | `python -m smartagri.evalkit run / report / export / guard / sweep / lock` |
-| `backend/src/smartagri/research_api/` | minimal HTTP API and one-page client (parcels, profile, advice, provenance, blind rating) |
+| `backend/src/smartagri/research_api/` | minimal HTTP API and the web app (map drawing, profile, advice, provenance, blind rating) |
 | `backend/config/` | rules, thresholds, variants, question bank, Kc table (locked with the evaluation protocol) |
 | `backend/corpus/` | corpus manifest (licence per document) and passages |
 | `backend/eval/scenarios/dev/` | development scenarios; held-out test scenarios are published only after the protocol lock |
 | `docs/` | architecture overview, evaluation protocol, rater guide |
+| `website/`, `tools/check_presentation_site.py` | static presentation site and its check (published manually to GitHub Pages) |
 
 ## Install and test
 
@@ -55,9 +57,27 @@ cd backend && . .venv/bin/activate
 python -m smartagri.research_api            # http://127.0.0.1:8100 — local use, no accounts
 ```
 
-The page lets you add a parcel (GeoJSON polygon) and fetch its profile, see the quality table q, ask a question under
-any variant V0–V5, answer the follow-up question, and open "Zašto?" to see the π/q/σ/α/δ decisions and their
-provenance. The VC chat (a free LLM conversation with the same data and sources) needs `LLM_PROVIDER`.
+## Web app
+
+![SmartAgri web app: an answer card with a conditional recommendation, the data used and their reliability, and sources](website/assets/images/web-advice.png)
+
+Open `http://127.0.0.1:8100`. Draw a parcel on the map (or paste or import a GeoJSON polygon), fetch its profile and
+see each input with its origin, age and reliability (q), ask a question under any variant V0–V5, answer the
+follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes. The
+interface is in English; answers, sources and follow-up questions are in Serbian, the language of the corpus and
+of the evaluation. The VC chat (a free LLM conversation with the same data and sources) needs `LLM_PROVIDER`. The
+blind rating screen shows only the blinded item and the rubric.
+
+The client has no build step and loads nothing from a CDN; Leaflet 1.9.4 is vendored with its licence
+(`research_api/static/vendor/leaflet/`). OpenStreetMap tiles are its only external request:
+`SMARTAGRI_TILE_URL` sets another tile server (`none` turns tiles off; drawing still works) and
+`SMARTAGRI_TILE_ATTRIBUTION` its attribution. Light and dark themes follow the system or the settings sheet.
+
+## Website
+
+A static presentation of the project lives in [`website/`](website/) and is meant for
+<https://zeljkodzafic.github.io/smartagri-core/>. It is published only by running the
+`Deploy website to GitHub Pages` workflow by hand; see [`website/README.md`](website/README.md).
 
 ## Evaluation
 

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="SmartAgri: open, testable core for uncertainty-aware agronomic advice. It decides whether to recommend, give a conditional answer, ask or abstain before any text is generated.">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="SmartAgri: advice that knows when not to advise">
+  <meta property="og:description" content="Deterministic decision layers, FAO-56 numbers from code, and an evaluation harness you can rerun.">
+  <meta property="og:type" content="website">
+  <title>SmartAgri: advice that knows when not to advise</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <link rel="stylesheet" href="assets/site.css">
+  <script defer src="assets/site.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="SmartAgri, top of the page"><img src="assets/icon.svg" alt="" width="28" height="28"><span>SmartAgri</span></a>
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <nav id="main-nav" aria-label="Main navigation">
+        <a href="#how">How it works</a>
+        <a href="#interfaces">Interfaces</a>
+        <a href="#evaluation">Evaluation</a>
+        <a href="#limits">Limitations</a>
+        <a href="#start">Get started</a>
+      </nav>
+      <a class="header-cta" href="https://github.com/ZeljkoDzafic/smartagri-core">GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <p class="eyebrow">Open research software · MIT · Python 3.9+</p>
+      <h1 id="hero-title">Advice that knows<br>when not to advise.</h1>
+      <p class="hero-lead">SmartAgri answers a farmer’s question about one maize parcel. Before any text is written, explicit rules decide whether it may recommend, give a conditional recommendation, ask a follow-up question, or abstain.</p>
+      <div class="hero-actions">
+        <a class="button primary" href="#start">Install and run</a>
+        <a class="button link" href="#how">See how it decides <span aria-hidden="true">›</span></a>
+      </div>
+      <figure class="hero-shot">
+        <button class="shot-button" type="button" data-image="assets/images/web-advice.png" data-caption="An answer card: conditional recommendation, reasoning, data used with reliability, sources with π status. Offline settings, template generator.">
+          <img src="assets/images/web-advice.png" alt="SmartAgri web app showing a question and an answer card marked conditional recommendation, with reasoning, data used with their reliability, and sources with their applicability status" width="1440" height="900" fetchpriority="high">
+          <span class="expand-hint">View full size</span>
+        </button>
+        <figcaption>Actual screenshot of the web app, running locally with offline settings and the template generator.</figcaption>
+      </figure>
+    </section>
+
+    <section class="acts section" aria-labelledby="acts-title">
+      <div class="section-head">
+        <p class="eyebrow">Four possible acts</p>
+        <h2 id="acts-title">The decision comes first.<br>The words come last.</h2>
+        <p>The policy layer chooses one act from the data that are actually available and how reliable they are. A language model, when one is configured, only phrases the chosen act.</p>
+      </div>
+      <ul class="act-grid">
+        <li class="act act-recommend"><span class="dot" aria-hidden="true"></span><h3>Recommend</h3><p>The inputs that matter for this type of advice are present and reliable enough. A quantity is given only when the rules allow it.</p></li>
+        <li class="act act-conditional"><span class="dot" aria-hidden="true"></span><h3>Conditional</h3><p>The answer depends on one missing fact. Each possible value of that fact gets its own consequence.</p></li>
+        <li class="act act-ask"><span class="dot" aria-hidden="true"></span><h3>Ask</h3><p>One follow-up question, chosen because its answer would change the decision, with a note on how to find the answer in the field.</p></li>
+        <li class="act act-abstain"><span class="dot" aria-hidden="true"></span><h3>Abstain</h3><p>No recommendation, with the reason stated. Questions outside the system’s scope, or without support in the corpus, are referred to the extension service.</p></li>
+      </ul>
+    </section>
+
+    <section class="how section" id="how" aria-labelledby="how-title">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">Deterministic layers<br>you can read and test.</h2>
+        <p>Each layer is ordinary code with its own tests and a configuration file. Every answer keeps the decisions of each layer, so “Why?” has a concrete answer.</p>
+      </div>
+      <ol class="layer-grid">
+        <li><span class="sym">C</span><h3>Context</h3><p>The parcel, its agronomic inputs, Open-Meteo weather and Sentinel-2 L2A NDVI, each with its date.</p></li>
+        <li><span class="sym">π</span><h3>Applicability</h3><p>A deterministic filter over passage metadata: crop, growth stage, region, date and source type. No hidden model.</p></li>
+        <li><span class="sym">q</span><h3>Quality</h3><p>Origin, age, coverage and reliability of every input. Missing inputs are listed, not filled in.</p></li>
+        <li><span class="sym">σ</span><h3>Sufficiency</h3><p>Whether the inputs suffice for the requested type of advice, and which ones are missing.</p></li>
+        <li><span class="sym">α</span><h3>Asking</h3><p>The next question: a missing input whose answer would change the decision, weighed against the effort to answer it.</p></li>
+        <li><span class="sym">δ</span><h3>Policy</h3><p>The act: recommend, conditional, ask or abstain, with a reason code and whether a quantity is allowed.</p></li>
+        <li><span class="sym">γ</span><h3>Grounding</h3><p>Checks the answer: numbers must come from the tools, sentences must be supported by the cited passages.</p></li>
+      </ol>
+      <aside class="formula-card" aria-labelledby="formula-title">
+        <div>
+          <p class="eyebrow">Numbers come from code</p>
+          <h3 id="formula-title">FAO-56, never the language model.</h3>
+          <p>Crop water use, the water balance and irrigation doses are computed by tested functions. The default template generator needs no model, no key and no network access to one.</p>
+        </div>
+        <div class="formulas" aria-label="Formulas used">
+          <p><span>Crop evapotranspiration</span><code>ETc = Kc × ET0</code></p>
+          <p><span>Gross irrigation dose</span><code>gross = net ÷ efficiency</code></p>
+          <p><span>Sources</span><code>FAO-56 · BBCH · Open-Meteo · Sentinel-2</code></p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="interfaces section" id="interfaces" aria-labelledby="interfaces-title">
+      <div class="section-head">
+        <p class="eyebrow">Interfaces</p>
+        <h2 id="interfaces-title">One core.<br>Three ways in.</h2>
+        <p>The web app and the research API share one service. The evaluation harness calls the decision pipeline directly, so its results never depend on the web layer.</p>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Choose an interface">
+        <button type="button" role="tab" id="tab-web" aria-controls="panel-web" aria-selected="true">Web app</button>
+        <button type="button" role="tab" id="tab-api" aria-controls="panel-api" aria-selected="false" tabindex="-1">Research API</button>
+        <button type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">evalkit CLI</button>
+      </div>
+
+      <article class="panel" id="panel-web" role="tabpanel" aria-labelledby="tab-web">
+        <div class="panel-copy">
+          <h3>Draw a field. Ask a question.<br>See why.</h3>
+          <ul class="checks">
+            <li>Draw the parcel on a map, or paste and import GeoJSON</li>
+            <li>Fetch weather and Sentinel-2, with each input’s age and reliability</li>
+            <li>Ask under any variant V0–V5 and answer the follow-up question</li>
+            <li>Open “Why?” for the π, q, σ, α, δ and γ decisions and the provenance hashes</li>
+            <li>Blind rating of evaluation items, without variant labels</li>
+          </ul>
+          <p class="small">Light and dark themes, keyboard drawing, works on a phone. OpenStreetMap tiles are the only external request; the tile URL is configurable and drawing still works without tiles.</p>
+        </div>
+        <div class="panel-shots">
+          <button class="shot-button" type="button" data-image="assets/images/web-draw.png" data-caption="Drawing a parcel boundary on the map. The area is estimated in the browser; the server computes the exact geodesic area.">
+            <img src="assets/images/web-draw.png" alt="New parcel screen with a field boundary drawn on an OpenStreetMap map and a form with name, sowing date and irrigation" width="1440" height="900" loading="lazy">
+            <span class="expand-hint">View full size</span>
+          </button>
+          <button class="shot-button phone" type="button" data-image="assets/images/web-phone-dark.png" data-caption="The same client on a phone in the dark theme: the answer card and the Why? panel.">
+            <img src="assets/images/web-phone-dark.png" alt="Web app on a phone-sized screen in dark theme showing an answer card and the Why panel with decision layers" width="390" height="844" loading="lazy">
+            <span class="expand-hint">View full size</span>
+          </button>
+        </div>
+      </article>
+
+      <article class="panel" id="panel-api" role="tabpanel" aria-labelledby="tab-api" hidden>
+        <div class="panel-copy">
+          <h3>A small HTTP API<br>for local research use.</h3>
+          <p>FastAPI, no accounts, bound to 127.0.0.1 by default. The OpenAPI schema is served at <code>/docs</code>.</p>
+          <ul class="checks">
+            <li>Parcels and their input profile with quality q</li>
+            <li>Advisory conversation under a chosen variant</li>
+            <li>Every run stored with config, corpus and prompt hashes</li>
+            <li>Rubric and blinded rating queue</li>
+          </ul>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span>Terminal</span><span>commands, not output</span></div>
+<pre><code>python -m smartagri.research_api --port 8100
+
+curl -s localhost:8100/api/health
+curl -s -X POST localhost:8100/api/parcels \
+  -H 'Content-Type: application/json' \
+  -d @parcel.json            # name, sowing_date, geometry
+curl -s -X POST localhost:8100/api/parcels/$ID/profile/refresh
+curl -s -X POST localhost:8100/api/parcels/$ID/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Da li da navodnjavam kukuruz?", "variant": "V5"}'</code></pre>
+        </div>
+      </article>
+
+      <article class="panel" id="panel-cli" role="tabpanel" aria-labelledby="tab-cli" hidden>
+        <div class="panel-copy">
+          <h3>The evaluation harness<br>in one command line.</h3>
+          <ul class="checks">
+            <li><code>run</code> scenario sets under one or more variants</li>
+            <li><code>report</code> automatic and rated measures, paired comparisons</li>
+            <li><code>guard</code> n-gram leakage check between scenarios and corpus</li>
+            <li><code>lock</code> sha256 of scenarios, corpus, config, prompts and rater guide</li>
+            <li><code>export</code> and <code>sweep</code> for items, ratings and synthetic variations</li>
+          </ul>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span>Terminal</span><span>commands, not output</span></div>
+<pre><code>cd backend
+python -m smartagri.evalkit run --set dev
+python -m smartagri.evalkit report
+python -m smartagri.evalkit report --compare V4 V3
+python -m smartagri.evalkit guard --set dev</code></pre>
+        </div>
+      </article>
+    </section>
+
+    <section class="evaluation section" id="evaluation" aria-labelledby="evaluation-title">
+      <div class="section-head">
+        <p class="eyebrow">Evaluation and reproducibility</p>
+        <h2 id="evaluation-title">Built to be checked,<br>not just believed.</h2>
+        <p>The repository contains the method and the harness. It does not report results on this page.</p>
+      </div>
+      <div class="ladder" role="list" aria-label="Ablation ladder">
+        <div role="listitem"><b>V0</b><span>answer without retrieval</span></div>
+        <div role="listitem"><b>V1</b><span>+ hybrid retrieval (BM25 + vectors)</span></div>
+        <div role="listitem"><b>V2</b><span>+ π over the question’s conditions</span></div>
+        <div role="listitem"><b>V3</b><span>+ π over the parcel, context C</span></div>
+        <div role="listitem"><b>V4</b><span>+ q, σ and α</span></div>
+        <div role="listitem"><b>V5</b><span>+ δ and γ</span></div>
+      </div>
+      <div class="feature-grid">
+        <article><h3>Ablation ladder</h3><p>Each variant adds to the previous one, so a paired comparison such as V4 against V3 isolates what those layers change. A free LLM conversation with the same data and passages (VC) is a baseline outside the ladder.</p></article>
+        <article><h3>Blind rating</h3><p>Raters score items on a five-criterion rubric with critical-error classes. They never see the variant, generator or model, and each rater gets a fixed item order.</p></article>
+        <article><h3>Protocol lock</h3><p>Before measurement, a lock file records the sha256 of the scenarios, corpus, configuration, prompts and rater guide. Held-out test scenarios are published only after the lock.</p></article>
+        <article><h3>Provenance in every run</h3><p>Each answer stores the configuration hashes, corpus hash, prompt hash, decision date and the satellite and forecast dates it used.</p></article>
+      </div>
+    </section>
+
+    <section class="limits section" id="limits" aria-labelledby="limits-title">
+      <div class="limits-card">
+        <div>
+          <p class="eyebrow">Limitations</p>
+          <h2 id="limits-title">A research prototype,<br>with clear edges.</h2>
+        </div>
+        <ul>
+          <li><b>One crop.</b> Maize only.</li>
+          <li><b>One region.</b> Rules, thresholds and passages are set for one reference region.</li>
+          <li><b>One language for answers.</b> The corpus and the evaluation are in Serbian, so answers, sources and follow-up questions are in Serbian; the web app interface is in English.</li>
+          <li><b>Small corpus.</b> Short paraphrases of FAO material with citations, plus development notes that are marked as not an expert source.</li>
+          <li><b>Not a substitute for an agronomist.</b> The system can be wrong; it states its inputs and their reliability so that you can judge.</li>
+          <li><b>Optional services.</b> Sentinel-2 needs Copernicus Data Space credentials; the VC chat needs a configured language model.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="start section" id="start" aria-labelledby="start-title">
+      <div class="section-head">
+        <p class="eyebrow">Get started</p>
+        <h2 id="start-title">Running in a few minutes.<br>No keys needed.</h2>
+        <p>Python 3.9 or newer. SQLite and offline mode by default; Docker is not required.</p>
+      </div>
+      <div class="install-card">
+        <div class="code-head"><span>Linux / macOS</span><button id="copy-install" class="copy-button" type="button">Copy</button></div>
+<pre id="install-command"><code>git clone https://github.com/ZeljkoDzafic/smartagri-core.git
+cd smartagri-core/backend
+python3 -m venv .venv &amp;&amp; . .venv/bin/activate
+pip install -c constraints-py39.txt -e ".[dev,api]"
+pytest -q
+python -m smartagri.research_api   # http://127.0.0.1:8100</code></pre>
+        <p class="small">On Python 3.12 use <code>-c requirements.lock</code>. On Windows, create the environment with <code>py -m venv .venv</code> and call <code>.venv\Scripts\python.exe</code>. Optional settings are listed in <code>.env.example</code>; set <code>SMARTAGRI_TILE_URL</code> to use another tile server, or <code>none</code> to turn tiles off.</p>
+        <p id="copy-status" class="small" role="status" aria-live="polite"></p>
+      </div>
+      <div class="link-grid">
+        <a href="https://github.com/ZeljkoDzafic/smartagri-core#readme"><b>README</b><span>Contents, install, run</span></a>
+        <a href="https://github.com/ZeljkoDzafic/smartagri-core/blob/main/docs/architecture.md"><b>Architecture</b><span>Layers and data flow</span></a>
+        <a href="https://github.com/ZeljkoDzafic/smartagri-core/blob/main/docs/evaluation.md"><b>Evaluation protocol</b><span>Variants, measures, lock</span></a>
+        <a href="https://github.com/ZeljkoDzafic/smartagri-core/issues"><b>Issues</b><span>Questions and feedback</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p><b>SmartAgri</b> · MIT licence · 2026</p>
+      <p>Weather: Open-Meteo. Imagery: Copernicus Sentinel-2. Map data © OpenStreetMap contributors. Each source keeps its own licence and terms.</p>
+      <p><a href="assets/screenshots.json">Screenshot provenance</a> · <a href="https://github.com/ZeljkoDzafic/smartagri-core/blob/main/LICENSE">Licence</a></p>
+    </div>
+  </footer>
+
+  <dialog id="image-dialog" aria-label="Screenshot">
+    <div class="dialog-top"><span id="dialog-caption"></span><button id="close-dialog" type="button" aria-label="Close screenshot">Close</button></div>
+    <img id="dialog-image" src="assets/images/web-advice.png" alt="">
+  </dialog>
+</body>
+</html>

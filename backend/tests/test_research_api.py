@@ -108,3 +108,84 @@ def test_unclassified_question_asks_for_the_advice_type(client):
     r2 = client.post("/api/parcels/%s/chat" % p["id"], json={"conversation_id": run["conversation_id"],
                                                                "reply": {"input": "advice_type", "value": "irrigation_timing"}})
     assert r2.status_code == 200 and r2.json()["advice_type"] == "irrigation_timing" and r2.json()["turn"] == 2
+
+
+# ---------------------------------------------------------------- research client assets (map client, no build step)
+STATIC_DIR = __import__("pathlib").Path(__file__).resolve().parents[1] / "src" / "smartagri" / "research_api" / "static"
+
+
+def _static_files():
+    return sorted(p.relative_to(STATIC_DIR).as_posix() for p in STATIC_DIR.rglob("*")
+                  if p.is_file() and p.name != ".DS_Store" and "__pycache__" not in p.parts)
+
+
+def test_client_assets_are_served(client):
+    page = client.get("/")
+    assert page.status_code == 200 and "text/html" in page.headers["content-type"]
+    for ref in ("static/app.css", "static/app.js", "static/map.js", "static/theme.js", "static/icon.svg",
+                "static/vendor/leaflet/leaflet.js", "static/vendor/leaflet/leaflet.css"):
+        assert ref in page.text, ref
+    types = {".css": "text/css", ".js": "javascript", ".svg": "image/svg+xml", ".png": "image/png", ".html": "text/html"}
+    for rel in _static_files():
+        r = client.get("/static/" + rel)
+        assert r.status_code == 200, rel
+        ext = "." + rel.rsplit(".", 1)[-1] if "." in rel.rsplit("/", 1)[-1] else ""
+        if ext in types:
+            assert types[ext] in r.headers["content-type"], (rel, r.headers["content-type"])
+    assert "BSD" in client.get("/static/vendor/leaflet/LICENSE").text
+    assert client.get("/static/nope.js").status_code == 404
+    assert client.get("/static/../app.py").status_code == 404
+
+
+def test_client_has_no_external_resource_except_tiles():
+    import re
+    for rel in _static_files():
+        if rel.startswith("vendor/") or not rel.endswith((".html", ".css", ".js")):
+            continue
+        text = (STATIC_DIR / rel).read_text(encoding="utf-8")
+        for url in re.findall(r"(?:src|href)=[\"'](https?:[^\"']+)", text):
+            assert False, (rel, url)
+        assert "@import" not in text and "fonts.googleapis" not in text, rel
+
+
+def test_tile_settings_come_from_the_environment(client, monkeypatch):
+    default = client.get("/").text
+    assert 'name="smartagri-tile-url" content="https://tile.openstreetmap.org/{z}/{x}/{y}.png"' in default
+    assert "OpenStreetMap" in default
+    monkeypatch.setenv("SMARTAGRI_TILE_URL", "https://tiles.example.org/{z}/{x}/{y}.png?a=1&b=2")
+    monkeypatch.setenv("SMARTAGRI_TILE_ATTRIBUTION", "Example \"tiles\"")
+    page = client.get("/").text
+    assert 'content="https://tiles.example.org/{z}/{x}/{y}.png?a=1&amp;b=2"' in page
+    assert 'content="Example &quot;tiles&quot;"' in page
+    monkeypatch.setenv("SMARTAGRI_TILE_URL", "none")
+    assert 'name="smartagri-tile-url" content="none"' in client.get("/").text
+
+
+def test_client_assets_are_packaged():
+    """Every file of static/ is listed by the package data of backend/pyproject.toml (a wheel ships the client)."""
+    import json
+    import re
+    text = (STATIC_DIR.parents[3] / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^"smartagri\.research_api" = (\[.*?\])', text, re.M | re.S)
+    assert m, "package data of smartagri.research_api is missing"
+    patterns = json.loads(m.group(1))
+    root = STATIC_DIR.parent
+    packaged = {p.relative_to(STATIC_DIR).as_posix() for pat in patterns for p in root.glob(pat) if p.is_file()}
+    assert set(_static_files()) <= packaged, sorted(set(_static_files()) - packaged)
+
+
+def test_blind_rating_screen_is_unchanged_and_neutral():
+    """The rating screen is part of the evaluation protocol: its wording stays as the rater guide expects, and it
+    shows no variant, generator or model hint (only the blinded item returned by the API)."""
+    import re
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    section = re.search(r'<section id="v-rate".*?</section>', page, re.S).group(0)
+    for text in ("<h2>Slepo ocenjivanje</h2>", '<label>Ocenjivač <input id="r-rater"></label>',
+                 '<button id="r-next">Sledeća stavka</button>', '<div id="r-item"></div>'):
+        assert text in section, text
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    block = script[script.index('$("r-next").onclick'):script.index("// ------", script.index('$("r-next").onclick'))]
+    for text in ("Nema više stavki za ocenjivanje.", "Preostalo: ", "Rubrika:", "Sačuvaj ocenu", '"r1": 0, "r2": 0'):
+        assert text in block, text
+    for word in ("variant", "Variant", "V0", "V5", "VC", "generator", "model"):
+        assert word not in section and word not in block, word

@@ -1,16 +1,44 @@
 """FastAPI app of the research API (spec 057). Local research use: no accounts; bind to 127.0.0.1."""
 from __future__ import annotations
 
+import html
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .service import BadRequest, NotFound, ResearchService, Unavailable
 
 STATIC = Path(__file__).resolve().parent / "static"
+# Map tiles are the client's only external request. Defaults are in static/index.html; these environment variables
+# replace them (SMARTAGRI_TILE_URL=none turns tiles off: the parcel can still be drawn on an empty grid).
+TILE_URL_META = '<meta name="smartagri-tile-url" content="'
+TILE_ATTRIBUTION_META = '<meta name="smartagri-tile-attribution" content="'
+
+
+def _set_meta(page: str, prefix: str, value: str) -> str:
+    start = page.find(prefix)
+    if start < 0:
+        return page
+    start += len(prefix)
+    end = page.find('"', start)
+    return page[:start] + html.escape(value, quote=True) + page[end:]
+
+
+def index_html() -> str:
+    """The client page, with the tile settings of this server (environment) when they are set."""
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    url = os.environ.get("SMARTAGRI_TILE_URL")
+    attribution = os.environ.get("SMARTAGRI_TILE_ATTRIBUTION")
+    if url is not None:
+        page = _set_meta(page, TILE_URL_META, url.strip())
+    if attribution is not None:
+        page = _set_meta(page, TILE_ATTRIBUTION_META, attribution.strip())
+    return page
 
 
 class RatingIn(BaseModel):
@@ -108,9 +136,11 @@ def create_app(service: Optional[ResearchService] = None) -> FastAPI:
         return call(svc.rating_save, body.model_dump())
 
     app.include_router(api)
+    # Client assets (CSS, JS, icon, vendored Leaflet with its licence); no build step, no CDN.
+    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
-    @app.get("/", include_in_schema=False)
+    @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def index():
-        return FileResponse(STATIC / "index.html")
+        return HTMLResponse(index_html())
 
     return app

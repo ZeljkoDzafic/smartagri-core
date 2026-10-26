@@ -1,189 +1,211 @@
 <!doctype html>
-<html lang="sr-Latn">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SmartAgri istraživački prototip</title>
-<!-- Spec 057: minimal research client (no build, no external resources). Flows T1-T5 of the evaluation:
-     parcels, profile with quality q, advisory conversation with the answer card, provenance ("Zašto?"),
-     VC chat and blind rating. The product interface is not part of the research repository. -->
-<style>
-  :root { --bg:#fff; --fg:#1b1f1d; --muted:#5d6661; --line:#d9dfdb; --accent:#2f6b3f; --warn:#8a5a00; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#141716; --fg:#e7ece9; --muted:#a3ada7; --line:#2d3430; --accent:#7cc191; --warn:#e0b45c; } }
-  body { background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, sans-serif; margin:0 auto; max-width:960px; padding:16px; }
-  h1 { font-size:20px; margin:0 0 4px } h2 { font-size:16px; margin:18px 0 6px }
-  nav button, button { background:none; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:5px 10px; cursor:pointer; margin:2px }
-  button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent) }
-  input, select, textarea { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px; font:inherit; max-width:100% }
-  table { border-collapse:collapse; width:100%; font-size:14px } td, th { border-bottom:1px solid var(--line); padding:4px; text-align:left; vertical-align:top }
-  .card { border:1px solid var(--line); border-radius:8px; padding:10px; margin:8px 0 }
-  .muted { color:var(--muted) } .warn { color:var(--warn) } .hidden { display:none }
-  pre { white-space:pre-wrap; font-size:12px; overflow-x:auto }
-  label { display:inline-block; margin:4px 8px 4px 0 }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<!-- Map tiles: the only external request of this client. The server may replace both values
+     (SMARTAGRI_TILE_URL, SMARTAGRI_TILE_ATTRIBUTION); the settings sheet can override them per browser. -->
+<meta name="smartagri-tile-url" content="https://tile.openstreetmap.org/{z}/{x}/{y}.png">
+<meta name="smartagri-tile-attribution" content="&amp;copy; &lt;a href=&quot;https://www.openstreetmap.org/copyright&quot;&gt;OpenStreetMap&lt;/a&gt; contributors">
+<title>SmartAgri research client</title>
+<link rel="icon" type="image/svg+xml" href="static/icon.svg">
+<link rel="stylesheet" href="static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="static/app.css">
+<script src="static/theme.js"></script>
+<script defer src="static/vendor/leaflet/leaflet.js"></script>
+<script defer src="static/map.js"></script>
+<script defer src="static/app.js"></script>
 </head>
 <body>
-<h1>SmartAgri: istraživački prototip</h1>
-<div class="muted" id="health">…</div>
-<nav>
-  <button data-view="parcels">Parcele</button>
-  <button data-view="new">Nova parcela</button>
-  <button data-view="rate">Slepo ocenjivanje</button>
-</nav>
+<!-- Research client of the open core (no build step, no external resources except map tiles).
+     Flows: parcels, profile with quality q, advisory conversation with the answer card, provenance ("Why?"),
+     VC chat and blind rating. -->
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#/parcels" aria-label="SmartAgri, parcels">
+      <img src="static/icon.svg" alt="" width="28" height="28">
+      <span class="brand-name">SmartAgri</span>
+      <span class="brand-tag">Research client</span>
+    </a>
+    <nav class="segmented" aria-label="Main">
+      <a href="#/parcels" data-nav="parcels">Parcels</a>
+      <a href="#/new" data-nav="new">New parcel</a>
+      <a href="#/rate" data-nav="rate">Blind rating</a>
+    </nav>
+    <button id="settings-open" class="icon-button" type="button" aria-label="Settings" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+    </button>
+  </div>
+</header>
 
-<section id="v-parcels"><h2>Parcele</h2><table id="parcel-list"></table></section>
+<main id="main" tabindex="-1">
+  <p class="status" id="health" role="status">Connecting to the research API…</p>
 
-<section id="v-new" class="hidden">
-  <h2>Nova parcela (kukuruz)</h2>
-  <p class="muted">Granica kao GeoJSON poligon (WGS84, lon/lat). Crtanje na karti je u proizvodu; ovde se granica unosi ili uvozi kao tekst.</p>
-  <label>Naziv <input id="n-name" value="Ogledna parcela"></label>
-  <label>Setva <input id="n-sowing" type="date"></label>
-  <label>Navodnjavanje <select id="n-irr"><option value="unknown">nepoznato</option><option value="yes">da</option><option value="no">ne</option></select></label>
-  <label>Datum odluke (opciono) <input id="n-pinned" placeholder="2026-07-12T06:00:00"></label><br>
-  <textarea id="n-geom" rows="6" cols="70">{"type":"Polygon","coordinates":[[[19.80,45.25],[19.81,45.25],[19.81,45.256],[19.80,45.256],[19.80,45.25]]]}</textarea><br>
-  <button class="primary" id="n-save">Sačuvaj</button> <span id="n-msg" class="warn"></span>
-</section>
+  <section id="v-parcels" class="view" aria-labelledby="parcels-title">
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Maize · one parcel at a time</p>
+        <h1 id="parcels-title">Parcels</h1>
+        <p class="lead">Open a parcel to see its data, their reliability, and advice that says when it cannot advise.</p>
+      </div>
+      <a class="button primary" href="#/new"><span aria-hidden="true">+</span> New parcel</a>
+    </div>
+    <div id="parcel-list" class="parcel-grid" aria-live="polite"></div>
+  </section>
 
-<section id="v-parcel" class="hidden">
-  <h2 id="p-title"></h2>
-  <button id="p-refresh">Osveži podatke (vreme, Sentinel-2)</button>
-  <h2>Podaci i pouzdanost (q)</h2><table id="p-quality"></table>
-  <h2>Savet</h2>
-  <label>Varijanta <select id="c-variant"></select></label>
-  <label>Vrsta saveta <select id="c-type"><option value="">(prepoznaj iz pitanja)</option></select></label><br>
-  <input id="c-text" size="60" placeholder="Da li da navodnjavam kukuruz ove nedelje?">
-  <button class="primary" id="c-send">Pitaj</button>
-  <div id="c-out"></div>
-  <h2>AI razgovor (VC)</h2>
-  <label>Režim <select id="a-mode"><option value="baseline">VC (bez modela odluke)</option><option value="app">sa modelom odluke</option></select></label>
-  <input id="a-text" size="50"> <button id="a-send">Pošalji</button>
-  <div id="a-out"></div>
-</section>
+  <section id="v-new" class="view" hidden aria-labelledby="new-title">
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">New parcel · maize</p>
+        <h1 id="new-title">Draw the boundary</h1>
+        <p class="lead">Choose <b>Draw</b>, then click the corners of the field on the map. Finish on the first point, with a double click, or with <b>Finish</b>. Drag a corner to adjust it.</p>
+      </div>
+    </div>
+    <div class="new-layout">
+      <div class="card map-card">
+        <div class="tabs" role="tablist" aria-label="Boundary input">
+          <button type="button" role="tab" id="tab-draw" aria-controls="pane-draw" aria-selected="true">Draw on map</button>
+          <button type="button" role="tab" id="tab-geojson" aria-controls="pane-geojson" aria-selected="false" tabindex="-1">GeoJSON</button>
+        </div>
+        <div id="pane-draw" role="tabpanel" aria-labelledby="tab-draw">
+          <div class="map-wrap">
+            <div id="n-map" class="map" role="application" aria-label="Map for drawing the parcel boundary. Arrow keys pan, plus and minus zoom."></div>
+            <div class="crosshair" aria-hidden="true"></div>
+            <div class="map-tools" role="toolbar" aria-label="Drawing tools">
+              <button type="button" id="d-draw" class="tool primary">Draw</button>
+              <button type="button" id="d-point" class="tool" title="Add a corner at the centre of the map (keyboard)">Add centre point</button>
+              <button type="button" id="d-undo" class="tool">Undo</button>
+              <button type="button" id="d-finish" class="tool">Finish</button>
+              <button type="button" id="d-clear" class="tool">Clear</button>
+            </div>
+            <p id="map-note" class="map-note" hidden>Map tiles could not be loaded. You can still draw on the empty grid or paste GeoJSON.</p>
+          </div>
+          <p id="d-status" class="hint" aria-live="polite">No boundary yet.</p>
+        </div>
+        <div id="pane-geojson" role="tabpanel" aria-labelledby="tab-geojson" hidden>
+          <p class="hint">A GeoJSON Polygon (or a Feature with one) in WGS84, coordinates as longitude, latitude. A drawn boundary appears here as well.</p>
+          <label class="field">
+            <span>Boundary (GeoJSON)</span>
+            <textarea id="n-geom" rows="9" spellcheck="false" placeholder='{"type":"Polygon","coordinates":[[[19.700,45.320],[19.710,45.320],[19.710,45.326],[19.700,45.326],[19.700,45.320]]]}'></textarea>
+          </label>
+          <div class="row">
+            <label class="button secondary file-button">Import file<input type="file" id="n-file" accept=".geojson,.json,application/geo+json,application/json"></label>
+            <button type="button" class="button secondary" id="n-example">Insert example</button>
+            <button type="button" class="button secondary" id="n-show">Show on map</button>
+          </div>
+          <p id="g-msg" class="error" role="alert"></p>
+        </div>
+      </div>
 
-<section id="v-rate" class="hidden">
+      <form class="card form-card" id="n-form" novalidate>
+        <h2>Parcel details</h2>
+        <label class="field"><span>Name</span><input id="n-name" value="Trial parcel" autocomplete="off" required></label>
+        <label class="field"><span>Sowing date</span><input id="n-sowing" type="date"></label>
+        <label class="field"><span>Irrigation</span>
+          <select id="n-irr"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select>
+        </label>
+        <label class="field"><span>Decision date <small>(optional)</small></span>
+          <input id="n-pinned" placeholder="2026-07-12T06:00:00" autocomplete="off" aria-describedby="n-pinned-hint">
+          <small id="n-pinned-hint" class="hint">Fixes the moment of the decision, so only data available then are used.</small>
+        </label>
+        <div class="area-box"><span class="hint">Area</span><strong id="n-area">No boundary yet</strong></div>
+        <p id="n-area-hint" class="error" hidden>Supported parcel size: 0.05 to 200 ha.</p>
+        <button class="button primary wide" id="n-save" type="submit">Save parcel</button>
+        <p id="n-msg" class="error" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="v-parcel" class="view" hidden aria-labelledby="p-title">
+    <a class="back" href="#/parcels"><span aria-hidden="true">‹</span> Parcels</a>
+    <div class="view-head">
+      <div>
+        <p class="eyebrow" id="p-meta"></p>
+        <h1 id="p-title"></h1>
+      </div>
+      <button type="button" class="button secondary" id="p-refresh">Refresh data <span class="hint-inline">weather, Sentinel-2</span></button>
+    </div>
+    <div class="parcel-layout">
+      <div class="card map-card small"><div id="p-map" class="map small" role="img" aria-label="Parcel boundary on the map"></div></div>
+      <div class="card">
+        <h2>Data and reliability <span class="sym" title="quality layer">q</span></h2>
+        <p class="hint">Each input with its origin, age and reliability. Missing inputs are listed, not filled in.</p>
+        <div id="p-quality" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="card advice-card">
+      <h2>Advice</h2>
+      <div class="ask-grid">
+        <label class="field"><span>Variant</span><select id="c-variant" aria-describedby="variant-hint"></select></label>
+        <label class="field"><span>Type of advice</span><select id="c-type"><option value="">Detect from the question</option></select></label>
+      </div>
+      <p id="variant-hint" class="hint">V0–V5 is the ablation ladder; each rung adds one layer. V5 is the full model.</p>
+      <form class="ask-row" id="c-form">
+        <label class="visually-hidden" for="c-text">Question</label>
+        <input id="c-text" placeholder="Da li da navodnjavam kukuruz ove nedelje?" autocomplete="off">
+        <button class="button primary" id="c-send" type="submit">Ask</button>
+      </form>
+      <div class="suggestions" aria-label="Example questions">
+        <button type="button" class="chip" data-q="Da li da navodnjavam kukuruz ove nedelje?" title="Should I irrigate the maize this week?">Irrigate this week?</button>
+        <button type="button" class="chip" data-q="Koliko vode da dam kukuruzu?" title="How much water should I give the maize?">How much water?</button>
+        <button type="button" class="chip" data-q="Mogu li sutra da prskam?" title="Can I spray tomorrow?">Spray tomorrow?</button>
+      </div>
+      <p class="hint note">Answers, sources and follow-up questions are in Serbian, the language of the corpus and of the evaluation. Questions are recognised by Serbian keyword rules; if a question is not recognised, the system asks which type of advice you need, or you can choose it above.</p>
+      <div id="c-out" class="thread" aria-live="polite"></div>
+    </div>
+
+    <details class="card vc-card">
+      <summary><span>Free AI conversation <span class="hint-inline">baseline VC</span></span></summary>
+      <p class="hint">A free conversation with a language model that sees the same data and sources. It needs <code>LLM_PROVIDER</code>; with the template generator it is unavailable.</p>
+      <form class="ask-row" id="a-form">
+        <label class="field compact"><span class="visually-hidden">Mode</span>
+          <select id="a-mode"><option value="baseline">VC (without the decision model)</option><option value="app">With the decision model</option></select>
+        </label>
+        <label class="visually-hidden" for="a-text">Message</label>
+        <input id="a-text" autocomplete="off" placeholder="Message">
+        <button class="button secondary" id="a-send" type="submit">Send</button>
+      </form>
+      <div id="a-out" class="thread" aria-live="polite"></div>
+    </details>
+  </section>
+
+  <section id="v-rate" class="view rate" hidden lang="sr-Latn">
   <h2>Slepo ocenjivanje</h2>
   <label>Ocenjivač <input id="r-rater"></label> <button id="r-next">Sledeća stavka</button>
   <div id="r-item"></div>
-</section>
+  </section>
+</main>
 
-<script>
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-async function api(path, opts = {}) {
-  const r = await fetch("/api" + path, {headers: {"Content-Type": "application/json"}, ...opts});
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.detail || r.statusText);
-  return body;
-}
-let meta = null, parcel = null, conv = null, aiConv = null, pending = null;
+<footer class="footer">
+  <p>SmartAgri research prototype · MIT · Weather: Open-Meteo · Imagery: Copernicus Sentinel-2 · Map data: OpenStreetMap contributors</p>
+</footer>
 
-function show(view) {
-  for (const v of ["parcels", "new", "parcel", "rate"]) $("v-" + v).classList.toggle("hidden", v !== view);
-  if (view === "parcels") loadParcels();
-}
-document.querySelectorAll("nav button").forEach((b) => b.onclick = () => show(b.dataset.view));
-
-async function init() {
-  const h = await api("/health");
-  $("health").textContent = `verzija ${h.version} · generator ${h.llm} · satelit ${h.satellite} · offline ${h.offline} · baza ${h.database} · pretraga ${h.retrieval}`;
-  meta = await api("/meta");
-  $("c-variant").innerHTML = meta.variants.map((v) => `<option ${v === meta.default_variant ? "selected" : ""}>${esc(v)}</option>`).join("");
-  $("c-type").innerHTML += meta.advice_types.map((t) => `<option value="${esc(t.value)}">${esc(t.label)}</option>`).join("");
-  show("parcels");
-}
-
-async function loadParcels() {
-  const rows = await api("/parcels");
-  $("parcel-list").innerHTML = "<tr><th>Naziv</th><th>Površina (ha)</th><th>Setva</th></tr>" + rows.map((p) =>
-    `<tr><td><a href="#" data-id="${esc(p.id)}">${esc(p.name)}</a></td><td>${esc(p.area_ha)}</td><td>${esc((p.agronomic || {}).sowing_date)}</td></tr>`).join("");
-  $("parcel-list").querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); openParcel(a.dataset.id); });
-}
-
-$("n-save").onclick = async () => {
-  try {
-    const body = {name: $("n-name").value, sowing_date: $("n-sowing").value || null, irrigation_available: $("n-irr").value,
-                  geometry: JSON.parse($("n-geom").value)};
-    if ($("n-pinned").value) body.pinned_as_of = $("n-pinned").value;
-    const p = await api("/parcels", {method: "POST", body: JSON.stringify(body)});
-    openParcel(p.id);
-  } catch (e) { $("n-msg").textContent = e.message; }
-};
-
-function qualityTable(rows) {
-  return "<tr><th>Ulaz</th><th>Vrednost</th><th>Poreklo</th><th>Starost (d)</th><th>Pouzdanost</th></tr>" + (rows || []).map((r) =>
-    `<tr><td>${esc(r.label)}</td><td>${esc(r.value_text)}</td><td>${esc(r.origin_label)}</td><td>${esc(r.age_days)}</td><td>${esc(r.reliability_label)}</td></tr>`).join("");
-}
-
-async function openParcel(id) {
-  parcel = await api("/parcels/" + id); conv = null; aiConv = null; pending = null;
-  $("p-title").textContent = `${parcel.name} (${parcel.area_ha} ha)`;
-  $("c-out").innerHTML = ""; $("a-out").innerHTML = "";
-  show("parcel");
-  try { $("p-quality").innerHTML = qualityTable((await api(`/parcels/${id}/profile`)).quality); }
-  catch (e) { $("p-quality").innerHTML = `<tr><td class="muted">${esc(e.message)}</td></tr>`; }
-}
-$("p-refresh").onclick = async () => {
-  try { $("p-quality").innerHTML = qualityTable((await api(`/parcels/${parcel.id}/profile/refresh`, {method: "POST"})).quality); }
-  catch (e) { alert(e.message); }
-};
-
-function answerCard(run) {
-  const a = run.answer, act = a.action || {};
-  const data = (a.data_used || []).map((d) => `<li>${esc(d.label)}: ${esc(d.value_text)} · ${esc(d.reliability_label)}${d.age_days != null ? " · " + esc(d.age_days) + " d" : ""}</li>`).join("");
-  const src = (a.sources || []).map((s) => `<li>${esc(s.title)} <span class="muted">(π: ${esc(s.applicability_label)}${s.conditions.length ? "; " + esc(s.conditions.join("; ")) : ""})</span></li>`).join("");
-  const nq = a.next_question;
-  const opts = nq ? nq.options.map((o) => `<button data-input="${esc(nq.input)}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join("") : "";
-  return `<div class="card">
-    <div><b>Čin:</b> ${esc(a.act_label)} <span class="muted">(${esc(run.variant)}, generator ${esc(a.generator)})</span></div>
-    <p>${esc(a.summary)}</p>
-    ${act.what ? `<div><b>Radnja:</b> ${esc(act.what)}</div><div><b>Vreme / uslov:</b> ${esc(act.when_or_condition)}</div>` : ""}
-    ${act.quantity ? `<div><b>Količina:</b> ${esc(act.quantity)}</div>` : ""}
-    ${a.basis && a.basis.text ? `<div class="muted">Na osnovu čega: ${esc(a.basis.text)}</div>` : ""}
-    ${data ? `<div><b>Podaci (starost, pouzdanost):</b><ul>${data}</ul></div>` : ""}
-    ${src ? `<div><b>Izvori i status π:</b><ul>${src}</ul></div>` : ""}
-    ${(a.limitations || []).length ? `<div class="warn">${a.limitations.map(esc).join("<br>")}</div>` : ""}
-    ${nq ? `<div><b>Sledeće pitanje:</b> ${esc(nq.text)}<br>${opts}</div>` : ""}
-    <details><summary>Zašto? (odluke π/q/σ/α/δ i poreklo)</summary><pre>${esc(JSON.stringify({decisions: run.decisions, provenance: run.provenance}, null, 2))}</pre></details>
-  </div>`;
-}
-
-async function sendChat(body) {
-  try {
-    const run = await api(`/parcels/${parcel.id}/chat`, {method: "POST", body: JSON.stringify(
-      {...body, variant: $("c-variant").value, conversation_id: conv})});
-    conv = run.conversation_id; pending = run.answer.next_question;
-    $("c-out").insertAdjacentHTML("beforeend", `<div class="muted">Vi: ${esc(run.question)}</div>` + answerCard(run));
-    $("c-out").querySelectorAll("button[data-input]").forEach((b) => b.onclick = () => sendChat({reply: {input: b.dataset.input, value: b.dataset.value}}));
-  } catch (e) { $("c-out").insertAdjacentHTML("beforeend", `<div class="warn">${esc(e.message)}</div>`); }
-}
-$("c-send").onclick = () => { conv = pending ? conv : null; sendChat({text: $("c-text").value, advice_type: $("c-type").value || null}); };
-
-$("a-send").onclick = async () => {
-  try {
-    const run = await api(`/parcels/${parcel.id}/ai-chat`, {method: "POST", body: JSON.stringify(
-      {message: $("a-text").value, mode: $("a-mode").value, conversation_id: aiConv})});
-    aiConv = run.conversation_id;
-    $("a-out").insertAdjacentHTML("beforeend", `<div class="muted">Vi: ${esc(run.question)}</div><div class="card">${esc(run.answer.text)}
-      <details><summary>Poreklo</summary><pre>${esc(JSON.stringify(run.provenance, null, 2))}</pre></details></div>`);
-  } catch (e) { $("a-out").insertAdjacentHTML("beforeend", `<div class="warn">${esc(e.message)}</div>`); }
-};
-
-$("r-next").onclick = async () => {
-  const rater = $("r-rater").value.trim();
-  if (!rater) return;
-  const [item, rubric] = await Promise.all([api("/eval/rating/next?rater=" + encodeURIComponent(rater)), api("/eval/rubric")]);
-  if (!item.item_id) { $("r-item").innerHTML = "<p>Nema više stavki za ocenjivanje.</p>"; return; }
-  $("r-item").innerHTML = `<p class="muted">Preostalo: ${esc(item.remaining)}</p><pre>${esc(JSON.stringify(item, null, 2))}</pre>
-    <p class="muted">Rubrika:</p><pre>${esc(JSON.stringify(rubric, null, 2))}</pre>
-    <textarea id="r-json" rows="6" cols="70">{"item_id": "${esc(item.item_id)}", "rater": "${esc(rater)}", "r1": 0, "r2": 0, "r3": 0, "r4": 0, "r5": 0, "critical": [], "comment": ""}</textarea><br>
-    <button class="primary" id="r-save">Sačuvaj ocenu</button> <span id="r-msg"></span>`;
-  $("r-save").onclick = async () => {
-    try { await api("/eval/rating", {method: "POST", body: $("r-json").value}); $("r-next").click(); }
-    catch (e) { $("r-msg").textContent = e.message; }
-  };
-};
-
-init().catch((e) => { $("health").textContent = "API nije dostupan: " + e.message; });
-</script>
+<dialog id="settings" aria-labelledby="settings-title">
+  <form method="dialog" class="sheet" id="settings-form">
+    <h2 id="settings-title">Settings</h2>
+    <fieldset class="field">
+      <legend>Appearance</legend>
+      <div class="segmented small" role="radiogroup" aria-label="Appearance">
+        <label><input type="radio" name="theme" value="auto"> Auto</label>
+        <label><input type="radio" name="theme" value="light"> Light</label>
+        <label><input type="radio" name="theme" value="dark"> Dark</label>
+      </div>
+    </fieldset>
+    <label class="field"><span>Map tile URL</span>
+      <input id="s-tiles" spellcheck="false" autocomplete="off" aria-describedby="s-tiles-hint">
+      <small id="s-tiles-hint" class="hint">A template with {z}, {x}, {y}. Leave empty for the server default; type <code>none</code> to turn tiles off. Stored in this browser only.</small>
+    </label>
+    <label class="field"><span>Map attribution</span><input id="s-attr" spellcheck="false" autocomplete="off"></label>
+    <div class="row end">
+      <button type="button" class="button secondary" id="s-reset">Reset</button>
+      <button type="submit" class="button primary" id="s-save" value="save">Done</button>
+    </div>
+  </form>
+</dialog>
 </body>
 </html>

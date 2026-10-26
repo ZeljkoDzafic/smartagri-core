@@ -1,0 +1,52 @@
+{
+  "schema": "smartagri-presentation-captures/1",
+  "recorded_utc": "2026-10-26T04:30:02+00:00",
+  "note": "Unedited captures of the web app running locally in offline mode with the template generator. The parcels were drawn in the app on OpenStreetMap tiles; no weather or satellite data were fetched, so most inputs are missing. The answers are what the system produced in that state; they are not evaluation results. source_commit is the development commit of the client; client_files_sha256 is a digest over backend/src/smartagri/research_api/static/ (sorted relative path, NUL, sha256 of each file, newline) and can be recomputed from this repository.",
+  "screenshots": [
+    {
+      "interface": "web",
+      "file": "assets/images/web-advice.png",
+      "sha256": "ce7bcfdb32ba18ad491b364b8b377fb409bf359e45d4e69a7577f4661db00d11",
+      "source_commit": "1f75408e4d024ccc1c4dc39125a9587772704575",
+      "client_files_sha256": "c004710d91f08d590d30a1103744bcdc0abcd0de4b692204f10f3bf79cbd93ce",
+      "capture_method": "Headless Chromium (Playwright), 1440x900 viewport at device scale 2, light theme; parcel view scrolled to the first answer card.",
+      "commands_or_inputs": [
+        "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, fresh SQLite database)",
+        "drawn parcel 'North field', sowing 78 days before capture, irrigation yes",
+        "Refresh data",
+        "question: Da li da navodnjavam kukuruz ove nedelje? (variant V5)"
+      ],
+      "synthetic_data": true
+    },
+    {
+      "interface": "web",
+      "file": "assets/images/web-draw.png",
+      "sha256": "046b9f22b37f5b83c07ffdf749222fbd3e3fe18cc742d6b6cd74003605b02bca",
+      "source_commit": "1f75408e4d024ccc1c4dc39125a9587772704575",
+      "client_files_sha256": "c004710d91f08d590d30a1103744bcdc0abcd0de4b692204f10f3bf79cbd93ce",
+      "capture_method": "Headless Chromium (Playwright), 1440x900 viewport at device scale 2, light theme; New parcel screen after drawing four corners and Finish.",
+      "commands_or_inputs": [
+        "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, fresh SQLite database)",
+        "four map clicks, Finish",
+        "name 'North field', irrigation yes"
+      ],
+      "synthetic_data": true
+    },
+    {
+      "interface": "web",
+      "file": "assets/images/web-phone-dark.png",
+      "sha256": "05c30149c853151c3d9568801418c28ea1526d6b9991e4d278579a0de480929f",
+      "source_commit": "1f75408e4d024ccc1c4dc39125a9587772704575",
+      "client_files_sha256": "c004710d91f08d590d30a1103744bcdc0abcd0de4b692204f10f3bf79cbd93ce",
+      "capture_method": "Headless Chromium (Playwright), 390x844 mobile viewport at device scale 2, dark theme; answer card with the follow-up question and the opened Why? panel.",
+      "commands_or_inputs": [
+        "python -m smartagri.research_api --port 8101  (SMARTAGRI_OFFLINE=1 LLM_PROVIDER=template EMBEDDINGS_PROVIDER=none, fresh SQLite database)",
+        "drawn parcel 'South field' (four taps)",
+        "Refresh data",
+        "question: Da li da navodnjavam kukuruz ove nedelje? (variant V5)",
+        "Why? opened"
+      ],
+      "synthetic_data": true
+    }
+  ]
+}

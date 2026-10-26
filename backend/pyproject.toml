@@ -24,7 +24,9 @@ ingest = ["pypdf>=4"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"smartagri.research_api" = ["static/*.html"]
+# Research client: page, styles, scripts, icon and the vendored Leaflet with its licence.
+"smartagri.research_api" = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/vendor/leaflet/*.js",
+                            "static/vendor/leaflet/*.css", "static/vendor/leaflet/LICENSE", "static/vendor/leaflet/images/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
