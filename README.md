@@ -1,5 +1,7 @@
 # SmartAgri core
 
+[![ci](https://github.com/ZeljkoDzafic/smartagri-core/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeljkoDzafic/smartagri-core/actions/workflows/ci.yml)
+
 SmartAgri is an open, testable core for **active, uncertainty-aware agronomic advice**. It answers a farmer's
 question about one parcel (maize) and decides, before any text is generated, whether it may advise at all: recommend,
 give a conditional answer, ask a follow-up question, abstain, or refer to an expert.
