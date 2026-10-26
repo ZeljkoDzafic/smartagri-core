@@ -4,7 +4,6 @@ The real test set is never read: a protected folder is simulated by pointing sce
 development scenarios."""
 import json
 import shutil
-from pathlib import Path
 
 import pytest
 
