@@ -47,7 +47,8 @@ pip install -c constraints-py39.txt -e ".[dev,api]"      # Python 3.12: -c requi
 pytest -q                                                # SQLite, offline; no keys needed
 ```
 
-`.env.example` lists the optional settings: LLM provider, Copernicus credentials and offline mode. Without any of
+`.env.example` lists the optional settings: LLM provider, Copernicus credentials, offline mode and the answer
+language (`SMARTAGRI_LOCALE`, default `en`). Without any of
 them the system uses the deterministic template generator and works without network access to models.
 
 ## Run
@@ -59,14 +60,19 @@ python -m smartagri.research_api            # http://127.0.0.1:8100 — local us
 
 ## Web app
 
-![SmartAgri web app: an answer card with a conditional recommendation, the data used and their reliability, and sources](website/assets/images/web-advice.png)
+![SmartAgri web app: the question "When should I irrigate?" and an answer card with a conditional recommendation, its follow-up question, the reasoning, the calculations and the data used with their reliability](website/assets/images/web-advice.png)
 
 Open `http://127.0.0.1:8100`. Draw a parcel on the map (or paste or import a GeoJSON polygon), fetch its profile and
 see each input with its origin, age and reliability (q), ask a question under any variant V0–V5, answer the
-follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes. The
-interface is in English; answers, sources and follow-up questions are in Serbian, the language of the corpus and
-of the evaluation. The VC chat (a free LLM conversation with the same data and sources) needs `LLM_PROVIDER`. The
-blind rating screen shows only the blinded item and the rubric.
+follow-up question, and open "Why?" to see the π, q, σ, α, δ and γ decisions and the provenance hashes.
+
+Answers are in English by default. `SMARTAGRI_LOCALE=sr-Latn` switches the answers to the local language (Latin
+script); a browser can also choose it in Settings (sent as `X-SmartAgri-Lang`). Questions are recognised in English
+and in the local language. Sources are quoted in their original language: the passages of the published corpus are
+short paraphrases in Serbian, so source titles and excerpts appear in Serbian. Evaluation runs never go through the
+API and always use the default locale, so the answer language does not change any result. The VC chat (a free LLM
+conversation with the same data and sources) answers in the language of the message and needs `LLM_PROVIDER`. The
+blind rating screen shows only the blinded item and the rubric, in the wording of the rater guide.
 
 The client has no build step and loads nothing from a CDN; Leaflet 1.9.4 is vendored with its licence
 (`research_api/static/vendor/leaflet/`). OpenStreetMap tiles are its only external request:

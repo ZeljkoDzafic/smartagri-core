@@ -189,3 +189,136 @@ def test_blind_rating_screen_is_unchanged_and_neutral():
         assert text in block, text
     for word in ("variant", "Variant", "V0", "V5", "VC", "generator", "model"):
         assert word not in section and word not in block, word
+
+
+# ---------------------------------------------------------------- answer language (English default, SMARTAGRI_LOCALE)
+SERBIAN_MARKERS = ("navodnjav", "Navodnjav", "podat", "Podat", "Nisam", "Koliko", "padavin", "Padavin", "useva", "pouzdan")
+
+
+def _english(text):
+    return text and not any(m in text for m in SERBIAN_MARKERS) and not any(ch in text for ch in "čćšžđČĆŠŽĐ")
+
+
+def test_answers_are_english_by_default(client, monkeypatch):
+    monkeypatch.delenv("SMARTAGRI_LOCALE", raising=False)
+    p = _parcel(client)
+    prof = client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    assert prof.headers["content-language"] == "en"
+    assert all(_english(q["label"]) and _english(q["reliability_label"]) for q in prof.json()["quality"])
+    assert client.get("/api/meta").json()["locale"] == "en"
+    r = client.post("/api/parcels/%s/chat" % p["id"], json={"text": "When should I irrigate?"})
+    assert r.status_code == 200 and r.headers["content-language"] == "en"
+    run = r.json()
+    a = run["answer"]
+    assert run["advice_type"] == "irrigation_timing" and run["question"] == "When should I irrigate?"
+    assert _english(a["summary"]) and _english(a["act_label"]) and all(_english(x) for x in a["rationale"])
+    if a["next_question"]:
+        assert _english(a["next_question"]["text"])
+        assert all(_english(o["label"]) for o in a["next_question"]["options"])
+    assert client.get("/api/parcels/nope").json()["detail"] == "Parcel not found."
+
+
+def test_english_questions_are_understood(client):
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    for text, kind in (("How much water should I apply?", "irrigation_amount"),
+                       ("Is there a weather window for spraying this week?", "field_ops_window"),
+                       ("When should I top-dress with nitrogen?", "fertilization_timing")):
+        run = client.post("/api/parcels/%s/chat" % p["id"], json={"text": text}).json()
+        assert run["advice_type"] == kind, (text, run["advice_type"])
+        assert _english(run["answer"]["summary"]), run["answer"]["summary"]
+    # Local-language questions still work under the English default (answer in English).
+    run = client.post("/api/parcels/%s/chat" % p["id"], json={"text": "Da li da navodnjavam kukuruz?"}).json()
+    assert run["advice_type"] == "irrigation_timing" and _english(run["answer"]["summary"])
+    # An unrecognised question asks for the advice type, in English.
+    run = client.post("/api/parcels/%s/chat" % p["id"], json={"text": "Hello there"}).json()
+    assert run["answer"]["next_question"]["input"] == "advice_type" and _english(run["answer"]["next_question"]["text"])
+
+
+def test_local_locale_keeps_the_previous_behaviour(client, monkeypatch, store):
+    from smartagri import labels
+    monkeypatch.setenv("SMARTAGRI_LOCALE", "sr-Latn")
+    p = _parcel(client)
+    prof = client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    assert prof.headers["content-language"] == "sr-Latn"
+    assert prof.json() == store.latest_profile(p["id"])                 # the stored record, unchanged
+    run = client.post("/api/parcels/%s/chat" % p["id"], json={"text": "Da li da navodnjavam kukuruz?"}).json()
+    assert run["answer"]["act_label"] == labels.ACTS[run["answer"]["act"]]
+    assert client.get("/api/meta").json()["advice_types"][0]["label"] == labels.ADVICE_TYPES["irrigation_timing"]
+    assert client.get("/api/parcels/nope").json()["detail"] == "Parcela nije pronađena."
+    # A request may ask for English explicitly (?lang= or the X-SmartAgri-Lang header).
+    assert client.get("/api/parcels/nope", params={"lang": "en"}).json()["detail"] == "Parcel not found."
+    assert client.get("/api/parcels/nope", headers={"X-SmartAgri-Lang": "en"}).json()["detail"] == "Parcel not found."
+    monkeypatch.setenv("SMARTAGRI_LOCALE", "xx")                         # unknown value: English
+    assert client.get("/api/meta").json()["locale"] == "en"
+
+
+def test_stored_profile_stays_in_the_default_locale(client, store):
+    from smartagri import labels
+    p = _parcel(client)
+    shown = client.post("/api/parcels/%s/profile/refresh" % p["id"]).json()
+    stored = store.latest_profile(p["id"])
+    assert {q["label"] for q in stored["quality"]} <= set(labels.INPUTS.values())
+    assert [q["input"] for q in shown["quality"]] == [q["input"] for q in stored["quality"]]
+    assert shown["quality"] != stored["quality"]
+
+
+def test_rating_endpoints_run_in_the_default_locale(client, monkeypatch):
+    """Blind rating is protocol: its items, rubric and messages stay in the default locale whatever the answer
+    locale (SMARTAGRI_LOCALE, ?lang=, header)."""
+    from smartagri import i18n, labels
+    from smartagri.evalkit import rating
+    seen = []
+
+    def next_item(store, rater):
+        seen.append(i18n.current())
+        return {"item_id": None, "remaining": 0}
+    monkeypatch.setattr(rating, "next_item", next_item)
+    monkeypatch.delenv("SMARTAGRI_LOCALE", raising=False)
+    for kw in ({}, {"headers": {"X-SmartAgri-Lang": "en"}}):
+        r = client.get("/api/eval/rating/next", params={"rater": "r1", "lang": "en"}, **kw)
+        assert r.status_code == 200
+        rub = client.get("/api/eval/rubric", params={"lang": "en"}, **kw)
+        assert rub.json() == labels.RUBRIC
+    assert seen == [i18n.DEFAULT_LOCALE, i18n.DEFAULT_LOCALE]
+    bad = {"item_id": "nope", "rater": "r1", "r1": 1, "r2": 1, "r3": 1, "r4": 1, "r5": 1}
+    r = client.post("/api/eval/rating", json=bad, params={"lang": "en"})
+    assert r.status_code == 404 and r.json()["detail"] == "Stavka za ocenjivanje nije pronađena."
+    assert i18n.current() == i18n.DEFAULT_LOCALE                         # outside a request: the default locale
+
+
+class _ChatProvider:
+    """Fake model: the local answer for the chat prompts, an English translation for the translation prompt."""
+    name, model = "fake", "fake-1"
+
+    def __init__(self):
+        self.systems = []
+
+    def complete(self, system, messages, json_schema=None, max_tokens=4000):
+        import json
+
+        from smartagri.llm.base import LLMResponse
+        from smartagri.pipeline import ai_chat
+        self.systems.append(system)
+        if system in (ai_chat.SYSTEM_PROMPT, ai_chat.APP_SYSTEM_PROMPT):
+            data = {"text": "Potrebno je proveriti vlažnost zemljišta.", "cited": [], "question_to_user": ""}
+        else:
+            data = {"text": "TRANSLATED", "question_to_user": ""}
+        return LLMResponse(json.dumps(data), self.name, self.model, 10, 5, 0.0, "end_turn", data)
+
+
+def test_ai_chat_answers_in_the_language_of_the_message(client, monkeypatch):
+    from smartagri import llm
+    from smartagri.pipeline import ai_chat
+    fake = _ChatProvider()
+    monkeypatch.setattr(llm, "make_provider", lambda: fake)
+    p = _parcel(client)
+    client.post("/api/parcels/%s/profile/refresh" % p["id"])
+    run = client.post("/api/parcels/%s/ai-chat" % p["id"], json={"message": "When should I irrigate the maize?"}).json()
+    assert fake.systems[0] == ai_chat.SYSTEM_PROMPT                      # the VC baseline prompt is unchanged
+    assert run["provenance"]["prompt_hash"] == ai_chat.PROMPT_HASH and run["provenance"]["language"]["detected"] == "en"
+    assert "text_local" in run["answer"] and run["answer"]["translation"]["target"] == "en"
+    fake.systems.clear()
+    local = client.post("/api/parcels/%s/ai-chat" % p["id"], json={"message": "Kada da navodnjavam kukuruz?"}).json()
+    assert fake.systems == [ai_chat.SYSTEM_PROMPT]                       # a local message: no translation call
+    assert "translation" not in local["answer"] and "language" not in local["answer"]

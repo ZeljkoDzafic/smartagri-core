@@ -1,5 +1,24 @@
-// SmartAgri presentation site: menu, interface tabs, screenshot dialog, copy button. No dependencies.
+// SmartAgri presentation site: scroll reveals, menu, interface tabs, screenshot dialog, copy button. No dependencies.
 "use strict";
+
+// Section reveals on scroll. Content is visible without JavaScript and with reduced motion: the hidden start state
+// applies only under html.js-reveal, which is set here when IntersectionObserver exists and motion is allowed.
+(function () {
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || !("IntersectionObserver" in window)) return;
+  const items = Array.from(document.querySelectorAll(".reveal"));
+  document.documentElement.classList.add("js-reveal");
+  items.forEach((el) => {
+    const siblings = Array.from(el.parentElement.children).filter((c) => c.classList.contains("reveal"));
+    el.style.transitionDelay = Math.min(siblings.indexOf(el), 6) * 70 + "ms";
+  });
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+  items.forEach((el) => io.observe(el));
+  // Anything already in view (or reached by an anchor jump) is shown without waiting for the observer.
+  window.addEventListener("hashchange", () => items.forEach((el) => el.classList.add("in")), { once: true });
+})();
 
 // Mobile menu
 const menu = document.getElementById("menu-toggle");

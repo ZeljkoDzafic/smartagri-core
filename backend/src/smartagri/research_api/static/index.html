@@ -24,33 +24,36 @@
      Flows: parcels, profile with quality q, advisory conversation with the answer card, provenance ("Why?"),
      VC chat and blind rating. -->
 <a class="skip-link" href="#main">Skip to content</a>
-<header class="topbar">
-  <div class="topbar-inner">
+<div class="app">
+<header class="sidebar">
+  <div class="side-top">
     <a class="brand" href="#/parcels" aria-label="SmartAgri, parcels">
-      <img src="static/icon.svg" alt="" width="28" height="28">
-      <span class="brand-name">SmartAgri</span>
-      <span class="brand-tag">Research client</span>
+      <img src="static/icon.svg" alt="" width="30" height="30">
+      <span class="brand-text"><span class="brand-name">SmartAgri</span><span class="brand-tag">Research client</span></span>
     </a>
-    <nav class="segmented" aria-label="Main">
-      <a href="#/parcels" data-nav="parcels">Parcels</a>
-      <a href="#/new" data-nav="new">New parcel</a>
-      <a href="#/rate" data-nav="rate">Blind rating</a>
-    </nav>
     <button id="settings-open" class="icon-button" type="button" aria-label="Settings" aria-haspopup="dialog">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
     </button>
   </div>
+  <nav class="tabbar" aria-label="Main">
+    <p class="side-label" aria-hidden="true">Workspace</p>
+    <a href="#/parcels" data-nav="parcels"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span>Parcels</span></a>
+    <a href="#/new" data-nav="new"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8v8M8 12h8"/></svg><span>New parcel</span></a>
+    <a href="#/rate" data-nav="rate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.6.9 5.1L12 16.3l-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/></svg><span>Blind rating</span></a>
+  </nav>
+  <div class="side-foot">
+    <p class="side-label">System</p>
+    <p class="status" id="health" role="status">Connecting to the research API…</p>
+  </div>
 </header>
 
 <main id="main" tabindex="-1">
-  <p class="status" id="health" role="status">Connecting to the research API…</p>
-
   <section id="v-parcels" class="view" aria-labelledby="parcels-title">
     <div class="view-head">
       <div>
         <p class="eyebrow">Maize · one parcel at a time</p>
         <h1 id="parcels-title">Parcels</h1>
-        <p class="lead">Open a parcel to see its data, their reliability, and advice that says when it cannot advise.</p>
+        <p class="lead">Open a parcel to see its data and how reliable they are, then ask for advice. The system says so when it cannot advise.</p>
       </div>
       <a class="button primary" href="#/new"><span aria-hidden="true">+</span> New parcel</a>
     </div>
@@ -58,120 +61,125 @@
   </section>
 
   <section id="v-new" class="view" hidden aria-labelledby="new-title">
-    <div class="view-head">
-      <div>
-        <p class="eyebrow">New parcel · maize</p>
-        <h1 id="new-title">Draw the boundary</h1>
-        <p class="lead">Choose <b>Draw</b>, then click the corners of the field on the map. Finish on the first point, with a double click, or with <b>Finish</b>. Drag a corner to adjust it.</p>
+    <div class="canvas new-canvas">
+      <div class="map-wrap canvas-map">
+        <div id="n-map" class="map" role="application" aria-label="Map for drawing the parcel boundary. Arrow keys pan, plus and minus zoom."></div>
+        <div class="crosshair" aria-hidden="true"></div>
+        <div class="glass map-title">
+          <p class="eyebrow">New parcel · maize</p>
+          <h1 id="new-title">Draw the boundary</h1>
+          <p class="hint">Press <b>Draw</b> and click the field’s corners. Finish on the first corner, with a double click, or with <b>Finish</b>. Drag a corner to adjust it.</p>
+        </div>
+        <div class="map-tools glass" role="toolbar" aria-label="Drawing tools">
+          <button type="button" id="d-draw" class="tool primary">Draw</button>
+          <button type="button" id="d-point" class="tool" title="Add a corner at the centre of the map (keyboard)">Add centre point</button>
+          <button type="button" id="d-undo" class="tool">Undo</button>
+          <button type="button" id="d-finish" class="tool">Finish</button>
+          <button type="button" id="d-clear" class="tool">Clear</button>
+        </div>
+        <p id="map-note" class="map-note glass" hidden>Map tiles could not be loaded. You can still draw on the empty grid or paste GeoJSON.</p>
       </div>
-    </div>
-    <div class="new-layout">
-      <div class="card map-card">
+
+      <div class="glass panel new-panel">
         <div class="tabs" role="tablist" aria-label="Boundary input">
-          <button type="button" role="tab" id="tab-draw" aria-controls="pane-draw" aria-selected="true">Draw on map</button>
+          <button type="button" role="tab" id="tab-draw" aria-controls="pane-draw" aria-selected="true">Map</button>
           <button type="button" role="tab" id="tab-geojson" aria-controls="pane-geojson" aria-selected="false" tabindex="-1">GeoJSON</button>
         </div>
         <div id="pane-draw" role="tabpanel" aria-labelledby="tab-draw">
-          <div class="map-wrap">
-            <div id="n-map" class="map" role="application" aria-label="Map for drawing the parcel boundary. Arrow keys pan, plus and minus zoom."></div>
-            <div class="crosshair" aria-hidden="true"></div>
-            <div class="map-tools" role="toolbar" aria-label="Drawing tools">
-              <button type="button" id="d-draw" class="tool primary">Draw</button>
-              <button type="button" id="d-point" class="tool" title="Add a corner at the centre of the map (keyboard)">Add centre point</button>
-              <button type="button" id="d-undo" class="tool">Undo</button>
-              <button type="button" id="d-finish" class="tool">Finish</button>
-              <button type="button" id="d-clear" class="tool">Clear</button>
-            </div>
-            <p id="map-note" class="map-note" hidden>Map tiles could not be loaded. You can still draw on the empty grid or paste GeoJSON.</p>
-          </div>
           <p id="d-status" class="hint" aria-live="polite">No boundary yet.</p>
         </div>
         <div id="pane-geojson" role="tabpanel" aria-labelledby="tab-geojson" hidden>
-          <p class="hint">A GeoJSON Polygon (or a Feature with one) in WGS84, coordinates as longitude, latitude. A drawn boundary appears here as well.</p>
+          <p class="hint">A GeoJSON Polygon, or a Feature with one, in WGS84 (longitude, latitude). A drawn boundary appears here too.</p>
           <label class="field">
             <span>Boundary (GeoJSON)</span>
-            <textarea id="n-geom" rows="9" spellcheck="false" placeholder='{"type":"Polygon","coordinates":[[[19.700,45.320],[19.710,45.320],[19.710,45.326],[19.700,45.326],[19.700,45.320]]]}'></textarea>
+            <textarea id="n-geom" rows="6" spellcheck="false" placeholder='{"type":"Polygon","coordinates":[[[19.700,45.320],[19.710,45.320],[19.710,45.326],[19.700,45.326],[19.700,45.320]]]}'></textarea>
           </label>
           <div class="row">
-            <label class="button secondary file-button">Import file<input type="file" id="n-file" accept=".geojson,.json,application/geo+json,application/json"></label>
-            <button type="button" class="button secondary" id="n-example">Insert example</button>
-            <button type="button" class="button secondary" id="n-show">Show on map</button>
+            <label class="button secondary small file-button">Import file<input type="file" id="n-file" accept=".geojson,.json,application/geo+json,application/json"></label>
+            <button type="button" class="button secondary small" id="n-example">Insert example</button>
+            <button type="button" class="button secondary small" id="n-show">Show on map</button>
           </div>
           <p id="g-msg" class="error" role="alert"></p>
         </div>
-      </div>
 
-      <form class="card form-card" id="n-form" novalidate>
-        <h2>Parcel details</h2>
-        <label class="field"><span>Name</span><input id="n-name" value="Trial parcel" autocomplete="off" required></label>
-        <label class="field"><span>Sowing date</span><input id="n-sowing" type="date"></label>
-        <label class="field"><span>Irrigation</span>
-          <select id="n-irr"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select>
-        </label>
-        <label class="field"><span>Decision date <small>(optional)</small></span>
-          <input id="n-pinned" placeholder="2026-07-12T06:00:00" autocomplete="off" aria-describedby="n-pinned-hint">
-          <small id="n-pinned-hint" class="hint">Fixes the moment of the decision, so only data available then are used.</small>
-        </label>
-        <div class="area-box"><span class="hint">Area</span><strong id="n-area">No boundary yet</strong></div>
-        <p id="n-area-hint" class="error" hidden>Supported parcel size: 0.05 to 200 ha.</p>
-        <button class="button primary wide" id="n-save" type="submit">Save parcel</button>
-        <p id="n-msg" class="error" role="alert"></p>
-      </form>
+        <form class="form-card" id="n-form" novalidate>
+          <h2>Parcel details</h2>
+          <div class="group">
+            <label class="field inline"><span>Name</span><input id="n-name" value="Trial parcel" autocomplete="off" required></label>
+            <label class="field inline"><span>Sowing date</span><input id="n-sowing" type="date"></label>
+            <label class="field inline"><span>Irrigation</span>
+              <select id="n-irr"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select>
+            </label>
+            <label class="field inline"><span>Decision date <small>(optional)</small></span>
+              <input id="n-pinned" placeholder="2026-07-12T06:00:00" autocomplete="off" aria-describedby="n-pinned-hint">
+            </label>
+          </div>
+          <small id="n-pinned-hint" class="hint">The decision date fixes the moment of the decision: only data available then are used.</small>
+          <div class="area-box"><span class="hint">Area</span><strong id="n-area">No boundary yet</strong></div>
+          <p id="n-area-hint" class="error" hidden>Supported parcel size: 0.05 to 200 ha.</p>
+          <button class="button primary wide" id="n-save" type="submit">Save parcel</button>
+          <p id="n-msg" class="error" role="alert"></p>
+        </form>
+      </div>
     </div>
   </section>
 
   <section id="v-parcel" class="view" hidden aria-labelledby="p-title">
-    <a class="back" href="#/parcels"><span aria-hidden="true">‹</span> Parcels</a>
-    <div class="view-head">
-      <div>
-        <p class="eyebrow" id="p-meta"></p>
+    <div class="canvas parcel-canvas">
+      <div class="map-wrap canvas-map short"><div id="p-map" class="map" role="img" aria-label="Parcel boundary on the map"></div></div>
+      <div class="glass map-title parcel-title">
+        <a class="back" href="#/parcels"><span aria-hidden="true">‹</span> Parcels</a>
         <h1 id="p-title"></h1>
+        <p class="meta-line" id="p-meta"></p>
+        <button type="button" class="button secondary small" id="p-refresh">Refresh data <span class="hint-inline">weather, Sentinel-2</span></button>
       </div>
-      <button type="button" class="button secondary" id="p-refresh">Refresh data <span class="hint-inline">weather, Sentinel-2</span></button>
     </div>
+
     <div class="parcel-layout">
-      <div class="card map-card small"><div id="p-map" class="map small" role="img" aria-label="Parcel boundary on the map"></div></div>
-      <div class="card">
+      <div class="card data-card">
         <h2>Data and reliability <span class="sym" title="quality layer">q</span></h2>
-        <p class="hint">Each input with its origin, age and reliability. Missing inputs are listed, not filled in.</p>
+        <p class="hint">Every input with its origin, age and reliability. Missing inputs are listed, never filled in.</p>
         <div id="p-quality" aria-live="polite"></div>
       </div>
-    </div>
 
-    <div class="card advice-card">
-      <h2>Advice</h2>
-      <div class="ask-grid">
-        <label class="field"><span>Variant</span><select id="c-variant" aria-describedby="variant-hint"></select></label>
-        <label class="field"><span>Type of advice</span><select id="c-type"><option value="">Detect from the question</option></select></label>
-      </div>
-      <p id="variant-hint" class="hint">V0–V5 is the ablation ladder; each rung adds one layer. V5 is the full model.</p>
-      <form class="ask-row" id="c-form">
-        <label class="visually-hidden" for="c-text">Question</label>
-        <input id="c-text" placeholder="Da li da navodnjavam kukuruz ove nedelje?" autocomplete="off">
-        <button class="button primary" id="c-send" type="submit">Ask</button>
-      </form>
-      <div class="suggestions" aria-label="Example questions">
-        <button type="button" class="chip" data-q="Da li da navodnjavam kukuruz ove nedelje?" title="Should I irrigate the maize this week?">Irrigate this week?</button>
-        <button type="button" class="chip" data-q="Koliko vode da dam kukuruzu?" title="How much water should I give the maize?">How much water?</button>
-        <button type="button" class="chip" data-q="Mogu li sutra da prskam?" title="Can I spray tomorrow?">Spray tomorrow?</button>
-      </div>
-      <p class="hint note">Answers, sources and follow-up questions are in Serbian, the language of the corpus and of the evaluation. Questions are recognised by Serbian keyword rules; if a question is not recognised, the system asks which type of advice you need, or you can choose it above.</p>
-      <div id="c-out" class="thread" aria-live="polite"></div>
-    </div>
+      <div class="advice-col">
+        <div class="card advice-card">
+          <h2>Advice</h2>
+          <div class="ask-grid">
+            <label class="field"><span>Variant</span><select id="c-variant" aria-describedby="variant-hint"></select></label>
+            <label class="field"><span>Type of advice</span><select id="c-type"><option value="">Detect from the question</option></select></label>
+          </div>
+          <p id="variant-hint" class="hint">V0–V5 is the ablation ladder: each rung adds one layer, and V5 is the full model.</p>
+          <form class="ask-row" id="c-form">
+            <label class="visually-hidden" for="c-text">Question</label>
+            <input id="c-text" placeholder="When should I irrigate?" autocomplete="off">
+            <button class="button primary" id="c-send" type="submit">Ask</button>
+          </form>
+          <div class="suggestions" aria-label="Example questions">
+            <button type="button" class="chip" data-q="When should I irrigate?">When should I irrigate?</button>
+            <button type="button" class="chip" data-q="How much water should I apply?">How much water should I apply?</button>
+            <button type="button" class="chip" data-q="Is there a weather window for spraying this week?">Weather window for spraying?</button>
+            <button type="button" class="chip" data-q="When should I top-dress with nitrogen?">When to top-dress?</button>
+          </div>
+          <p class="hint note" id="lang-note">Answers are in English by default. For answers in the local language (Latin script), start the server with <code>SMARTAGRI_LOCALE=sr-Latn</code> or choose it in Settings. Questions in English or the local language are recognised by keyword rules; when a question is not recognised, the system asks which type of advice you need, or you can pick it above. Sources stay in their original language: the passages of the published corpus are in Serbian.</p>
+          <div id="c-out" class="thread" aria-live="polite"></div>
+        </div>
 
-    <details class="card vc-card">
-      <summary><span>Free AI conversation <span class="hint-inline">baseline VC</span></span></summary>
-      <p class="hint">A free conversation with a language model that sees the same data and sources. It needs <code>LLM_PROVIDER</code>; with the template generator it is unavailable.</p>
-      <form class="ask-row" id="a-form">
-        <label class="field compact"><span class="visually-hidden">Mode</span>
-          <select id="a-mode"><option value="baseline">VC (without the decision model)</option><option value="app">With the decision model</option></select>
-        </label>
-        <label class="visually-hidden" for="a-text">Message</label>
-        <input id="a-text" autocomplete="off" placeholder="Message">
-        <button class="button secondary" id="a-send" type="submit">Send</button>
-      </form>
-      <div id="a-out" class="thread" aria-live="polite"></div>
-    </details>
+        <details class="card vc-card">
+          <summary><span>Free AI conversation <span class="hint-inline">baseline VC</span></span></summary>
+          <p class="hint">A free conversation with a language model that sees the same data and sources, answering in the language of your message. It needs <code>LLM_PROVIDER</code>; with the template generator it is unavailable.</p>
+          <form class="ask-row" id="a-form">
+            <label class="field compact"><span class="visually-hidden">Mode</span>
+              <select id="a-mode"><option value="baseline">VC (without the decision model)</option><option value="app">With the decision model</option></select>
+            </label>
+            <label class="visually-hidden" for="a-text">Message</label>
+            <input id="a-text" autocomplete="off" placeholder="Message">
+            <button class="button secondary" id="a-send" type="submit">Send</button>
+          </form>
+          <div id="a-out" class="thread" aria-live="polite"></div>
+        </details>
+      </div>
+    </div>
   </section>
 
   <section id="v-rate" class="view rate" hidden lang="sr-Latn">
@@ -180,6 +188,7 @@
   <div id="r-item"></div>
   </section>
 </main>
+</div>
 
 <footer class="footer">
   <p>SmartAgri research prototype · MIT · Weather: Open-Meteo · Imagery: Copernicus Sentinel-2 · Map data: OpenStreetMap contributors</p>
@@ -195,6 +204,14 @@
         <label><input type="radio" name="theme" value="light"> Light</label>
         <label><input type="radio" name="theme" value="dark"> Dark</label>
       </div>
+    </fieldset>
+    <fieldset class="field">
+      <legend>Answer language</legend>
+      <div class="segmented small" role="radiogroup" aria-label="Answer language" aria-describedby="s-lang-hint">
+        <label><input type="radio" name="lang" value="en"> English</label>
+        <label><input type="radio" name="lang" value="sr-Latn"> Local (Latin)</label>
+      </div>
+      <small id="s-lang-hint" class="hint">Stored in this browser only; the server default is used until you choose. Blind rating is not affected.</small>
     </fieldset>
     <label class="field"><span>Map tile URL</span>
       <input id="s-tiles" spellcheck="false" autocomplete="off" aria-describedby="s-tiles-hint">

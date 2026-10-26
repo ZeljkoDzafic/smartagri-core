@@ -21,10 +21,12 @@ Then open `http://127.0.0.1:8080/`.
 
 ## Contents
 
-- `index.html`: what SmartAgri is, how it decides, its interfaces, evaluation and reproducibility, limitations,
-  install and run.
-- `assets/site.css`, `assets/site.js`: light and dark themes, responsive layout, accessible tabs (arrow keys,
-  Home, End), a screenshot dialog, a copy button for the install commands, reduced-motion support.
+- `index.html`: what SmartAgri is, its four acts, features, the decision layers, interfaces, evaluation and
+  reproducibility, limitations, install and run.
+- `assets/site.css`, `assets/site.js`: system fonts, light and dark themes that follow the system, responsive
+  layout down to 360 px, accessible tabs (arrow keys, Home, End), a screenshot dialog, a copy button for the install
+  commands, and section reveals on scroll (IntersectionObserver). Content is fully visible without JavaScript and
+  with reduced motion.
 - `assets/images/`: actual screenshots of the web app.
 - `assets/screenshots.json`: provenance of every screenshot (source commit, capture method, inputs, sha256).
 
@@ -35,6 +37,10 @@ settings (`SMARTAGRI_OFFLINE=1`, `LLM_PROVIDER=template`, `EMBEDDINGS_PROVIDER=n
 The parcel was drawn in the app; no image was edited. Offline mode means no weather or satellite data were
 fetched, so most inputs are shown as missing; the answers shown are what the system produced in that state. No
 results, accuracy figures or user numbers are shown or claimed.
+
+Answers are in English, the default answer language (`SMARTAGRI_LOCALE=sr-Latn` switches to the local language).
+Source titles and excerpts stay in their original language: the published development corpus consists of short
+paraphrases in Serbian.
 
 When the web app changes, capture new screenshots, update `assets/screenshots.json` (commit and sha256) and run
 the check.

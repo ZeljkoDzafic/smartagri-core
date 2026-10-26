@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .. import i18n
+from . import locale as answer_locale
 from .service import BadRequest, NotFound, ResearchService, Unavailable
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -54,7 +56,14 @@ class RatingIn(BaseModel):
     comment: str = ""
 
 
+def _message(exc: Exception) -> str:
+    """An error message in the request locale (messages are written in the default locale)."""
+    text = str(exc)
+    return i18n.translate_message(text) if i18n.current() == "en" else text
+
+
 def create_app(service: Optional[ResearchService] = None) -> FastAPI:
+    answer_locale.ensure_english_catalogue()
     svc = service or ResearchService()
     app = FastAPI(title="SmartAgri research API", version="0.1.0",
                   description="Research prototype: parcels, input profile with quality, advisory conversation (V0-V5), "
@@ -65,11 +74,23 @@ def create_app(service: Optional[ResearchService] = None) -> FastAPI:
         try:
             return fn(*args)
         except NotFound as exc:
-            raise HTTPException(404, str(exc))
+            raise HTTPException(404, _message(exc))
         except BadRequest as exc:
-            raise HTTPException(400, str(exc))
+            raise HTTPException(400, _message(exc))
         except Unavailable as exc:
-            raise HTTPException(503, str(exc))
+            raise HTTPException(503, _message(exc))
+
+    @app.middleware("http")
+    async def _locale(request: Request, call_next):
+        # The answer language of this request (English by default, SMARTAGRI_LOCALE, ?lang=, X-SmartAgri-Lang); the
+        # rating endpoints always run in the default locale. Outside a request the default locale applies.
+        code = answer_locale.for_request(request.url.path, request.query_params.get("lang"),
+                                         request.headers.get(answer_locale.HEADER))
+        i18n.begin(code)
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Content-Language"] = code
+        return response
 
     @api.get("/health")
     def health():

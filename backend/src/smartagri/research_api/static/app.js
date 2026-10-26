@@ -3,15 +3,23 @@
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+// Answer language: the server default (SMARTAGRI_LOCALE, English unless set) until the user chooses one in Settings;
+// the choice is sent with every request as X-SmartAgri-Lang. Blind rating always runs in the default locale.
+function storedLang() { try { return localStorage.getItem("smartagri.lang") || ""; } catch (e) { return ""; } }
+let answerLang = "en";
 async function api(path, opts = {}) {
-  const r = await fetch("api" + path, {headers: {"Content-Type": "application/json"}, ...opts});
+  const headers = {"Content-Type": "application/json"};
+  if (storedLang()) headers["X-SmartAgri-Lang"] = storedLang();
+  const r = await fetch("api" + path, {...opts, headers});
+  const lang = r.headers.get("Content-Language");
+  if (lang && !path.startsWith("/eval/")) answerLang = lang;
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText || "Request failed");
   return body;
 }
 
 // ------------------------------------------------------------------ English names of codes returned by the API.
-// Texts produced by the decision model (summaries, sources, follow-up questions) stay in the corpus language.
+// Texts produced by the decision model come in the answer language; sources are quoted in the corpus language.
 const ACTS = {recommend: "Recommendation", conditional: "Conditional recommendation", ask: "Follow-up question",
               abstain: "No recommendation", refer: "Referral to an expert"};
 const ADVICE = {irrigation_timing: "Irrigation: timing", irrigation_amount: "Irrigation: amount",
@@ -37,7 +45,8 @@ const APPLICABILITY = {applicable: "applicable", conditional: "conditionally app
 const VALUES = {"nema podatka": "no data", "da": "yes", "ne": "no", "nepoznato": "unknown"};
 const inputName = (key, fallback) => INPUTS[key] || fallback || key;
 const valueText = (v) => VALUES[String(v ?? "").trim()] || v;
-const SR = 'lang="sr-Latn"';
+const LANG = () => `lang="${esc(answerLang)}"`;
+const CORPUS = 'lang="sr-Latn"';            // passages and their titles are quoted in the corpus language
 
 let meta = null, parcel = null, conv = null, aiConv = null, pending = null, parcelsCache = [];
 let drawer = null, viewer = null;
@@ -96,6 +105,12 @@ function fmtDate(s) {
   return isNaN(d) ? String(s) : d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"});
 }
 
+const EMPTY_ART = `<svg class="empty-art" viewBox="0 0 160 110" aria-hidden="true">
+  <defs><linearGradient id="ea" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity=".06"/></linearGradient></defs>
+  <path d="M18 78 52 22l62 10 30 50-58 18z" fill="url(#ea)" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="7 6"/>
+  <g fill="currentColor"><circle cx="18" cy="78" r="5"/><circle cx="52" cy="22" r="5"/><circle cx="114" cy="32" r="5"/><circle cx="144" cy="82" r="5"/><circle cx="86" cy="100" r="5"/></g>
+</svg>`;
+
 async function loadParcels() {
   const list = $("parcel-list");
   if (!parcelsCache.length) list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div>`;
@@ -104,7 +119,7 @@ async function loadParcels() {
   catch (e) { list.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
   parcelsCache = rows;
   if (!rows.length) {
-    list.innerHTML = `<div class="empty card"><h2>No parcels yet</h2><p>Draw a maize field on the map, or paste its boundary as GeoJSON. Then fetch its data and ask a question.</p><a class="button primary" href="#/new">Draw your first parcel</a></div>`;
+    list.innerHTML = `<div class="empty card">${EMPTY_ART}<h2>No parcels yet</h2><p>Draw a maize field on the map or paste its boundary as GeoJSON. Then fetch its data and ask a question.</p><a class="button primary" href="#/new">Draw your first parcel</a></div>`;
     return;
   }
   list.innerHTML = rows.map((p) => {
@@ -293,26 +308,34 @@ function whyPanel(run) {
   </details>`;
 }
 
+function section(title, inner, extra = "") {
+  return inner ? `<section class="sheet-group"${extra}><h3>${title}</h3>${inner}</section>` : "";
+}
+const ACT_ICON = {recommend: "M5 12.5l4.2 4.2L19 7", conditional: "M12 7v6M12 16.5v.5", ask: "M9.2 9a2.9 2.9 0 1 1 3.9 2.7c-.7.3-1.1.9-1.1 1.6v.4M12 17v.3",
+                  abstain: "M7 12h10", refer: "M7 12h10M13 7l5 5-5 5"};
 function answerCard(run) {
-  const a = run.answer, act = a.action || {};
-  const data = (a.data_used || []).map((d) => `<li>${esc(inputName(d.input, d.label))}: <span ${SR}>${esc(valueText(d.value_text))}</span> · ${esc(RELIABILITY[d.reliability] || d.reliability_label)}${d.age_days != null ? " · " + esc(d.age_days) + " d" : ""}</li>`).join("");
-  const src = (a.sources || []).map((s) => `<li><span ${SR}>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>` : esc(s.title)}</span> <span class="src-status">π: ${esc(APPLICABILITY[s.applicability] || s.applicability_label)}${s.conditions && s.conditions.length ? `; <span ${SR}>${esc(s.conditions.join("; "))}</span>` : ""}</span></li>`).join("");
+  const a = run.answer, act = a.action || {}, L = LANG();
+  const data = (a.data_used || []).map((d) => `<li><span>${esc(inputName(d.input, d.label))}</span><span class="v"><span ${L}>${esc(valueText(d.value_text))}</span> <span class="pill rel-${esc(d.reliability)}">${esc(RELIABILITY[d.reliability] || d.reliability_label)}</span>${d.age_days != null ? `<span class="age">${esc(d.age_days)} d</span>` : ""}</span></li>`).join("");
+  const src = (a.sources || []).map((s) => `<li><span class="src-title" ${CORPUS}>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>` : esc(s.title)}</span> <span class="src-status">π: ${esc(APPLICABILITY[s.applicability] || s.applicability_label)}${s.conditions && s.conditions.length ? `; <span ${L}>${esc(s.conditions.join("; "))}</span>` : ""}</span></li>`).join("");
   const why = (a.rationale || []).map((r) => `<li>${esc(r)}</li>`).join("");
   const calc = (a.calculations || []).map((c) => `<li>${esc(typeof c === "string" ? c : c.text || c.label || JSON.stringify(c))}</li>`).join("");
   const nq = a.next_question;
   const opts = nq ? nq.options.map((o) => `<button type="button" class="chip accent" data-input="${esc(nq.input)}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join("") : "";
+  const kv = act.what || act.quantity ? `<dl class="kv">${act.what ? `<dt>Action</dt><dd ${L}>${esc(act.what)}</dd><dt>When / condition</dt><dd ${L}>${esc(act.when_or_condition)}</dd>` : ""}${act.quantity ? `<dt>Quantity</dt><dd ${L}>${esc(act.quantity)}</dd>` : ""}</dl>` : "";
   return `<article class="answer act-${esc(a.act)}">
-    <header><span class="act-badge">${esc(ACTS[a.act] || a.act_label)}</span><span class="meta">${esc(run.variant)} · ${esc(ADVICE[run.advice_type] || "advice type not yet known")} · generator ${esc(a.generator)}</span></header>
-    <p class="summary" ${SR}>${esc(a.summary)}</p>
-    ${act.what || act.quantity ? `<dl class="kv">${act.what ? `<dt>Action</dt><dd ${SR}>${esc(act.what)}</dd><dt>When / condition</dt><dd ${SR}>${esc(act.when_or_condition)}</dd>` : ""}${act.quantity ? `<dt>Quantity</dt><dd ${SR}>${esc(act.quantity)}</dd>` : ""}</dl>` : ""}
-    ${why ? `<h3>Reasoning</h3><ul ${SR}>${why}</ul>` : ""}
-    ${calc ? `<h3>Calculations (code, FAO-56)</h3><ul ${SR}>${calc}</ul>` : ""}
-    ${a.basis && a.basis.text ? `<h3>Based on</h3><p ${SR}>${esc(a.basis.text)}</p>` : ""}
-    ${data ? `<h3>Data used (reliability, age)</h3><ul>${data}</ul>` : ""}
-    ${src ? `<h3>Sources and π status</h3><ul>${src}</ul>` : ""}
-    ${a.referral ? `<h3>Referral</h3><p ${SR}>${esc(typeof a.referral === "string" ? a.referral : a.referral.text || JSON.stringify(a.referral))}</p>` : ""}
-    ${(a.limitations || []).length ? `<div class="limits" ${SR}>${a.limitations.map(esc).join("<br>")}</div>` : ""}
-    ${nq ? `<div class="nextq"><p ${SR}>${esc(nq.text)}${nq.how_to_obtain ? `<br><span class="how">${esc(nq.how_to_obtain)}</span>` : ""}</p><div class="options" ${SR}>${opts}</div></div>` : ""}
+    <span class="grabber" aria-hidden="true"></span>
+    <header><span class="act-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${ACT_ICON[a.act] || ACT_ICON.abstain}"/></svg></span>
+      <span class="act-head"><span class="act-badge">${esc(ACTS[a.act] || a.act_label)}</span><span class="meta">${esc(run.variant)} · ${esc(ADVICE[run.advice_type] || "advice type not yet known")} · ${esc(a.generator)} generator</span></span></header>
+    <p class="summary" ${L}>${esc(a.summary)}</p>
+    ${kv}
+    ${nq ? `<div class="nextq"><p ${L}>${esc(nq.text)}${nq.how_to_obtain ? `<span class="how">${esc(nq.how_to_obtain)}</span>` : ""}</p><div class="options" ${L}>${opts}</div></div>` : ""}
+    ${section("Reasoning", why ? `<ul ${L}>${why}</ul>` : "")}
+    ${section("Calculations <span class=\"hint-inline\">in code, FAO-56</span>", calc ? `<ul ${L}>${calc}</ul>` : "")}
+    ${section("Based on", a.basis && a.basis.text ? `<p ${L}>${esc(a.basis.text)}</p>` : "")}
+    ${section("Data used <span class=\"hint-inline\">reliability, age</span>", data ? `<ul class="rows">${data}</ul>` : "")}
+    ${section("Sources and π status", src ? `<ul class="rows src">${src}</ul>` : "")}
+    ${section("Referral", a.referral ? `<p ${L}>${esc(typeof a.referral === "string" ? a.referral : a.referral.text || JSON.stringify(a.referral))}</p>` : "")}
+    ${(a.limitations || []).length ? `<div class="limits" ${L}>${a.limitations.map(esc).join("<br>")}</div>` : ""}
     ${whyPanel(run)}
   </article>`;
 }
@@ -324,7 +347,7 @@ async function sendChat(body) {
     const run = await api(`/parcels/${parcel.id}/chat`, {method: "POST", body: JSON.stringify(
       {...body, variant: $("c-variant").value, conversation_id: conv})});
     conv = run.conversation_id; pending = run.answer.next_question;
-    $("c-out").insertAdjacentHTML("beforeend", `<div class="bubble" ${SR}>${esc(run.question)}</div>` + answerCard(run));
+    $("c-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div>` + answerCard(run));
     $("c-out").querySelectorAll("button[data-input]").forEach((b) => b.onclick = () => sendChat({reply: {input: b.dataset.input, value: b.dataset.value}}));
     const cards = $("c-out").querySelectorAll(".answer");
     const last = cards[cards.length - 1];
@@ -351,7 +374,8 @@ $("a-form").onsubmit = async (e) => {
       {message: $("a-text").value, mode: $("a-mode").value, conversation_id: aiConv})});
     aiConv = run.conversation_id;
     $("a-text").value = "";
-    $("a-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div><article class="answer"><p class="ai-text">${esc(run.answer.text)}</p>
+    const shownLang = run.answer.language ? (run.answer.translation && run.answer.translation.shown === "local" ? "sr-Latn" : run.answer.language.detected) : "sr-Latn";
+    $("a-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div><article class="answer act-ai"><p class="ai-text" lang="${esc(shownLang)}">${esc(run.answer.text)}</p>
       <details class="raw"><summary>Provenance</summary><pre>${esc(JSON.stringify(run.provenance, null, 2))}</pre></details></article>`);
   } catch (err) { $("a-out").insertAdjacentHTML("beforeend", `<p class="error">${esc(err.message)}</p>`); }
   finally { btn.removeAttribute("aria-busy"); }
@@ -386,16 +410,26 @@ $("settings-open").onclick = () => {
   let url = "", attr = "";
   try { url = localStorage.getItem("smartagri.tileUrl") || ""; attr = localStorage.getItem("smartagri.tileAttribution") || ""; } catch (e) { /* none */ }
   $("s-tiles").value = url; $("s-attr").value = attr;
+  const lang = storedLang() || (meta && meta.locale) || "en";
+  document.querySelectorAll('input[name="lang"]').forEach((r) => { r.checked = r.value === lang; });
   $("s-tiles").placeholder = document.querySelector('meta[name="smartagri-tile-url"]').content || "none";
   $("settings").showModal();
 };
 document.querySelectorAll('input[name="theme"]').forEach((r) => r.onchange = () => applyTheme(r.value));
+document.querySelectorAll('input[name="lang"]').forEach((r) => r.onchange = () => {
+  try { localStorage.setItem("smartagri.lang", r.value); } catch (e) { /* not stored */ }
+  langChanged = true;
+});
+let langChanged = false;
 $("s-reset").onclick = () => { $("s-tiles").value = ""; $("s-attr").value = ""; applyTheme("auto");
+  try { localStorage.removeItem("smartagri.lang"); } catch (e) { /* none */ }
+  langChanged = true;
+  document.querySelectorAll('input[name="lang"]').forEach((r) => { r.checked = r.value === ((meta && meta.locale) || "en"); });
   document.querySelectorAll('input[name="theme"]').forEach((r) => { r.checked = r.value === "auto"; }); };
 $("settings-form").onsubmit = () => {
   const before = JSON.stringify(SmartMap.tileSettings());
   SmartMap.saveTileSettings($("s-tiles").value.trim(), $("s-attr").value.trim());
-  if (JSON.stringify(SmartMap.tileSettings()) !== before) location.reload();   // maps are rebuilt with the new tiles
+  if (JSON.stringify(SmartMap.tileSettings()) !== before || langChanged) location.reload();   // maps and texts are rebuilt
 };
 
-init().catch((e) => { $("health").textContent = "The research API is not reachable: " + e.message; });
+init().catch((e) => { $("health").classList.add("down"); $("health").textContent = "The research API is not reachable: " + e.message; });
