@@ -72,6 +72,12 @@ class ResearchService:
     def _today() -> str:
         return datetime.now().astimezone().date().isoformat()
 
+    def _reported_on(self, parcel: Dict[str, Any]) -> str:
+        """The date of a reply: the decision date of a parcel that has one (a retrospective decision describes that
+        moment, so a reported value is not dated after it), otherwise today."""
+        pinned = self._pinned(parcel)
+        return pinned.date().isoformat() if pinned is not None else self._today()
+
     def _parcel(self, parcel_id: str) -> Dict[str, Any]:
         parcel = self.store.get_parcel(parcel_id)
         if not parcel:
@@ -89,8 +95,11 @@ class ResearchService:
         for key in ("sowing_date", "irrigation_system_type", "soil_texture"):
             if body.get(key):
                 agronomic[key] = body[key]
+        pinned_day = datetime.fromisoformat(body["pinned_as_of"]).date().isoformat() if body.get("pinned_as_of") else None
         if body.get("bbch") is not None:
-            agronomic.update(bbch=int(body["bbch"]), bbch_origin="user_reported", bbch_reported_on=self._today())
+            # a parcel with a decision date describes that moment: what the user reports is dated on it
+            agronomic.update(bbch=int(body["bbch"]), bbch_origin="user_reported",
+                             bbch_reported_on=pinned_day or self._today())
         lat, lon = g["centroid"]["lat"], g["centroid"]["lon"]
         parcel = {"id": new_id(), "created_at": now_iso(), "name": body["name"].strip(), "geometry": body["geometry"],
                   "area_ha": g["area_ha"], "centroid": g["centroid"], "warnings": g["warnings"],
@@ -207,7 +216,7 @@ class ResearchService:
             name, value = reply["input"], reply.get("value")
             question_text, advice_type = pending["question_text"], pending["advice_type"]
             shown = text or str(value)
-            if not text and current() == "en":                     # the chosen option as the user saw it
+            if not text:                                           # the chosen option as the user saw it
                 shown = next((o["label"] for o in L().OPTIONS.get(name, []) + [L().DECLINE_OPTION]
                               if o["value"] == value), shown)
             if name == "advice_type":
@@ -218,7 +227,8 @@ class ResearchService:
                 conv["declined"] = sorted(set(conv.get("declined", []) + [name]))
             else:
                 parcel["agronomic"] = {k: v for k, v in intent.apply_reply(parcel["agronomic"], name, value,
-                                                                           self._today()).items() if k in AGRONOMIC_FIELDS}
+                                                                           self._reported_on(parcel)).items()
+                                       if k in AGRONOMIC_FIELDS}
                 self.store.save_parcel(parcel)
                 conv["questions_asked"] = conv.get("questions_asked", 0) + 1
         else:

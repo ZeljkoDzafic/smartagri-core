@@ -456,3 +456,19 @@ def test_evaluation_view_is_not_linked_from_the_rating_screen():
     script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     block = script[script.index('$("r-next").onclick'):script.index("// ------", script.index('$("r-next").onclick'))]
     assert "#/eval" not in block and "/evaluation" not in block
+
+
+def test_a_reply_on_a_parcel_with_a_decision_date_is_dated_on_it(client, store):
+    """A retrospective decision describes its own moment: a reported value is not dated after it (no negative age)."""
+    r = client.post("/api/parcels", json={"name": "Njiva", "geometry": SQUARE, "sowing_date": "2026-04-22",
+                                          "irrigation_available": "yes", "pinned_as_of": "2026-07-14T07:00:00+02:00"})
+    pid = r.json()["id"]
+    client.post("/api/parcels/%s/profile/refresh" % pid)
+    run = client.post("/api/parcels/%s/chat" % pid, json={"text": "Kada da navodnjavam kukuruz?"}).json()
+    nq = run["answer"]["next_question"]
+    assert nq and nq["input"] == "soil_water_status"
+    r2 = client.post("/api/parcels/%s/chat" % pid, json={"conversation_id": run["conversation_id"],
+                                                          "reply": {"input": nq["input"], "value": "dry"}}).json()
+    assert store.get_parcel(pid)["agronomic"]["soil_water_reported_on"] == "2026-07-14"
+    assert r2["question"] == "Dry"                                       # the option as the user saw it
+    assert all((d.get("age_days") or 0) >= 0 for d in r2["answer"]["data_used"])
