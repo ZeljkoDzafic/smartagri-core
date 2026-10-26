@@ -189,7 +189,11 @@ def test_a_template_run_records_how_it_was_generated(env, capsys):
 
 # ---------------------------------------------------------------- providers
 
-def test_anthropic_provider_without_server_fallback_reports_the_request_id():
+def test_anthropic_provider_without_server_fallback_reports_the_request_id(monkeypatch):
+    import types
+    fake = types.ModuleType("anthropic")                 # the SDK is an optional extra: a stand-in module, no network
+    fake.APIError = APIError
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
     from smartagri.llm.anthropic_provider import AnthropicProvider
     seen = []
     p = AnthropicProvider(model="claude-opus-5-5", client=_client(_response(), seen=seen), server_fallback=False,
