@@ -12,6 +12,19 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 ## [Unreleased]
 
 ### Added
+- Web settings: every agronomic parameter of `rules.yaml`, `kc_maize.yaml`, `thresholds.yaml`, `asking.yaml`,
+  `requirements.yaml` and `parcel_features.yaml` can be set through the web app at three levels (global by an
+  administrator, user, parcel) over the file defaults, with a registry that describes each parameter (label in English
+  and Serbian, unit, type, range, recommended values, source and status), an editing form generated from it, table
+  editors, per-parameter and whole-set reset, versions with restore, an append-only audit log, administrator limits
+  (user-editable switch, allowed range, shape) and the locked protocol files shown read only. Storage: migration
+  `0015` (additive tables; append-only triggers on versions and audit log). API under `/api/settings`. Administrators:
+  `SMARTAGRI_ADMINS` with `SMARTAGRI_ACCOUNTS=optional`; the local user with `off`. See `docs/settings.md`.
+- A "settings used" block in the provenance of every web answer (version, hash, overrides with their level), in the
+  "Why?" panel and in the JSON export.
+- `config.use_overlay` / `config.load_file`: a per-request, context-variable overlay of settings over the file data.
+  Without an overlay `config.load()` returns the cached file data, `evalkit` and the protocol lock read the files only,
+  and the file hashes are unchanged.
 - Parcel features: the `parcel_features` data contract (schema version 1, JSON Schema in `docs/parcel-features.md` and in
   `core/parcel_features.py`), a validator, a geometry hash and the producer's hashes, a generic provider interface that
   reads precomputed files (`providers/parcel_features.py`, `SMARTAGRI_PARCEL_FEATURES_DIR`), loading from scenario files
@@ -29,6 +42,9 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 - `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
 
 ### Changed
+- The research API computes profile, advice, free conversation, series and water balance with the caller's effective
+  settings. With no overrides the decisions are byte-identical to the previous version (checked on every development
+  scenario and variant); the blind rating endpoints and evaluation are unchanged.
 - `config/parcel_features.yaml` is a new configuration file: it is hashed in `config.config_hashes()` (a seventh key) and
   bound by the protocol lock, so the lock fingerprint and every run's `config_hashes` differ from 0.2.0. No act of the
   development scenarios changes; the dev-set decisions are identical apart from the new hash.

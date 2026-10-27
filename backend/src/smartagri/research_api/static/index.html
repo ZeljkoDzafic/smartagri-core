@@ -18,6 +18,7 @@
 <script defer src="static/vendor/leaflet/leaflet.js"></script>
 <script defer src="static/map.js"></script>
 <script defer src="static/i18n.js"></script>
+<script defer src="static/settings.js"></script>
 <script defer src="static/charts.js"></script>
 <script defer src="static/app.js"></script>
 </head>
@@ -46,6 +47,7 @@
     <p class="side-label" aria-hidden="true">Workspace</p>
     <a href="#/parcels" data-nav="parcels"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span>Parcels</span></a>
     <a href="#/new" data-nav="new"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M12 8v8M8 12h8"/></svg><span>New parcel</span></a>
+    <a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg><span>Settings</span></a>
     <a href="#/eval" data-nav="eval"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h15"/><path d="M7 16.5v-5M12 16.5v-9M17 16.5v-7"/></svg><span>Evaluation</span></a>
     <a href="#/rate" data-nav="rate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.6.9 5.1L12 16.3l-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/></svg><span>Blind rating</span></a>
   </nav>
@@ -209,6 +211,11 @@
         </details>
       </div>
     </div>
+    <details class="card parcel-settings" id="p-set-card">
+      <summary><span>Parcel settings <span class="hint-inline">values for this parcel only</span></span></summary>
+      <p class="hint">Irrigation, soil, crop coefficients and other parameters for this parcel. Each shows where its effective value comes from. All parameters are under <a href="#/settings">Settings</a>.</p>
+      <div id="p-set"></div>
+    </details>
     <div class="context-layout">
       <section class="card ctx-card" aria-labelledby="w-title">
         <h2 id="w-title">Weather and NDVI <span class="sym" title="decision context">C</span><span class="sym" title="quality layer">q</span></h2>
@@ -232,6 +239,17 @@
       </div>
     </div>
     <div id="e-out" aria-live="polite"></div>
+  </section>
+
+  <section id="v-settings" class="view" hidden aria-labelledby="set-title">
+    <div class="view-head">
+      <div>
+        <p class="eyebrow">Agronomic parameters · three levels</p>
+        <h1 id="set-title">Agronomic settings</h1>
+        <p class="lead">Every parameter of the decision configuration, with its file default, source and status. Effective value: parcel, else yours, else global, else the file default. Evaluation always reads the files only.</p>
+      </div>
+    </div>
+    <div id="set-out" aria-live="polite"></div>
   </section>
 
   <section id="v-rate" class="view rate" hidden lang="sr-Latn">

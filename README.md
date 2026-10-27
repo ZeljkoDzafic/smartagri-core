@@ -163,6 +163,19 @@ automatically after `SMARTAGRI_ANON_TTL_HOURS` (default 24) without activity; si
 anonymous session. Whoever runs a public server is responsible for its privacy
 notice and its backups, which keep deleted data until they expire.
 
+## Settings
+
+Every agronomic parameter of the configuration files can be set through the web app, at three levels over the file
+defaults: **global** (an administrator), **user** and **parcel**. The effective value is the parcel's, else the user's,
+else the global one, else the file default. Each parameter shows its file default, its unit, the allowed and the
+recommended range, the source with its status (verified, partly verified, disputed, no source, development value) and
+a "changed" marker; tables (Kc by BBCH range, root depth by stage, water capacity by texture, quality bands) have a
+table editor with validation. The administrator decides per parameter whether users may change it and within which
+range, sees the audit log and can restore a previous version or the file default. Evaluation reads the files only:
+web settings never reach `evalkit`, the protocol lock or the blind rating screen, and every web answer records the
+settings it used. With accounts on, administrators are listed in `SMARTAGRI_ADMINS`; in local mode the local user is
+the administrator. See [docs/settings.md](docs/settings.md).
+
 ## Website
 
 A static presentation of the project lives in [`website/`](website/). It is deployed to Cloudflare as static assets
@@ -205,6 +218,7 @@ OpenStreetMap tiles. Each keeps its own licence and terms; see [NOTICE](NOTICE) 
 | Document | Content |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | flow of one question, storage, packages |
+| [docs/settings.md](docs/settings.md) | web settings: levels, administrator role and limits, history, evaluation isolation, API, how to add a parameter |
 | [docs/parcel-features.md](docs/parcel-features.md) | the `parcel_features` data contract, causality rule, hashes, provider and how q uses it |
 | [docs/layers.md](docs/layers.md) | every layer (C, π, q, σ, α, δ, γ) and agronomic tool mapped to code, configuration and tests; the four acts |
 | [docs/limitations.md](docs/limitations.md) | what this version does not do, with the files to check |

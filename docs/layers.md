@@ -37,6 +37,15 @@ service.
 | decision cores D_t | the action class per advice type (irrigate now / wait, top-dress window, spraying window, scouting priority) | `core/rules.py` (`decide_action_core`) | `rules.yaml` | `test_dev_scenarios.py`, `test_optional_inputs.py` | — (always on for in-scope questions) |
 | **γ** grounding | numbers in a generated text must come from a tool or the context; sentences must be supported by a passage | `core/grounding.py` (`unsupported_numbers`, `support_check`, `split_sentences`); `pipeline/generate.py` (LLM path: an unsupported number replaces the text by the template answer, unsupported sentences are removed); `pipeline/judge.py` (optional entailment judge) | — (the lexical support threshold is a default argument of `support_check`, not a configuration value) | `test_tools.py`, `test_judge.py`, `test_generate.py` | `grounding` |
 
+### Web settings and the configuration column
+
+The configuration files named in the table are read through `config.load(name)`. In a research API request that
+computes an answer, `config.load` returns the file data with the caller's web settings merged over it (a context
+variable, see [settings.md](settings.md)); everywhere else, including `evalkit`, the protocol lock and the blind
+rating endpoints, it returns the files unchanged. `core/` is not aware of the overlay. Every web answer records the
+settings it used in `provenance.settings`; the file hashes in `config_hashes` do not change. Tests:
+`test_web_settings.py`.
+
 The template generator (`pipeline/generate.py`, `TemplateGenerator`, `template_answer`) builds its text from the
 decision and the tool outputs, so γ has nothing to reject on that path; γ acts on text written by a language model.
 

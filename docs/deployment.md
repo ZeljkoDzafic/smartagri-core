@@ -14,6 +14,9 @@ Create `/srv/smartagri/.env` (never commit it; readable only by root and the ser
 ```bash
 SMARTAGRI_ACCOUNTS=optional
 SMARTAGRI_PUBLIC_URL=https://app.smartagri.rs.ba
+# Administrators of the web settings (comma-separated emails). Register the administrator account first: without SMTP an
+# address cannot be verified. See docs/settings.md.
+SMARTAGRI_ADMINS=you@example.org
 # Anonymous (not saved) parcels are deleted after this many hours without activity (default 24).
 SMARTAGRI_ANON_TTL_HOURS=24
 # The proxy runs on the same host and the container port is published on 127.0.0.1 only, so the forwarded client

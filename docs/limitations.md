@@ -32,6 +32,28 @@ any result produced with this version; results should be read together with it.
 - **Region classes.** `geo.py` (`region_class`) assigns `pannonian`, `mediterranean` or `hilly_mountain` from latitude
   and elevation with a placeholder rule.
 
+## Web settings
+
+- **Settings are not approvals.** A web setting changes a value; it does not change its review status. The status
+  shown next to a parameter (verified, partly verified, disputed, no source, development value) comes from a comparison
+  of the constants with the cited documents on one date, read through a summary of the pages; the numbers of the printed
+  tables should be compared once more before a protocol is locked. The recommended ranges are given only where a source
+  gives a range, so most parameters have none and a value outside the source's typical range is not flagged.
+- **Some constants are not parameters.** The depletion fractions per soil-water class, the small-parcel limit, the NDVI
+  trend minimum share, the factor of 5 for heavy rain in the decision core and the two-day horizon of "irrigate soon"
+  are in code, not in a file, and cannot be set through the web. The same holds for the open agronomy issues: bands of
+  the soil sensor that depend on texture, a nitrogen cap in kg N/ha, interpolation of Kc through the late stage and a
+  soil-temperature check for sowing need code changes ([settings.md](settings.md)).
+- **Tables are edited as a whole.** A list, a map or a table is one parameter; a user who edits one row owns the whole
+  table, and the file's later changes to other rows are then not picked up at that level.
+- **Stored profiles.** A parameter that acts when a profile is built (the base temperature of the growing-degree-day
+  sum) applies when the profile is refreshed; the quality rows of an already stored profile reflect the settings of
+  that moment, while every answer is decided with the current settings.
+- **Evaluation is not affected, by design.** Results of `evalkit` never reflect web settings, so a setting that helps in
+  the web app says nothing about the evaluation.
+- **Concurrent edits.** Two administrators editing the same level are protected only if the client sends
+  `base_version`; the web client does.
+
 ## Parcel features
 
 - **No satellite stage estimator.** The stage-conflict rule of q (`core/parcel_features.py`, `stage_conflict`) compares the

@@ -63,10 +63,29 @@ VERSIONS: List[Tuple[str, str, Callable[[Any], None]]] = [
              "additive tables only)", lambda store: store.sync_schema()),
     ("0014", "optional accounts of the research web app: users, sessions, one-time tokens, parcel owners (additive "
              "tables only)", lambda store: store.sync_schema()),
+    ("0015", "web settings of the research core: global, user and parcel layers, administrator limits, append-only "
+             "versions and audit log (additive tables, append-only triggers)", lambda store: _settings_015(store)),
 ]
 
 
 APPEND_ONLY_051 = ("ppp_import_events", "ppp_guidance_events")
+APPEND_ONLY_015 = ("settings_versions", "settings_audit")
+
+
+def _settings_015(store: Any) -> None:
+    """Additive tables (store.TABLES), then triggers that refuse UPDATE and DELETE on the append-only history tables."""
+    store.sync_schema()
+    for table in APPEND_ONLY_015:
+        if store.backend == "postgresql":
+            store._exec("CREATE OR REPLACE FUNCTION settings_append_only() RETURNS trigger LANGUAGE plpgsql AS "
+                        "$$ BEGIN RAISE EXCEPTION USING MESSAGE = 'append-only table ' || TG_TABLE_NAME; END $$")
+            store._exec("DROP TRIGGER IF EXISTS %s_append_only ON %s" % (table, table))
+            store._exec("CREATE TRIGGER %s_append_only BEFORE UPDATE OR DELETE ON %s FOR EACH ROW "
+                        "EXECUTE FUNCTION settings_append_only()" % (table, table))
+        else:
+            for op in ("UPDATE", "DELETE"):
+                store._exec("CREATE TRIGGER IF NOT EXISTS %s_no_%s BEFORE %s ON %s BEGIN "
+                            "SELECT RAISE(ABORT, 'append-only table %s'); END" % (table, op.lower(), op, table, table))
 
 
 def _ppp_051(store: Any) -> None:

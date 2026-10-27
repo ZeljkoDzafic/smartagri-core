@@ -446,6 +446,7 @@ class Accounts:
         for pid in ids:
             self.store.delete_parcel(pid)
         self.store.delete("core_owners", owner=owner)
+        self.store.delete("settings_user", id=user["id"])                 # web settings: current overrides (history keeps the id)
         self.store.delete("core_tokens", user_id=user["id"])
         self.store.delete("core_sessions", user_id=user["id"])
         self.store.delete("core_users", id=user["id"])

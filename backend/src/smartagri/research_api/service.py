@@ -22,6 +22,7 @@ from ..providers import satellite
 from ..providers.base import offline
 from ..retrieval import load_corpus, make_retriever
 from ..store import Store, make_store, new_id, now_iso
+from ..web_settings.service import empty_summary
 from . import views
 
 DEFAULT_VARIANT = "V5"
@@ -31,6 +32,13 @@ PROFILE_MAX_AGE_HOURS = 6
 def _shown_message(text: str) -> str:
     """A stored provider message (default locale) in the request locale."""
     return i18n.translate_message(text) if text and not i18n.is_default() else text
+
+
+def settings_block() -> Dict[str, Any]:
+    """The settings an answer was computed with: version and hash of the effective overrides and the overrides themselves
+    (value and layer). Without overrides it is the files alone; the files' hashes are in `config_hashes`."""
+    overlay = config.active_overlay()
+    return dict(overlay.meta) if overlay is not None and overlay.meta else empty_summary()
 
 
 class NotFound(Exception):
@@ -163,6 +171,7 @@ class ResearchService:
     # ------------------------------------------------------------ conversation
     def _record(self, conv: Dict[str, Any], shown: str, out: Dict[str, Any], profile_id: Optional[str]) -> Dict[str, Any]:
         out["provenance"]["profile_id"] = profile_id
+        out["provenance"]["settings"] = settings_block()
         run = dict(out, id=new_id(), conversation_id=conv["id"], turn=len(self.store.list_runs(conv["id"])) + 1,
                    variant=conv["variant"], created_at=now_iso(), question=shown)
         return self.store.save_run(run)
@@ -367,7 +376,7 @@ class ResearchService:
         provenance = {"system_view": out.pop("_system_view", None), "profile_id": profile["id"], "as_of": profile["as_of"],
                       "prompt_hash": out.pop("_prompt_hash"), "passages": out.pop("_passage_ids"),
                       "model_text": out.pop("_raw_text"), "corpus_hash": self.corpus.hash, "mode": mode,
-                      "language": language}
+                      "language": language, "settings": settings_block()}
         if pivot is not None:
             provenance["pivot"] = {k: pivot[k] for k in ("prompt_hash", "language", "language_name", "text_local",
                                                          "problems")}

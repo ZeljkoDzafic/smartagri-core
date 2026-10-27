@@ -25,7 +25,11 @@ async function api(path, opts = {}) {
   const lang = r.headers.get("Content-Language");
   if (lang && !path.startsWith("/eval/")) answerLang = lang;
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText || t("Request failed"));
+  if (!r.ok) {
+    const err = new Error(typeof body.detail === "string" ? body.detail : r.statusText || t("Request failed"));
+    err.status = r.status; err.body = body;            // the settings form reads the per-parameter errors of a 400
+    throw err;
+  }
   return body;
 }
 
@@ -68,7 +72,7 @@ let meta = null, parcel = null, conv = null, aiConv = null, pending = null, parc
 let drawer = null, viewer = null;
 
 // ------------------------------------------------------------------ routing
-const VIEWS = ["parcels", "new", "parcel", "eval", "rate"];
+const VIEWS = ["parcels", "new", "parcel", "eval", "settings", "rate"];
 function show(view) {
   for (const v of VIEWS) $("v-" + v).hidden = v !== view;
   for (const a of document.querySelectorAll("[data-nav]")) {
@@ -86,6 +90,7 @@ async function route() {
   if (view === "parcel" && parts[1]) { show("parcel"); await openParcel(decodeURIComponent(parts[1])); }
   else if (view === "new") { show("new"); ensureDrawer(); }
   else if (view === "eval") { show("eval"); await loadEval(); }
+  else if (view === "settings") { show("settings"); if (window.SmartSettings) SmartSettings.open(); }
   else if (view === "rate") show("rate");
   else { show("parcels"); await loadParcels(); }
   window.scrollTo(0, 0);
@@ -325,6 +330,7 @@ async function openParcel(id) {
                              parcel.pinned_as_of ? t("decision date {date}", {date: fmtDate(parcel.pinned_as_of)}) : "",
                              ag.soil_texture ? t("soil: {texture}", {texture: textureName(ag.soil_texture)}) : ""].filter(Boolean).join(" · ");
   $("c-out").innerHTML = ""; $("a-out").innerHTML = "";
+  $("p-set").textContent = ""; $("p-set-card").open = false; $("p-set-card").dataset.loaded = "";
   if (window.SmartMap && SmartMap.available()) {
     if (!viewer) viewer = new SmartMap.Viewer($("p-map"), {});
     setTimeout(() => viewer.show(parcel.geometry), 0);
@@ -334,6 +340,12 @@ async function openParcel(id) {
   catch (e) { $("p-quality").innerHTML = `<p class="hint">${esc(e.message)} ${esc(t("Press “Refresh data” to fetch weather and Sentinel-2 for this parcel."))}</p>`; }
   await loadContext();
 }
+$("p-set-card").addEventListener("toggle", () => {
+  const card = $("p-set-card");
+  if (!card.open || card.dataset.loaded === parcel.id || !window.SmartSettings) return;
+  card.dataset.loaded = parcel.id;
+  SmartSettings.mountParcel($("p-set"), parcel).catch((e) => { $("p-set").innerHTML = `<p class="error">${esc(e.message)}</p>`; });
+});
 $("p-refresh").onclick = async () => {
   const btn = $("p-refresh");
   btn.setAttribute("aria-busy", "true");
@@ -345,6 +357,13 @@ $("p-refresh").onclick = async () => {
 
 // ------------------------------------------------------------------ answer card
 const short = (h) => (h ? String(h).slice(0, 12) + "…" : "–");
+// The settings an answer was computed with (provenance.settings): version, hash and the overrides with their level.
+function settingsUsed(s) {
+  if (!s) return "";
+  const rows = Object.entries(s.snapshot || {}).map(([k, v]) => `<li><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v.value))}</code> <span class="hint">(${esc(t(v.layer === "global" ? "global" : v.layer === "user" ? "user" : "parcel"))})</span></li>`).join("");
+  return `<div class="layers"><div class="layer"><b>${esc(t("Settings used"))}</b>${s.n_overrides ? esc(t("{n} values differ from the files", {n: s.n_overrides})) : esc(t("the configuration files only"))}
+    <br><span class="hint">${esc(t("version"))} <code>${esc(s.version || "–")}</code> · <code>${esc(short(s.hash))}</code></span>${rows ? `<ul class="set-used">${rows}</ul>` : ""}</div></div>`;
+}
 function whyPanel(run) {
   const d = run.decisions || {}, p = run.provenance || {};
   const pol = d.policy || {}, suf = d.sufficiency, q = d.question, gr = d.grounding || {};
@@ -370,6 +389,7 @@ function whyPanel(run) {
       ${layer("", "Model / prompt", `${esc(p.model === "none" ? t("none") : (p.model || "–"))} · <code>${esc(short(p.prompt_hash))}</code>`)}
       ${layer("", "Weather forecast issued", esc(p.forecast_issued_at || "–"))}
     </div>
+    ${settingsUsed(p.settings)}
     <p class="row"><button type="button" class="button secondary small prov-dl" data-run="${esc(run.id)}">${esc(t("Download provenance (JSON)"))}</button>
       <span class="hint">${esc(t("The answer with every decision (π, q, σ, α, δ, γ), its sources, the inputs with age and reliability, and the hashes."))}</span></p>
     <details class="raw"><summary>${esc(t("Decisions and provenance (JSON)"))}</summary><pre>${esc(JSON.stringify({decisions: run.decisions, provenance: run.provenance}, null, 2))}</pre></details>
