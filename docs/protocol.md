@@ -36,10 +36,10 @@ passage budget and output limit (`backend/config/evaluation.yaml`).
 the independent agronomist marks at least one critical error K1-K5 (K4, premature recommendation, included) — compared
 as the paired difference V4 − V3 over the 40 test scenarios.
 
-Note on the choice: the study design names three measures for E1 (the rate of contextually wrong and premature
+Note on the choice: three measures are candidates for E1 (the rate of contextually wrong and premature
 recommendations, the rubric score for applicability and the correctness of the act). The plan takes the first one as
-the single primary outcome, as instructed for this plan; this choice is flagged for confirmation by the protocol owner
-before the lock. The other two are key secondary outcomes (section 3).
+the single primary outcome; this choice is flagged for confirmation by the protocol owner before the lock. The other
+two are key secondary outcomes (section 3).
 
 Estimate: mean paired difference with a 95 % percentile bootstrap interval (10,000 resamples, seed 7). E1 is supported
 when the whole interval lies below zero.
@@ -111,8 +111,8 @@ The rubric total of V5 is non-inferior to VC when the lower limit of the two-sid
 one-sided test at alpha/2 = 0.025) lies above −margin.
 
 **Non-inferiority margin: TO BE DECIDED BY THE PROTOCOL OWNER** (`noninferiority.margin` in
-`backend/config/analysis.yaml`, currently null). The study design requires a margin locked before measurement but
-does not justify a value; none is assumed here. The justification (for example a minimal important difference agreed
+`backend/config/analysis.yaml`, currently null). A margin must be locked before measurement; no value is
+justified or assumed here. The justification (for example a minimal important difference agreed
 with the agronomist) is written in this section when the margin is set.
 
 ## 8. Negative control: equivalence on the complete stratum

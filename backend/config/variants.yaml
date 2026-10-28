@@ -1,4 +1,4 @@
-# Ablation ladder. Each rung adds exactly one layer of the experiment design (its Table 3); core code must never
+# Ablation ladder. Each rung adds exactly one element of the design (see docs/protocol.md); core code must never
 # branch on a variant name. Layers per rung:
 #   V0  language model with the static parcel profile (P, A, Q), no retrieval
 #   V1  + hybrid retrieval (standard RAG; every retrieved passage is taken as applicable)

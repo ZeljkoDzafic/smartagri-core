@@ -33,7 +33,7 @@ SMARTAGRI_SMTP_PORT=587
 SMARTAGRI_SMTP_TLS=starttls
 SMARTAGRI_SMTP_USER=
 SMARTAGRI_SMTP_PASSWORD=
-SMARTAGRI_SMTP_FROM=SmartAgri <no-reply@smartagri.rs.ba>
+SMARTAGRI_SMTP_FROM=SmartAgri <no-reply@example.org>
 # Optional services (see .env.example): LLM_PROVIDER, CDSE_CLIENT_ID / CDSE_CLIENT_SECRET, DATABASE_URL, ...
 ```
 

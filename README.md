@@ -255,6 +255,4 @@ Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not
 
 ## Licence
 
-MIT for the code (`LICENSE`); the corpus and third-party components keep their own terms ([NOTICE](NOTICE)). A
-commercial product built on this core is developed separately; it is not needed to run, check or reproduce anything
-here.
+MIT for the code (`LICENSE`); the corpus and third-party components keep their own terms ([NOTICE](NOTICE)).
