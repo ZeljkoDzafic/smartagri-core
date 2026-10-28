@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .. import labels
 from ..config import load_variants
 from ..core.quality import values
 from ..core.types import Agronomic, Context
 from ..pipeline import intent
-from ..pipeline.generate import make_generator
+from ..pipeline.generate import TEMPLATE_LABEL, make_generator
 from ..pipeline.profile import quality_rows
 from ..pipeline.run import advise
 from ..retrieval import load_corpus, make_retriever
@@ -48,6 +48,18 @@ def scenario_view(sc: Dict[str, Any], ctx: Context) -> Dict[str, Any]:
 def cluster_of(sc: Dict[str, Any]) -> str:
     # Scenarios that share a parcel are dependent; `cluster` groups them for the bootstrap.
     return sc.get("cluster") or (sc["context"].get("P") or {}).get("parcel_id") or sc["id"]
+
+
+def baseline_record(turns: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Who chose the act of a variant whose act is not the core's (V0-V3), for the run record; None for the others.
+
+    {"act_chosen_by": "model"|"template", "label": "template, not a baseline"|None}. A template answer is a fallback
+    that always recommends: it is shown in reports and tables under this label and is never a result of the rung."""
+    marked = [t["answer"] for t in turns if t["answer"].get("baseline_label") or t["answer"].get("act_origin")]
+    if not marked:
+        return None
+    template = any(a.get("baseline_label") for a in marked)
+    return {"act_chosen_by": "template" if template else "model", "label": TEMPLATE_LABEL if template else None}
 
 
 def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, generator) -> Dict[str, Any]:
@@ -93,7 +105,9 @@ def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, gener
             turn["user_reply"] = "Ne znam."
             ctx.declined_inputs.append(name)
     first = turns[0]["answer"]
-    return {"scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
+    baseline = baseline_record(turns)
+    extra = {"baseline": baseline} if baseline else {}      # only variants whose act the model chooses carry it
+    return {**extra, "scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
             "expect": (sc.get("expect") or {}).get(variant_name), "reference": sc.get("reference"), "first_act": first["act"],
             "final_act": turns[-1]["answer"]["act"], "n_turns": len(turns),
             "first_question_input": matched[0] if matched else None,
@@ -142,5 +156,8 @@ def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, 
                                           stratum=sc.get("stratum"), cluster=cluster_of(sc)))
                 continue
             items.append(store.save_eval_item(dict(result, **base, **models_used(result["records"]))))
-    return {"batch_id": batch_id, "variant": variant_name, "set": set_name, "n": len(items), "failed": failed,
-            "generator": generator.name, "model": generation["model"]}
+    summary = {"batch_id": batch_id, "variant": variant_name, "set": set_name, "n": len(items), "failed": failed,
+               "generator": generator.name, "model": generation["model"]}
+    if any((i.get("baseline") or {}).get("label") for i in items):
+        summary["label"] = TEMPLATE_LABEL         # V0-V3 from the template: a fallback, not a baseline result
+    return summary

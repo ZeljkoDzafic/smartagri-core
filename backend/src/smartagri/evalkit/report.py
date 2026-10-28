@@ -333,7 +333,17 @@ def automatic(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
         out[variant].update(retrieval_measures(group))
         out[variant].update(support_measures(group))
+        label = baseline_label(group)
+        if label:
+            out[variant]["baseline_label"] = label
     return out
+
+
+def baseline_label(group: List[Dict[str, Any]]) -> Optional[str]:
+    """"template, not a baseline" when any item of a variant whose act the model chooses (V0-V3) was produced by the
+    template generator; None otherwise. Such a group is a fallback of the dev-set check, never a result of the rung."""
+    labels = sorted({(i.get("baseline") or {}).get("label") for i in group} - {None})
+    return labels[0] if labels else None
 
 
 def rated(store: Store, items: List[Dict[str, Any]], rater: str) -> Dict[str, Dict[str, Any]]:
