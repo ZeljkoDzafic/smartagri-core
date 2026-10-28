@@ -1,4 +1,4 @@
-"""Spec 003 T020 (coverage report) and T022/T023 (retrieval baseline command)."""
+"""Coverage report and retrieval baseline command."""
 from smartagri.evalkit.scenarios import load_scenarios
 from smartagri.retrieval import bench, coverage, load_corpus
 

@@ -39,7 +39,7 @@ class AnthropicProvider(Provider):
         return LLMResponse(text, self.name, r.model, r.usage.input_tokens, r.usage.output_tokens, None, r.stop_reason,
                            request_id=getattr(r, "_request_id", None))
 
-    # ------------------------------------------------------------ spec 023: image input
+    # ------------------------------------------------------------ image input
     supports_images = True
 
     def complete_with_images(self, system, messages, images, json_schema=None, max_tokens=1500) -> LLMResponse:

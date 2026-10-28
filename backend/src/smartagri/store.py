@@ -23,7 +23,7 @@ log = logging.getLogger("smartagri.store")
 
 
 class DatabaseUnavailable(Exception):
-    """The database could not be reached or the connection broke (spec 052): the API answers 503, the pool
+    """The database could not be reached or the connection broke: the API answers 503, the pool
     reconnects on the next call."""
 
 TABLES = {
@@ -34,20 +34,20 @@ TABLES = {
     "runs": ["conversation_id", "turn", "org_id"],
     "eval_items": ["batch_id", "scenario_id", "variant", "repeat"],
     "ratings": ["item_id", "rater"],
-    # Accounts and teams (spec 011). Secrets (password hash, token hashes) live in `data`; the key
+    # Accounts and teams. Secrets (password hash, token hashes) live in `data`; the key
     # columns are the lookups. Session and token ids are sha256 hashes of the secret, never the secret.
-    "users": ["email", "locale"],          # locale: spec 017, nullable
+    "users": ["email", "locale"],          # locale: nullable
     "organizations": ["slug"],
     "memberships": ["user_id", "org_id"],
     "invites": ["token_hash", "org_id"],
     "email_tokens": ["token_hash", "user_id"],
     "sessions": ["user_id"],
     "ai_usage": ["org_id", "day"],
-    # Activity log and traceability (spec 013). Soft delete (deleted_at in the document); the event table is
+    # Activity log and traceability. Soft delete (deleted_at in the document); the event table is
     # append-only (one row per create, update or delete, with the diff).
     "activities": ["org_id", "parcel_id", "kind", "date", "lot_id"],
     "activity_events": ["activity_id", "org_id"],
-    # EUDR draft due-diligence statements (spec 014), each a snapshot of its parcels and lots.
+    # EUDR draft due-diligence statements, each a snapshot of its parcels and lots.
     "eudr_statements": ["org_id"],
 }
 # Indexes added on top of the generic tables (both backends).
@@ -66,7 +66,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS activity_events_activity_idx ON activity_events (activity_id)",
     "CREATE INDEX IF NOT EXISTS eudr_statements_org_idx ON eudr_statements (org_id)",
 ]
-# Alerts and notifications (spec 018) and the worker's job lease table (shared by later product specs).
+# Alerts and notifications and the worker's job lease table (shared by later product specs).
 TABLES.update({
     "alert_rules": ["org_id", "parcel_id", "kind"],          # last evaluated state per (parcel, kind), for transitions
     "alert_prefs": ["user_id", "org_id"],
@@ -88,7 +88,7 @@ INDEXES += [
     "CREATE UNIQUE INDEX IF NOT EXISTS job_runs_job_slot_idx ON job_runs (job, slot)",
 ]
 
-# Soil-moisture sensors, ingest API keys and laboratory soil analyses (spec 020). measured_at is UTC text
+# Soil-moisture sensors, ingest API keys and laboratory soil analyses. measured_at is UTC text
 # (2026-07-14T05:00:00Z), sortable on both backends; event tables are append-only; key secrets are sha256 only.
 TABLES.update({
     "sensor_devices": ["org_id", "parcel_id"],
@@ -112,7 +112,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS soil_analysis_events_analysis_idx ON soil_analysis_events (analysis_id)",
 ]
 
-# Costs, revenue and gross margin (spec 022). Money as decimal strings in the documents; soft delete; finance_events
+# Costs, revenue and gross margin. Money as decimal strings in the documents; soft delete; finance_events
 # is append-only (Economics._event refuses an existing id). Overheads are cost_lines with parcel_id null.
 TABLES.update({
     "price_list": ["org_id", "item_key"],
@@ -129,7 +129,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS finance_events_record_idx ON finance_events (record_id)",
 ]
 
-# Photo observations (spec 023). The image files live on the `media` volume (SMARTAGRI_MEDIA_DIR), never in the database;
+# Photo observations. The image files live on the `media` volume (SMARTAGRI_MEDIA_DIR), never in the database;
 # `media` holds the metadata and the stored description, `media_events` is append-only (no image data).
 # Uniqueness of (parcel_id, sha256) among non-deleted photos is enforced in code (api/media_service.py).
 TABLES.update({
@@ -143,7 +143,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS media_events_media_idx ON media_events (media_id)",
 ]
 
-# Within-field NDVI zones and user-rated prescriptions (spec 021). Class arrays are zlib + base64 inside the document;
+# Within-field NDVI zones and user-rated prescriptions. Class arrays are zlib + base64 inside the document;
 # a prescription keeps a snapshot of the parcel geometry and of the covered zone array, so it survives later changes.
 TABLES.update({
     "zone_maps": ["org_id", "parcel_id"],
@@ -155,7 +155,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS prescriptions_zone_map_idx ON prescriptions (zone_map_id)",
 ]
 
-# Offline clients (spec 025): stored responses of requests sent with an Idempotency-Key, per organisation, kept 24 h.
+# Offline clients: stored responses of requests sent with an Idempotency-Key, per organisation, kept 24 h.
 # id = sha256(org_id, key); expires_at is UTC text (2026-10-13T10:00:00Z), sortable on both backends. The document
 # holds the request fingerprint, the state (pending|done) and the response; no request body is stored.
 TABLES.update({
@@ -166,7 +166,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS idempotency_keys_expires_idx ON idempotency_keys (expires_at)",
 ]
 
-# Advisor workspace (spec 024). advisor_links: consent records between an advisor organisation and a farm (at most
+# Advisor workspace. advisor_links: consent records between an advisor organisation and a farm (at most
 # one pending/active link per pair, enforced in code); advice_reviews: post-hoc human review next to a run (the run is
 # never changed), one per (run, advisor organisation); advisor_events: append-only audit (refuses an existing id).
 TABLES.update({
@@ -185,7 +185,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS advisor_events_advisor_idx ON advisor_events (advisor_org_id, created_at)",
 ]
 
-# Farms, field crops and per-field access (spec 027). A parcel belongs to exactly one farm of its organisation (key
+# Farms, field crops and per-field access. A parcel belongs to exactly one farm of its organisation (key
 # column parcels.farm_id, added by the column-adding path below); field_crops holds one row per planting (several per
 # season), field_crop_events is append-only; field_access holds per-parcel grants of members whose membership document
 # has field_scope "listed" (workers and inspectors only). Unique farm names per organisation are checked in code.
@@ -208,7 +208,7 @@ INDEXES += [
 ]
 
 
-# Atlas and symptom key (spec 030). Instance-wide tables (no org_id): atlas_entries keeps the working copy of an entry
+# Atlas and symptom key. Instance-wide tables (no org_id): atlas_entries keeps the working copy of an entry
 # and, in `live`, the last published snapshot shown to farmers (key column visible = "1"); atlas_events is append-only;
 # instance_roles holds instance-level roles (atlas_edit, atlas_review) set by the operator CLI.
 TABLES.update({
@@ -230,7 +230,7 @@ INDEXES += [
 ]
 
 
-# End-of-season production surveys (spec 029). One survey per field crop (per harvest year for perennial crops; unique
+# End-of-season production surveys. One survey per field crop (per harvest year for perennial crops; unique
 # (field_crop_id, season), checked in code and by the index); season is text on both backends (the document keeps the
 # integer). season_survey_events is append-only (insert_new) with a snapshot per action; research_consents is
 # append-only too: every grant and every revocation is a new row, the newest row of an organisation is its state.
@@ -248,7 +248,7 @@ INDEXES += [
 ]
 
 
-# Public API v1, personal access tokens and OAuth2 (spec 031). Secrets are never stored: api_tokens keeps sha256 of the
+# Public API v1, personal access tokens and OAuth2. Secrets are never stored: api_tokens keeps sha256 of the
 # whole personal token, oauth_codes/oauth_tokens are looked up by sha256 of the code or token. The event tables are
 # append-only audit (usage is one summary row per token and day). Expired codes and tokens are purged by `oauth_purge`.
 TABLES.update({
@@ -275,15 +275,15 @@ INDEXES += [
 ]
 
 
-# Scouting surveys (spec 028). One row per survey (document: population samples, observation rows, review);
-# scouting_events is append-only (diffs without image data, export audit). client_key (offline outbox, spec 025) is
+# Scouting surveys. One row per survey (document: population samples, observation rows, review);
+# scouting_events is append-only (diffs without image data, export audit). client_key (offline outbox) is
 # unique per organisation where set. Parcel deletion removes both (Scouting.forget_parcel hook).
 TABLES.update({
     "scouting_surveys": ["org_id", "parcel_id", "field_crop_id", "observed_on", "status", "user_id", "client_key"],
     "scouting_events": ["survey_id", "org_id", "parcel_id"],
 })
 
-# Shared rate-limit counters (spec 052, accounts/ratelimit.StoreRateLimiter): one row per (key, fixed window), the
+# Shared rate-limit counters: one row per (key, fixed window), the
 # count `n` in the document, incremented atomically; expires_at is UTC text, purged opportunistically.
 TABLES.update({
     "rate_counters": ["key", "expires_at"],
@@ -297,13 +297,13 @@ INDEXES += [
 ]
 INDEXES += ["CREATE INDEX IF NOT EXISTS rate_counters_expires_idx ON rate_counters (expires_at)"]
 
-# Parcel jurisdiction (spec 037 FR-003; used by the advice scope of spec 038): country_code (ISO 3166-1 alpha-2, XK,
+# Parcel jurisdiction: country_code (ISO 3166-1 alpha-2, XK,
 # ZZ = unknown) is a key column for per-country queries; subdivision, origin, time zone and climate class live in the
 # document. Added by the additive schema sync; existing rows are back-filled by migration 0002 (smartagri.migrate).
 TABLES["parcels"] = TABLES["parcels"] + ["country_code"]
 INDEXES += ["CREATE INDEX IF NOT EXISTS parcels_country_idx ON parcels (country_code)"]
 
-# Agronomy analyses and reference datasets (spec 032). `analyses` are per organisation (saved assumptions, cached results,
+# Agronomy analyses and reference datasets. `analyses` are per organisation (saved assumptions, cached results,
 # inputs hash; soft-deleted with deleted_at), `analysis_events` is append-only; `reference_datasets` is instance-wide
 # (no org_id; visible = "1" when a published snapshot exists), `reference_events` append-only. Created by migration
 # 0003 (smartagri.migrate); no back-fill.
@@ -321,7 +321,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS reference_events_dataset_idx ON reference_events (dataset_id)",
 ]
 
-# Hourly weather, weather stations (spec 035) and disease/pest risk models (spec 034). The time series themselves
+# Hourly weather, weather stations and disease/pest risk models. The time series themselves
 # (weather_hourly, station_observations) are typed tables with monthly partitions on PostgreSQL, created by migration
 # 0005 through weather/store.py; the tables here are documents: snapshots of the series used by a risk run
 # (id = sha256 of the rows), the "Vreme i rizici" view interest per parcel (id = parcel id), stations, assignments
@@ -356,9 +356,9 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS risk_model_signoffs_model_idx ON risk_model_signoffs (model_id)",
 ]
 
-# Cadastral import (spec 048), index layers and validation records (spec 049), spatial tools (spec 050). Additive
+# Cadastral import, index layers and validation records, spatial tools. Additive
 # document tables created by migration 0006 (smartagri.migrate); no back-fill. cadastre_cache holds only normalised,
-# whitelisted parcels (never raw source responses, spec 048 FR-003); cadastre_job_claims makes a batch run single-process.
+# whitelisted parcels (never raw source responses); cadastre_job_claims makes a batch run single-process.
 TABLES.update({
     "cadastre_jobs": ["org_id", "connector", "status"],
     "cadastre_job_items": ["job_id", "org_id", "idem_key", "status"],
@@ -380,7 +380,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS spatial_results_parcel_idx ON spatial_results (org_id, parcel_id, kind)",
 ]
 
-# Plans, entitlements and billing (spec 058). Additive document tables created by migration 0007; no back-fill.
+# Plans, entitlements and billing. Additive document tables created by migration 0007; no back-fill.
 # billing_events is the raw webhook log (payload hash + redacted JSON) whose unique (provider, event_id) makes webhook
 # processing idempotent; entitlement_events is append-only (audit of overrides, band changes, subscription changes);
 # usage_counters hold monthly meters (id = org:metric:period, atomic Store.increment). No card data anywhere.
@@ -407,7 +407,7 @@ INDEXES += [
     "CREATE UNIQUE INDEX IF NOT EXISTS billing_coupons_code_idx ON billing_coupons (code)",
 ]
 
-# Custom crops, "Druga kultura" (spec 059). Additive document table created by migration 0008; no back-fill. A record is
+# Custom crops, "Druga kultura". Additive document table created by migration 0008; no back-fill. A record is
 # never removed (archived_at in the document); parcels keep a snapshot of the custom crop they use.
 TABLES.update({
     "custom_crops": ["org_id"],
@@ -416,7 +416,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS custom_crops_org_idx ON custom_crops (org_id)",
 ]
 
-# Tasks for workers (spec 044) and input inventory (spec 045). Additive document tables created by migration 0009; no
+# Tasks for workers and input inventory. Additive document tables created by migration 0009; no
 # back-fill. task_events and inv_events are append-only (insert_new); nothing is ever deleted: tasks are cancelled,
 # products and locations archived, movements voided (voided_at + reason in the document).
 TABLES.update({
@@ -443,10 +443,10 @@ INDEXES += [
 ]
 
 
-# Satellite imagery browser (spec 040). Additive document tables created by migration 0010; no back-fill. imagery_scenes
+# Satellite imagery browser. Additive document tables created by migration 0010; no back-fill. imagery_scenes
 # keeps the scene catalogue rows (cloud, shadow, snow and valid shares per parcel, date and geometry) so the list
 # survives a provider outage; imagery_rgb holds true-colour images (uint8 RGB + SCL validity mask) on the parcel grid.
-# Spec 041 (radar, rainfall card) stores nothing: radar is live, the card is computed from the spec 035 series.
+# Radar and the rainfall card store nothing: radar is live, the card is computed from the hourly series.
 TABLES.update({
     "imagery_scenes": ["org_id", "parcel_id", "date", "geometry_hash"],
     "imagery_rgb": ["org_id", "parcel_id", "date", "geometry_hash"],
@@ -456,7 +456,7 @@ INDEXES += [
     "CREATE INDEX IF NOT EXISTS imagery_rgb_parcel_idx ON imagery_rgb (parcel_id, date)",
 ]
 
-# Plant-protection guidance from a curated national registry (spec 051). Instance-wide registry tables keyed by country
+# Plant-protection guidance from a curated national registry. Instance-wide registry tables keyed by country
 # (never per organisation), created by migration 0011; no back-fill. Rows of an activated import are immutable (refused
 # in ppp.registry); ppp_import_events and ppp_guidance_events are append-only (insert_new; triggers refuse UPDATE and
 # DELETE, created by migration 0011). ppp_guidance keeps each shown guidance object for re-validation at render time.
@@ -486,7 +486,7 @@ INDEXES += [
 ]
 
 
-# Machinery data import (spec 043) and boundary suggestions (spec 046). Additive document tables created by migration
+# Machinery data import and boundary suggestions. Additive document tables created by migration
 # 0012; no back-fill. machinery_points holds the parsed point columns of a dataset (zlib + base64, one row per dataset)
 # so a dataset can be re-cleaned for another parcel without the upload; raw uploads are not stored (hash and size only).
 # Nothing is deleted: an import is discarded by status; boundary_suggestions keeps each suggestion that was shown.
@@ -504,7 +504,7 @@ INDEXES += [
 ]
 
 
-# Messaging channels (spec 060). Additive document tables created by migration 0013; no back-fill. messaging_links binds
+# Messaging channels. Additive document tables created by migration 0013; no back-fill. messaging_links binds
 # one channel address (chat id or phone number, stored once to be able to send, looked up by sha256) to one member of one
 # organisation, with the recorded consent; messaging_codes holds one-time link codes (sha256 only); messaging_log is the
 # delivery log (no message text, no address); messaging_inbound deduplicates provider retries (purged after 7 days);
@@ -573,7 +573,7 @@ INDEXES += [
 
 
 def _typed_schema(backend: str) -> List[str]:
-    """Typed time-series tables of spec 035 (weather_hourly, station_observations; monthly partitions on PostgreSQL),
+    """Typed time-series tables (weather_hourly, station_observations; monthly partitions on PostgreSQL),
     part of the idempotent schema so the repeatable schema sync and migration 0005 create the same thing."""
     from .weather.store import schema_statements
     return schema_statements(backend)
@@ -610,7 +610,7 @@ class Store:
     def _after_put(self, table: str, obj: Dict[str, Any]) -> None:
         pass
 
-    # ------------------------------------------------------------ transactions and health (spec 052)
+    # ------------------------------------------------------------ transactions and health
     @contextlib.contextmanager
     def transaction(self) -> Iterator["Store"]:
         """All statements of the block commit together or not at all (nested blocks: savepoints on PostgreSQL,
@@ -618,7 +618,7 @@ class Store:
         yield self
 
     def ping(self, timeout_s: float = 1.0) -> Dict[str, Any]:
-        """{ok, latency_ms, error}: a cheap `SELECT 1` bounded by `timeout_s` (health checks; spec 052)."""
+        """{ok, latency_ms, error}: a cheap `SELECT 1` bounded by `timeout_s` (health checks)."""
         import concurrent.futures
         started = time.monotonic()
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -644,7 +644,7 @@ class Store:
     def close(self) -> None:
         pass
 
-    # ------------------------------------------------------------ atomic counters and batch reads (spec 052)
+    # ------------------------------------------------------------ atomic counters and batch reads
     def increment(self, table: str, id_: str, doc: Dict[str, Any], field: str = "n", by: int = 1) -> int:
         """Atomically add `by` to the integer `field` of document `id_` (created from `doc` with field = by when
         missing) and return the new value: one INSERT ... ON CONFLICT DO UPDATE ... RETURNING statement, so
@@ -681,7 +681,7 @@ class Store:
             out += self._list(table, "%s IN (%s)" % (column, ", ".join("?" * len(chunk))), chunk, order)
         return out
 
-    # Per-thread read cache for list views (spec 052, PERF-1): inside `prefetch(parcel_ids)`, find(table,
+    # Per-thread read cache for list views: inside `prefetch(parcel_ids)`, find(table,
     # parcel_id=x) for these tables, latest_profile(x) and has_parcel_rows("sensor_readings", x) are answered from a
     # few batch queries instead of one statement each per parcel. Same queries, same order, copies of the documents.
     PREFETCH_TABLES = ("activities", "scouting_surveys", "soil_analyses")
@@ -769,7 +769,7 @@ class Store:
         rows = self._rows(self._q("SELECT %s AS v FROM %s WHERE id = ?" % (column, table)), (id_,))
         return rows[0]["v"] if rows else None
 
-    # ------------------------------------------------------------ generic documents (accounts, spec 011)
+    # ------------------------------------------------------------ generic documents (accounts)
     @staticmethod
     def _where(table: str, eq: Dict[str, Any]):
         allowed = set(TABLES[table]) | {"id"}
@@ -801,7 +801,7 @@ class Store:
         self._exec(self._q("DELETE FROM %s WHERE %s" % (table, where)), args)
 
     def insert_new(self, table: str, obj: Dict[str, Any]) -> bool:
-        """Insert a document only when no row with the same id or unique key exists (spec 025: claims of
+        """Insert a document only when no row with the same id or unique key exists (claims of
         idempotency keys). True when this call inserted it; a concurrent insert of the same key returns False."""
         cols = ["id", "created_at", "data"] + TABLES[table]
         vals = [obj["id"], obj["created_at"], self._json(obj)] + [obj.get(c) for c in TABLES[table]]
@@ -811,7 +811,7 @@ class Store:
         return bool(stored) and stored.get("nonce") == obj.get("nonce")
 
     def delete_before(self, table: str, column: str, value: str) -> None:
-        """Delete rows whose key column `column` sorts before `value` (spec 025: expired idempotency keys)."""
+        """Delete rows whose key column `column` sorts before `value`."""
         if column not in TABLES[table]:
             raise ValueError("unknown column %s for %s" % (column, table))
         self._exec(self._q("DELETE FROM %s WHERE %s < ?" % (table, column)), (value,))
@@ -821,9 +821,9 @@ class Store:
         return int(rows[0]["n"]) if rows else 0
 
     def assign_orphans(self, org_id: str) -> int:
-        """Migration (spec 011): parcels stored before accounts existed get `org_id`; their profiles,
+        """Migration: parcels stored before accounts existed get `org_id`; their profiles,
         conversations and runs inherit it. Returns the number of parcels assigned."""
-        with self.transaction():                     # spec 052: all or nothing
+        with self.transaction():                     # all or nothing
             orphans = self._list("parcels", "org_id IS NULL")
             for parcel in orphans:
                 parcel["org_id"] = org_id
@@ -852,19 +852,19 @@ class Store:
         return self._list("parcels", order="seq DESC")
 
     def delete_parcel(self, id_: str) -> None:
-        """Every statement in one transaction (spec 052, DATA-3): a failure leaves no orphans."""
+        """Every statement in one transaction: a failure leaves no orphans."""
         with self.transaction():
             self._exec(self._q("DELETE FROM runs WHERE conversation_id IN (SELECT id FROM conversations "
                                "WHERE parcel_id = ?)"), (id_,))
             self._exec(self._q("DELETE FROM conversations WHERE parcel_id = ?"), (id_,))
             self._exec(self._q("DELETE FROM profiles WHERE parcel_id = ?"), (id_,))
-            self._exec(self._q("DELETE FROM media WHERE parcel_id = ?"), (id_,))           # spec 023 (files: Media)
-            self._exec(self._q("DELETE FROM field_crops WHERE parcel_id = ?"), (id_,))     # spec 027 (events stay: audit)
-            self._exec(self._q("DELETE FROM field_access WHERE parcel_id = ?"), (id_,))    # spec 027 grants
+            self._exec(self._q("DELETE FROM media WHERE parcel_id = ?"), (id_,))           # (files: Media)
+            self._exec(self._q("DELETE FROM field_crops WHERE parcel_id = ?"), (id_,))     # (events stay: audit)
+            self._exec(self._q("DELETE FROM field_access WHERE parcel_id = ?"), (id_,))    # grants
             self._exec(self._q("DELETE FROM settings_parcel WHERE id = ?"), (id_,))        # web settings of the parcel
             self._exec(self._q("DELETE FROM parcels WHERE id = ?"), (id_,))
 
-    # ------------------------------------------------------------ activity log (spec 013)
+    # ------------------------------------------------------------ activity log
     def save_activity(self, activity: Dict[str, Any]) -> Dict[str, Any]:
         """Upsert an activity; the lot id of a harvest is a key column for lot lookups."""
         lot = (activity.get("details") or {}).get("lot_id") if activity.get("kind") == "harvest" else None
@@ -877,7 +877,7 @@ class Store:
         return self._put("activity_events", event)
 
 
-    # ------------------------------------------------------------ field crops (spec 027)
+    # ------------------------------------------------------------ field crops
     def save_field_crop(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Upsert a field crop; the season key column is text on both backends (the document keeps the integer)."""
         return self._put("field_crops", row, {"season": str(row["season"]) if row.get("season") is not None else None})
@@ -958,7 +958,7 @@ class Store:
         return self._list("eval_items")
 
     def save_rating(self, rating: Dict[str, Any]) -> Dict[str, Any]:
-        with self.transaction():                     # spec 052: replace = delete + insert, atomically
+        with self.transaction():                     # replace = delete + insert, atomically
             self._exec(self._q("DELETE FROM ratings WHERE item_id = ? AND rater = ?"), (rating["item_id"], rating["rater"]))
             return self._put("ratings", rating)
 
@@ -978,7 +978,7 @@ def _sqlite_schema() -> str:
                      "created_at TEXT, data TEXT%s);" % (table, cols))
     parts.append("CREATE TABLE IF NOT EXISTS external_cache (request_hash TEXT PRIMARY KEY, provider TEXT, "
                  "fetched_at TEXT, request TEXT, response TEXT);")
-    parts += [stmt + ";" for stmt in _typed_schema("sqlite")]          # spec 035 time series (additive)
+    parts += [stmt + ";" for stmt in _typed_schema("sqlite")]          # time series (additive)
     return "\n".join(parts)
 
 
@@ -989,7 +989,7 @@ class SqliteStore(Store):
         path = path or os.environ.get("SMARTAGRI_DB", str(Path.cwd() / "smartagri.sqlite"))
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        # Spec 052: re-entrant, so a transaction() block can hold it while its statements run.
+        # Re-entrant, so a transaction() block can hold it while its statements run.
         self._lock = threading.RLock()
         self._local = threading.local()
         self._db = sqlite3.connect(path, check_same_thread=False)
@@ -999,13 +999,13 @@ class SqliteStore(Store):
             schema_up(self)
 
     def sync_schema(self) -> None:
-        """Idempotent DDL for every table, key column and index (migration 0001 and the schema sync, spec 052)."""
+        """Idempotent DDL for every table, key column and index (migration 0001 and the schema sync)."""
         with self._lock:
             self._db.executescript(_sqlite_schema())
             self._migrate()
 
     def _migrate(self) -> None:
-        """Add key columns introduced after a database was created (e.g. org_id, spec 011), then indexes."""
+        """Add key columns introduced after a database was created (e.g. org_id), then indexes."""
         for table, extra in TABLES.items():
             have = {r["name"] for r in self._db.execute("PRAGMA table_info(%s)" % table).fetchall()}
             for c in extra:
@@ -1064,7 +1064,7 @@ def _pg_schema() -> List[str]:
         cols = "".join(", %s %s" % (c, "INTEGER" if c in ("turn", "repeat") else "TEXT") for c in extra)
         stmts.append("CREATE TABLE IF NOT EXISTS %s (seq BIGSERIAL PRIMARY KEY, id TEXT UNIQUE NOT NULL, "
                      "created_at TIMESTAMPTZ NOT NULL, data JSONB NOT NULL%s)" % (table, cols))
-    for table, extra in TABLES.items():          # columns added after a database was created (spec 011: org_id)
+    for table, extra in TABLES.items():          # columns added after a database was created
         stmts += ["ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s" % (table, c, "INTEGER" if c in ("turn", "repeat") else "TEXT")
                   for c in extra]
     stmts += INDEXES
@@ -1078,7 +1078,7 @@ def _pg_schema() -> List[str]:
         "CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, text TEXT NOT NULL, "
         "meta JSONB NOT NULL, corpus_hash TEXT NOT NULL, model TEXT NOT NULL, embedding vector(%d) NOT NULL)" % EMBEDDING_DIM,
     ]
-    stmts += _typed_schema("postgresql")                              # spec 035 time series (additive)
+    stmts += _typed_schema("postgresql")                              # time series (additive)
     return stmts
 
 
@@ -1102,7 +1102,7 @@ class _SingleConnection:
             self._conn.close()
 
 
-# Advisory lock key of the migration runner (spec 052): a fixed 7-byte ASCII constant that fits a bigint. Never changed,
+# Advisory lock key of the migration runner: a fixed 7-byte ASCII constant that fits a bigint. Never changed,
 # so an older and a newer version of the service share the same lock.
 MIGRATION_LOCK_KEY = 0x4147524F564944
 
@@ -1119,7 +1119,7 @@ def _env_int(name: str, default: int) -> int:
 class PostgresStore(Store):
     """PostgreSQL 16 with PostGIS (parcel geometry) and pgvector (passage embeddings).
 
-    Spec 052 (audit REL-1, PERF-2): a connection pool (psycopg_pool) instead of one connection behind a global lock.
+    A connection pool (psycopg_pool) instead of one connection behind a global lock.
     Connections idle for more than IDLE_CHECK_S are checked before use, broken ones are discarded, so the store
     recovers by itself after a database restart; a failed call raises DatabaseUnavailable (HTTP 503). Pool size:
     SMARTAGRI_DB_POOL_MIN (1) / SMARTAGRI_DB_POOL_MAX (10), wait for a free connection SMARTAGRI_DB_POOL_TIMEOUT s (10)."""
@@ -1133,7 +1133,7 @@ class PostgresStore(Store):
         from psycopg.types.json import Jsonb
         self._psycopg = psycopg
         self._Jsonb = Jsonb
-        self._lock = threading.Lock()                   # deprecated (spec 052): statements no longer take it
+        self._lock = threading.Lock()                   # deprecated: statements no longer take it
         self._local = threading.local()
         self._last_used: Dict[int, float] = {}
         kwargs = {"autocommit": True, "row_factory": dict_row, "connect_timeout": 5}
@@ -1216,7 +1216,7 @@ class PostgresStore(Store):
 
     @contextlib.contextmanager
     def migration_lock(self):
-        """Session advisory lock on one pooled connection; every statement of the block runs on it (spec 052)."""
+        """Session advisory lock on one pooled connection; every statement of the block runs on it."""
         with self._pool.connection() as conn:
             prev = getattr(self._local, "conn", None)
             self._local.conn = conn
@@ -1277,7 +1277,7 @@ class PostgresStore(Store):
 
 
 def make_store(url: Optional[str] = None, migrate: bool = True) -> Store:
-    """PostgreSQL when DATABASE_URL is set, otherwise SQLite. `migrate=False` (spec 052, migration CLI): no schema
+    """PostgreSQL when DATABASE_URL is set, otherwise SQLite. `migrate=False`: no schema
     migrations at construction."""
     url = url if url is not None else os.environ.get("DATABASE_URL", "")
     if url.startswith("postgres"):

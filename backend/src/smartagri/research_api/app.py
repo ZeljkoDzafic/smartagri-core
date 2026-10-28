@@ -1,4 +1,4 @@
-"""FastAPI app of the research API (spec 057). Local research use by default: no accounts; bind to 127.0.0.1.
+"""FastAPI app of the research API. Local research use by default: no accounts; bind to 127.0.0.1.
 
 SMARTAGRI_ACCOUNTS=optional turns on optional accounts and per-browser isolation for a public deployment (auth.py)."""
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""LLM entailment judge for the support part of gamma (spec 004 T021).
+"""LLM entailment judge for the support part of gamma.
 
 `ClaudeJudge(sentence, source)` asks Claude whether `source` supports `sentence` and returns a
 score in [0, 1], or None when no usable verdict came back (API error, refusal, max_tokens,

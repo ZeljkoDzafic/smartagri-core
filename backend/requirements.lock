@@ -1,4 +1,4 @@
-# Spec 052: pinned dependency set of the API/worker image (python:3.12-slim) and the 3.12 CI jobs.
+# Pinned dependency set of the API/worker image (python:3.12-slim) and the 3.12 CI jobs.
 # Regenerate (2026-10-15): docker run --rm -v $PWD:/src python:3.12-slim sh -c 'pip install pip-tools &&
 #   cd /src && pip-compile --strip-extras --extra api --extra pg --extra embed --extra llm --extra pdf --extra worker
 #   --extra push --extra media --extra zones --extra ingest --extra spatial --extra i18n --no-emit-index-url -o requirements.lock pyproject.toml'

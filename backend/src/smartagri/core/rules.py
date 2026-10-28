@@ -104,7 +104,7 @@ def fertilization_plan(v: Dict[str, Any]) -> str:
 
 
 def n_credit(v: Dict[str, Any]) -> bool:
-    """Nitrogen left by a legume previous crop or by manure in the last year (spec 009, US2)."""
+    """Nitrogen left by a legume previous crop or by manure in the last year."""
     opt = config.load("rules")["optional_inputs"]
     if v.get("previous_crop") in opt["legumes"]:
         return True

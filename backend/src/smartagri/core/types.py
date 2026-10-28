@@ -128,7 +128,7 @@ class Agronomic(Record):
     yield_target_t_ha: Optional[float] = None
     operation: Optional[str] = None
     user_observations: List[str] = field(default_factory=list)
-    # Optional inputs (spec 009). Each is used only where a rule in config/rules.yaml says how.
+    # Optional inputs. Each is used only where a rule in config/rules.yaml says how.
     irrigation_capacity_mm_day: Optional[float] = None
     last_irrigation_date: Optional[str] = None
     last_irrigation_mm: Optional[float] = None

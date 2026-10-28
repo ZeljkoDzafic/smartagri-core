@@ -1,4 +1,4 @@
-# Spec 052: constraints for Python 3.9 (CI job 3.9, local dev venv): the newest releases that still support 3.9.
+# Constraints for Python 3.9 (CI job 3.9, local dev venv): the newest releases that still support 3.9.
 # Generated 2026-10-15 with: .venv/bin/pip freeze --exclude-editable (Python 3.9.6 venv with all extras).
 # Known advisories that remain ONLY on 3.9 (fixed releases need Python >= 3.10): pillow 11.3.0, starlette 0.49.3,
 # urllib3 2.6.3, aiohttp 3.13.5, anyio 4.12.1 (audit SEC-9). The container (Python 3.12) uses requirements.lock instead.

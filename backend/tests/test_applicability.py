@@ -74,7 +74,7 @@ def test_budget_prefers_applicable_and_drops_not_applicable():
     assert select_budget(res, budget=3) == ["c", "d", "a"]
 
 
-# ---------------------------------------------------------------- spec 003 T006: valid_from, soil_scope, rainfed
+# ---------------------------------------------------------------- valid_from, soil_scope, rainfed
 
 
 @pytest.mark.parametrize("meta, agronomic, status, unmet, unverifiable", [

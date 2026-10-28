@@ -1,4 +1,4 @@
-"""Core-path service of the research API (spec 057). Maize only, no product layers.
+"""Core-path service of the research API. Maize only, no product layers.
 
 Answers are written in the locale of the request (research_api/locale.py: English by default). Stored records
 (profiles) are written in the default locale and relabelled on the way out; the corpus stays in the local language,

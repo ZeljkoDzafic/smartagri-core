@@ -33,13 +33,13 @@ INPUTS = {
     "irrigation_available": "Mogućnost navodnjavanja", "irrigation_efficiency": "Efikasnost sistema za navodnjavanje",
     "previous_fertilization": "Dosadašnje đubrenje", "yield_target": "Ciljni prinos", "operation": "Planirani rad",
     "advice_type": "Vrsta saveta",
-    # Optional inputs (spec 009)
+    # Optional inputs
     "irrigation_capacity": "Kapacitet sistema za navodnjavanje", "previous_crop": "Predusev",
     "manure": "Stajnjak (poslednjih 12 meseci)", "hybrid_fao": "Grupa zrenja hibrida (FAO)",
     "plant_density": "Gustina sklopa", "field_observation": "Zapažanja sa parcele (poslednjih 7 dana)",
 }
 
-# Optional inputs (spec 009): closed lists offered by the client and checked by the API.
+# Optional inputs: closed lists offered by the client and checked by the API.
 PREVIOUS_CROPS = [{"value": "maize", "label": "Kukuruz"}, {"value": "wheat", "label": "Pšenica"},
                   {"value": "barley", "label": "Ječam"}, {"value": "soybean", "label": "Soja"},
                   {"value": "sunflower", "label": "Suncokret"}, {"value": "sugar_beet", "label": "Šećerna repa"},
@@ -247,12 +247,12 @@ DOSE_BAND = {"low": "niža doza u okviru regionalne preporuke", "medium": "sredn
 ABSTAIN_REASONS = {
     "out_of_scope": "Pitanje je van obima sistema: sistem ne propisuje sredstva za zaštitu bilja niti doze.",
     "corpus_insufficient": "U bazi znanja nema izvora koji je primenljiv na ovu parcelu i ovo pitanje.",
-    # spec 038 FR-005 (critical key): set by the service layer for outside-tier parcels; the decision model never emits it
+    # set by the service layer for outside-tier parcels; the decision model never emits it
     "outside_validated_scope": "Za ovu parcelu sistem ne daje preporuku: parcela je izvan potvrđenog područja.",
 }
 
 
-# ---------------------------------------------------------------- spec 010: freshness, basis line, field window
+# ---------------------------------------------------------------- freshness, basis line, field window
 FRESHNESS = {"fresh": "sveže", "aging": "starije", "stale": "zastarelo", "missing": "nedostaje"}
 # Reliability of q mapped to a freshness status (no new thresholds: the grade of thresholds.yaml decides).
 FRESHNESS_BY_RELIABILITY = {"high": "fresh", "medium": "aging", "low": "stale", "missing": "missing"}
@@ -301,7 +301,7 @@ def basis_phrase(name: str, value: Any) -> str:
     return "%s: %s" % (lower_first(INPUTS.get(name, name)), value_text(name, value))
 
 
-# ---------------------------------------------------------------- spec 013: activity log and traceability
+# ---------------------------------------------------------------- activity log and traceability
 ACTIVITY_KINDS = [{"value": "sowing", "label": "Setva"}, {"value": "fertilizing", "label": "Đubrenje"},
                   {"value": "spraying", "label": "Prskanje (zaštita bilja)"},
                   {"value": "irrigation", "label": "Navodnjavanje"}, {"value": "cultivation", "label": "Obrada zemljišta"},
@@ -309,7 +309,7 @@ ACTIVITY_KINDS = [{"value": "sowing", "label": "Setva"}, {"value": "fertilizing"
                   {"value": "other", "label": "Ostalo"}]
 ACTIVITY_KIND = {o["value"]: o["label"] for o in ACTIVITY_KINDS}
 ACTIVITY_STATUSES = [{"value": "done", "label": "Obavljeno"}, {"value": "planned", "label": "Planirano"}]
-ACTIVITY_CROPS = PREVIOUS_CROPS          # same closed list as the previous crop (spec 009)
+ACTIVITY_CROPS = PREVIOUS_CROPS          # same closed list as the previous crop
 SPRAY_DOSE_UNITS = [{"value": "l_ha", "label": "l/ha"}, {"value": "ml_ha", "label": "ml/ha"},
                     {"value": "kg_ha", "label": "kg/ha"}, {"value": "g_ha", "label": "g/ha"}]
 IRRIGATION_METHODS = [{"value": "sprinkler", "label": "Kišenje"}, {"value": "drip", "label": "Kap po kap"},
@@ -328,7 +328,7 @@ ACTIVITY_WARNINGS = {
     "crop_mismatch": "Kultura u setvi ({crop}) razlikuje se od kulture parcele ({parcel_crop}).",
 }
 
-# ---------------------------------------------------------------- spec 014: EUDR documentation
+# ---------------------------------------------------------------- EUDR documentation
 EUDR_DISCLAIMER = ("Dokument pomaže pri pripremi podataka za izjavu o dužnoj pažnji po Uredbi (EU) 2023/1115; nije "
                    "pravni savet niti podneta izjava. Za tačnost podataka i podnošenje izjave u informacioni sistem EU "
                    "(TRACES) odgovoran je operater.")
@@ -353,7 +353,7 @@ EUDR_CHECKS = {
 OPTIONS.update({"activity_kind": ACTIVITY_KINDS, "activity_status": ACTIVITY_STATUSES, "spray_dose_unit": SPRAY_DOSE_UNITS,
                 "irrigation_method": IRRIGATION_METHODS, "severity": SEVERITIES, "eudr_commodity": EUDR_COMMODITIES})
 
-# ---------------------------------------------------------------- spec 018: alerts and notifications
+# ---------------------------------------------------------------- alerts and notifications
 # Texts state facts about stored data (value, unit, forecast issue time, reliability) and never an instruction,
 # product or dose (checked by tests/test_alerts_texts.py with the ai_chat patterns). {name} placeholders.
 ALERT_KINDS = [{"value": "frost", "label": "Mraz u prognozi"}, {"value": "heavy_rain", "label": "Jake padavine u prognozi"},
@@ -378,24 +378,24 @@ ALERT_TEXTS = {
     "eudr_missing.title": "EUDR evidencija nije potpuna: {parcel}",
     "eudr_missing.body": "U EUDR evidenciji parcele {parcel} nedostaje: {items}.",
     "test.title": "Probno obaveštenje",
-    "test.body": "Ovo je probno obaveštenje aplikacije Open Crop Manager. Upozorenja za vaš nalog stižu ovim kanalom.",
+    "test.body": "Ovo je probno obaveštenje aplikacije SmartAgri. Upozorenja za vaš nalog stižu ovim kanalom.",
     "status.updated": "Ažurirano prema novijoj prognozi.",
     "status.withdrawn": "Povučeno: novija prognoza ovo više ne pokazuje.",
     "status.expired": "Isteklo.",
     "issued": "{date} u {time}",
     "unknown": "nepoznato",
     "age_days": "star {days}",
-    "email.subject": "Open Crop Manager: {title}",
+    "email.subject": "SmartAgri: {title}",
     "email.hello": "Zdravo {name},",
     "email.button": "Otvori parcelu",
-    "email.button_test": "Otvori Open Crop Manager",
+    "email.button_test": "Otvori SmartAgri",
     "email.note": ("Upozorenje navodi podatke koje sistem već ima i nije savet. Pragovi su razvojne vrednosti koje "
                    "agronom još proverava."),
     "email.prefs": "Podešavanja upozorenja: {url}",
     "email.unsubscribe": "Ovu poruku dobijate jer su upozorenja e-poštom uključena za vaš nalog u organizaciji {org}.",
     "email.unsubscribe_link": "Odjava od svih upozorenja e-poštom",
-    "email.footer": "Open Crop Manager · upozorenja",
-    "digest.subject": "Open Crop Manager: pregled upozorenja ({count})",
+    "email.footer": "SmartAgri · upozorenja",
+    "digest.subject": "SmartAgri: pregled upozorenja ({count})",
     "digest.intro": "Pregled upozorenja za organizaciju {org}:",
     "digest.button": "Otvori upozorenja",
     "digest.withdrawn": "{title} (povučeno)",
@@ -403,7 +403,7 @@ ALERT_TEXTS = {
     "digest.other": "Ostalo",
 }
 
-# ---------------------------------------------------------------- sensors and soil analyses (spec 020)
+# ---------------------------------------------------------------- sensors and soil analyses
 # Texture classes (FR-009): the five with an AWC value in rules.yaml first, then classes without one (OQ-020-8).
 TEXTURE_CLASSES = [{"value": "sand", "label": "Pesak (peskovito)"}, {"value": "sandy_loam", "label": "Peskovita ilovača"},
                    {"value": "loam", "label": "Ilovača"}, {"value": "clay_loam", "label": "Glinovita ilovača"},
@@ -422,7 +422,7 @@ NUTRIENT_UNITS = [{"value": "mg_100g", "label": "mg/100 g"}, {"value": "mg_kg", 
 SOIL_LAB_ORIGIN = "laboratorijska analiza"
 SENSOR_ORIGIN = "senzor"
 
-# ---------------------------------------------------------------- spec 019: water balance alert (spec 018 kind)
+# ---------------------------------------------------------------- water balance alert
 ALERT_KINDS.append({"value": "water_balance_due", "label": "Navodnjavanje uskoro (procena modela)"})
 ALERT_TEXTS.update({
     "water_balance_due.title": "Navodnjavanje uskoro (procena modela): {parcel}",
@@ -431,7 +431,7 @@ ALERT_TEXTS.update({
                                "merenje vlažnosti zemljišta."),
 })
 
-# ---------------------------------------------------------------- spec 026: record reminders (spec 018 kinds)
+# ---------------------------------------------------------------- record reminders
 ALERT_KINDS.extend([{"value": "record_sowing_missing", "label": "Podsetnik: setva nije upisana"},
                     {"value": "record_density_missing", "label": "Podsetnik: gustina useva nije upisana"},
                     {"value": "record_harvest_missing", "label": "Podsetnik: berba nije upisana"}])
@@ -447,7 +447,7 @@ ALERT_TEXTS.update({
                                    "obavljena, upišite je u dnevnik radova (prinos, vlaga, lot).",
 })
 
-# ---------------------------------------------------------------- spec 029: season survey reminder (spec 018 kind)
+# ---------------------------------------------------------------- season survey reminder
 ALERT_KINDS.append({"value": "record_season_survey_missing", "label": "Podsetnik: sezonski izveštaj nije predat"})
 ALERT_TEXTS.update({
     "record_season_survey_missing.title": "Sezonski izveštaj nije predat: {parcel}",
@@ -456,7 +456,7 @@ ALERT_TEXTS.update({
                                          "predajte do {date}.",
 })
 
-# ---------------------------------------------------------------- specs 034/035: risk models and weather stations
+# ---------------------------------------------------------------- risk models and weather stations
 ALERT_KINDS.extend([{"value": "pest_disease_risk", "label": "Rizik bolesti prema modelu"},
                     {"value": "pest_phenology", "label": "Razvoj štetočine prema modelu (procena)"},
                     {"value": "station_stale", "label": "Meteo stanica bez podataka"}])
@@ -478,7 +478,7 @@ ALERT_TEXTS.update({
     "class.high": "visok", "class.extreme": "izuzetno visok", "class.marginal": "granični",
 })
 
-# ---------------------------------------------------------------- specs 044/045: tasks and inventory (spec 018 kinds)
+# ---------------------------------------------------------------- tasks and inventory
 ALERT_KINDS.extend([{"value": "task_assigned", "label": "Dodeljen zadatak"},
                     {"value": "task_done", "label": "Zadatak završen"},
                     {"value": "stock_low", "label": "Zaliha ispod praga"},

@@ -80,7 +80,7 @@ import os
 
 from smartagri.store import TABLES, PostgresStore, SqliteStore
 
-# Spec 052 (audit TEST-2): TEST_DATABASE_URL names a maintenance database whose name ends in `_test`; every test
+# TEST_DATABASE_URL names a maintenance database whose name ends in `_test`; every test
 # process (each pytest run, each xdist worker) creates its own database `<name>_<pid>_<random>` from it, uses only
 # that one and drops it at the end, so parallel runs never TRUNCATE each other's tables (or a dev database).
 BASE_PG_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -170,7 +170,7 @@ def store(request):
     return _fresh_pg()
 
 
-# ---------------------------------------------------------------- accounts (spec 011)
+# ---------------------------------------------------------------- accounts
 import uuid
 
 TEST_PASSWORD = "dobra-lozinka-2026"
@@ -182,7 +182,7 @@ def login_as(client, role="owner", email=None, org_id=None, researcher=True, org
     """Create a verified user with `role` in organisation `org_id` (a new one when None), log the
     TestClient in with the session cookie and send the CSRF header on every request. Returns /auth/me."""
     accounts = client.app.state.accounts
-    email = email or "%s-%s@test.rs" % (role, uuid.uuid4().hex[:8])
+    email = email or "%s-%s@example.org" % (role, uuid.uuid4().hex[:8])
     user = accounts.create_user(email, "Test " + role, password, verified=True, researcher=researcher)
     if org_id is None:
         org_id = accounts.create_org(org_name)["id"]

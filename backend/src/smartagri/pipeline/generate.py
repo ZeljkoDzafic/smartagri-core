@@ -194,7 +194,7 @@ def recent_referral_events(ctx: Context) -> List[str]:
 def limitations(ctx: Context, d: Decision, used: List[Dict[str, Any]]) -> List[str]:
     out = []
     if recent_referral_events(ctx):
-        out.append(L().PLANT_PROTECTION_REFERRAL)            # never a product (spec 009 FR-004)
+        out.append(L().PLANT_PROTECTION_REFERRAL)            # never a product
     analysis = values(ctx).get("soil_analysis")
     if d.advice_type in (AdviceType.FERTILIZATION_PLAN, AdviceType.FERTILIZATION_TIMING) and isinstance(analysis, dict) \
             and analysis.get("ph") is not None:
@@ -231,7 +231,7 @@ def next_question(d: Decision) -> Optional[Dict[str, Any]]:
         return None
     options = list(L().OPTIONS.get(q.input, [])) + [L().DECLINE_OPTION]
     text, how = q.text, q.how_to_obtain
-    localized = getattr(L(), "QUESTIONS", {}).get(q.input)     # spec 017: the question of asking.yaml in English
+    localized = getattr(L(), "QUESTIONS", {}).get(q.input)     # the question of asking.yaml in English
     if localized:
         text, how = localized
     return {"input": q.input, "text": text, "how_to_obtain": how, "options": options}
@@ -245,7 +245,7 @@ def _required_groups(t: AdviceType) -> List[List[str]]:
 
 
 def basis(ctx: Context, d: Decision) -> Dict[str, Any]:
-    """The "Na osnovu čega" line (spec 010): which inputs of R_t decided, with their reliability, and which are missing.
+    """The "Na osnovu čega" line: which inputs of R_t decided, with their reliability, and which are missing.
 
     Deciding = the required and one_of inputs of R_t that are present (any reliability except missing).
     Missing = the sufficiency layer's missing inputs, without those already listed as deciding (an input that is
@@ -403,7 +403,7 @@ LANGUAGE_LINE_EN = "Write in English, in plain language a farmer would use."
 
 
 def system_prompt() -> str:
-    """SYSTEM_PROMPT for the active locale (spec 017): English output for `en`; the local language (Latin script)
+    """SYSTEM_PROMPT for the active locale: English output for `en`; the local language (Latin script)
     otherwise, since Cyrillic is produced by deterministic transliteration after every check."""
     return SYSTEM_PROMPT.replace(LANGUAGE_LINE, LANGUAGE_LINE_EN) if current() == "en" else SYSTEM_PROMPT
 
@@ -457,7 +457,7 @@ class AnthropicGenerator:
         self.client = anthropic.Anthropic()
         self.model = model or os.environ.get("LLM_MODEL", "claude-opus-5-5")
         self.strict, self.server_fallback, self.effort, self.max_tokens = strict, server_fallback, effort, max_tokens
-        # GROUNDING_JUDGE=llm plugs the Claude entailment judge into the support check (spec 004 T021)
+        # GROUNDING_JUDGE=llm plugs the Claude entailment judge into the support check
         self.judge = judge if judge is not None else make_judge(strict=strict, server_fallback=server_fallback)
 
     @property

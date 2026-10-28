@@ -267,7 +267,7 @@ def test_support_check_drops_unsupported_sentences(monkeypatch):
     assert all("Fungicid" not in s for s in answer["rationale"])
 
 
-# ---------------------------------------------------------------- E4 context ablations (spec 007 T010)
+# ---------------------------------------------------------------- E4 context ablations
 
 def test_context_ablations_are_config_flags_on_top_of_v5(variants):
     flags = ["retrieval", "applicability", "dynamic_context", "quality", "sufficiency", "asking", "policy", "grounding"]

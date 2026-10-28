@@ -18,7 +18,7 @@ TRACKED_INPUTS = (
     "precip_past_7d", "et0_past_7d", "precip_forecast_3d", "precip_forecast_7d", "temp_forecast",
     "wind_forecast", "soil_water_status", "soil_moisture_sensor", "soil_awc", "soil_analysis",
     "irrigation_available", "irrigation_efficiency", "previous_fertilization", "yield_target", "operation",
-    # optional inputs (spec 009)
+    # optional inputs
     "irrigation_capacity", "previous_crop", "manure", "hybrid_fao", "plant_density", "field_observation",
 )
 

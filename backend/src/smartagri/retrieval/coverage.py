@@ -1,4 +1,4 @@
-"""Corpus coverage check (spec 003 T020, SC-005).
+"""Corpus coverage check.
 
     python -m smartagri.retrieval.coverage [--set dev] [--min 3] [--strict]
 

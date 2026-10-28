@@ -40,7 +40,7 @@ def run_tools(t: AdviceType, vals: Dict[str, Any]) -> List[ToolResult]:
     tools = [etc, net, gross]
     capacity = vals.get("irrigation_capacity")
     if capacity and gross.output:
-        # How long the system needs for one application (spec 009, US1).
+        # How long the system needs for one application.
         days = round(gross.output["gross_mm"] / float(capacity), 1)
         tools.append(ToolResult("application_time", {"gross_mm": gross.output["gross_mm"], "capacity_mm_day": capacity},
                                 {"days_per_application": days}, "days = gross_mm / capacity_mm_day",

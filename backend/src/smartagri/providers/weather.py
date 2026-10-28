@@ -50,7 +50,7 @@ def _previous_runs_base() -> str:
     return os.environ.get("OPEN_METEO_PREVIOUS_RUNS_BASE", "https://previous-runs-api.open-meteo.com/v1")
 
 
-# Spec 037 FR-013: the Open-Meteo day is cut at the parcel's local midnight. Zones of the home area that share
+# The Open-Meteo day is cut at the parcel's local midnight. Zones of the home area that share
 # Europe/Belgrade's rules (tzdb links or identical zones) send the literal that was always sent, so BiH requests,
 # cache keys and offline replays stay byte-identical.
 DEFAULT_TIMEZONE = "Europe/Sarajevo"
@@ -59,7 +59,7 @@ SAME_AS_DEFAULT = {"Europe/Sarajevo", "Europe/Belgrade", "Europe/Zagreb", "Europ
 
 
 def request_timezone(time_zone: Optional[str]) -> str:
-    """The `timezone` parameter for a parcel zone (None = a parcel stored before spec 037: the default)."""
+    """The `timezone` parameter for a parcel zone (None = a parcel stored before the default)."""
     if not time_zone or time_zone in SAME_AS_DEFAULT:
         return DEFAULT_TIMEZONE
     return time_zone

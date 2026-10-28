@@ -38,7 +38,7 @@ def retrieval_measures(group: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def support_measures(group: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Passage-support part of gamma per variant (spec 004 US4, spec 007 T025).
+    """Passage-support part of gamma per variant.
 
     support_rate = 1 - unsupported / checked over every turn whose model text went through the
     support check (`decisions.grounding.checked_sentences`); unit = rationale sentence or summary

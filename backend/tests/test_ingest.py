@@ -1,4 +1,4 @@
-"""Spec 003 T017: heading chunker for Markdown, HTML and PDF sources, and transcribed values."""
+"""Heading chunker for Markdown, HTML and PDF sources, and transcribed values."""
 import pytest
 import yaml
 
