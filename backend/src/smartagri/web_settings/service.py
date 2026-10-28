@@ -26,6 +26,7 @@ from . import registry as reg
 
 ENV_ADMINS = "SMARTAGRI_ADMINS"
 SCOPES = ("global", "user", "parcel", "limits")
+AUDIT_SCOPES = SCOPES + ("admin_role",)       # the log also holds the operator's grants and revocations of the role
 LOCAL_USER = "local"
 MAX_REASON = 300
 PAGE_MAX = 200
@@ -78,7 +79,7 @@ def empty_summary() -> Dict[str, Any]:
     snap: Dict[str, Any] = {}
     return {"hash": hashlib.sha256(_canon(snap).encode("utf-8")).hexdigest(), "version": "files",
             "layers": {"global": 0, "user": 0, "parcel": 0}, "n_overrides": 0, "snapshot": snap, "ignored": [],
-            "defaults": "config files (hashes in config_hashes)"}
+            "outside_recommended": [], "defaults": "config files (hashes in config_hashes)"}
 
 
 class SettingsService:
@@ -162,6 +163,9 @@ class SettingsService:
         meta = {"hash": hashlib.sha256(_canon(snapshot).encode("utf-8")).hexdigest(),
                 "version": "g%d.u%d.p%d" % (gver, uver, pver), "layers": {"global": gver, "user": uver, "parcel": pver},
                 "n_overrides": len(snapshot), "snapshot": snapshot, "ignored": sorted(ignored, key=lambda i: (i["key"], i["layer"])),
+                # values in use that are outside the recommended range of their parameter (development band or source)
+                "outside_recommended": [{k: w[k] for k in ("key", "where", "value", "range", "basis")}
+                                        for key, (v, _l) in sorted(effective.items()) for w in reg.warnings(emap[key], v)],
                 "defaults": "config files (hashes in config_hashes)"}
         overlay = config.Overlay({k: v for k, (v, _l) in effective.items()}, meta)
         return {"entries": emap, "limits": limits, "per": per, "effective": effective, "meta": meta, "overlay": overlay,
@@ -389,6 +393,8 @@ class SettingsService:
             return ""
         if actor_id == LOCAL_USER:
             return LOCAL_USER
+        if actor_id == "operator-cli":
+            return "operator (server command)"
         user = self.store.get("core_users", actor_id) if self._has_users() else None
         return user["email"] if user else "deleted account"
 
@@ -465,7 +471,7 @@ class SettingsService:
         eq: Dict[str, Any] = {}
         if actor.admin:
             if scope:
-                if scope not in SCOPES:
+                if scope not in AUDIT_SCOPES:
                     raise SettingsError(400, "Unknown settings level.")
                 eq["scope"] = scope
             if parcel_id:

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .. import config, i18n
-from . import auth
+from . import auth, guards, proxy
 from . import locale as answer_locale
 from . import settings_routes
 from .service import BadRequest, NotFound, ResearchService, Unavailable
@@ -35,6 +35,19 @@ def _set_meta(page: str, prefix: str, value: str) -> str:
     start += len(prefix)
     end = page.find('"', start)
     return page[:start] + html.escape(value, quote=True) + page[end:]
+
+
+def tile_url() -> str:
+    """The tile URL template this server's page uses (environment, else the default of static/index.html)."""
+    url = os.environ.get("SMARTAGRI_TILE_URL")
+    if url is not None:
+        return url.strip()
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    start = page.find(TILE_URL_META)
+    if start < 0:
+        return ""
+    start += len(TILE_URL_META)
+    return html.unescape(page[start:page.find('"', start)])
 
 
 def index_html() -> str:
@@ -377,6 +390,11 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
         return call(svc.rating_save, body.model_dump())
 
     app.include_router(api)
+    # Outermost guards, last added = outermost: security headers on every response (also the refusals below), the real
+    # client address behind a trusted proxy (SMARTAGRI_TRUSTED_PROXIES), then the limits on the request body.
+    app.add_middleware(guards.RequestGuardMiddleware)
+    app.add_middleware(proxy.TrustedProxyMiddleware)
+    app.add_middleware(guards.SecurityHeadersMiddleware, tile_url=tile_url())
     # Client assets (CSS, JS, icon, vendored Leaflet with its licence); no build step, no CDN.
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 

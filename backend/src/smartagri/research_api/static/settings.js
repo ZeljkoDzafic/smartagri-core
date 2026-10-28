@@ -18,7 +18,7 @@
     required: "A reason is required for this change.", too_long: "The text is too long.", generic: "The change was refused.",
   };
   const STATUS = {verified: "verified", partly: "partly verified", disputed: "disputed by the source", no_source: "no source", development: "development value"};
-  const LAYER = {default: "file default", global: "global", user: "user", parcel: "parcel"};
+  const LAYER = {default: "file default", global: "global", user: "user", parcel: "parcel", admin_role: "administrator role"};
   const PARCEL_GROUPS = ["irrigation", "soil", "crop_coefficients", "phenology", "fertilization", "field_ops"];
   const lang = () => (window.SmartI18n ? SmartI18n.lang() : "en");
   const loc = (o) => (o ? (lang() === "en" ? o.en : (o.sr || o.en)) : "");
@@ -48,15 +48,22 @@
 
   // ------------------------------------------------------------------ recommended-range warnings (same rule as the server)
   function recWarnings(entry, value) {
-    const rec = entry.recommended;
+    const rec = entry.recommended, basis = entry.range_basis;
     if (!rec || value == null) return [];
     const out = [];
-    const chk = (v, r, where) => { if (typeof v === "number" && (v < r[0] || v > r[1])) out.push({where, range: r, value: v}); };
-    if (entry.kind === "int" || entry.kind === "float") chk(value, rec, "");
-    else if (entry.kind === "pair") value.forEach((v, i) => chk(v, rec, String(i)));
-    else if (entry.kind === "map" && !Array.isArray(rec)) Object.entries(value).forEach(([k, v]) => { if (rec[k]) chk(v, rec[k], k); });
-    else if (entry.kind === "table" && !Array.isArray(rec)) value.forEach((row, i) => Object.entries(rec).forEach(([c, r]) => { if (c in row) chk(row[c], r, `${i + 1}.${c}`); }));
+    const chk = (v, r, where, b) => { if (r && typeof v === "number" && (v < r[0] || v > r[1])) out.push({where, range: r, value: v, basis: b}); };
+    if (entry.kind === "int" || entry.kind === "float") chk(value, rec, "", basis);
+    else if (entry.kind === "pair") value.forEach((v, i) => chk(v, rec[i], String(i), basis[i]));
+    else if (entry.kind === "map") Object.entries(value).forEach(([k, v]) => chk(v, rec[k], k, basis[k]));
+    else if (entry.kind === "table") value.forEach((row, i) => Object.entries(rec).forEach(([c, r]) => { if (c in row) chk(row[c], r, `${i + 1}.${c}`, basis[c]); }));
     return out;
+  }
+  // The wording of a warning: a range of the cited source, or a development band around the file default (no source).
+  function warnText(w, entry) {
+    const params = {min: w.range[0], max: w.range[1]};
+    const where = w.where ? " (" + w.where + ")" : "";
+    if (w.basis === "source") return [t("Outside the recommended values ({min} to {max}) of the source.", params), where, entry.source ? [" ", t("Source: "), entry.source.text] : ""];
+    return [t("Outside the recommended range ({min} to {max}), a development band around the file default; no source is claimed.", params), where];
   }
 
   // ------------------------------------------------------------------ value editors (DOM, no innerHTML)
@@ -115,7 +122,7 @@
           h("td", {}, h("button", {type: "button", class: "button secondary small", disabled: disabled || rows.length <= minItems,
                                     "aria-label": t("Remove row {n}", {n: i + 1}), onclick: () => { rows.splice(i, 1); onChange(rows); draw(); }}, "×"))))));
       wrap.append(table, h("button", {type: "button", class: "button secondary small", disabled: disabled || (maxItems != null && rows.length >= maxItems),
-                                      onclick: () => { rows.push(cols.reduce((o, c) => { if (!c.optional) o[c.name] = c.kind === "enum" ? c.choices[0] : (c.min != null ? c.min : 0); return o; }, {})); onChange(rows); draw(); }}, t("Add row")));
+                                      onclick: () => { rows.push(cols.reduce((o, c) => { if (!c.optional) { const cb = (bounds.columns || {})[c.name] || {}; o[c.name] = c.kind === "enum" ? c.choices[0] : (cb.min != null ? cb.min : (c.min != null ? c.min : 0)); } return o; }, {})); onChange(rows); draw(); }}, t("Add row")));
     };
     draw();
     return wrap;
@@ -139,15 +146,16 @@
       el.addEventListener("change", () => onChange(el.value));
     } else if (k === "pair") {
       const v = clone(value);
-      el = h("span", {class: "pair"}, numInput(null, v[0], b, (x) => { v[0] = x; onChange(clone(v)); }, lab + " – " + t("from")), h("span", {"aria-hidden": "true"}, "–"),
-             numInput(null, v[1], b, (x) => { v[1] = x; onChange(clone(v)); }, lab + " – " + t("to")));
+      const eb = b.elements || [b, b];
+      el = h("span", {class: "pair"}, numInput(null, v[0], eb[0], (x) => { v[0] = x; onChange(clone(v)); }, lab + " – " + t("from")), h("span", {"aria-hidden": "true"}, "–"),
+             numInput(null, v[1], eb[1], (x) => { v[1] = x; onChange(clone(v)); }, lab + " – " + t("to")));
     } else if (k === "list") {
       el = h("span", {class: "list-ed"}, textList(value, entry.shape.choices, entry.shape.item, onChange, lab),
              entry.shape.choices ? h("small", {class: "hint"}, t("Allowed: {list}", {list: entry.shape.choices.join(", ")})) : null);
     } else if (k === "map") {
       const v = clone(value);
       el = h("span", {class: "map-ed"}, entry.shape.keys.map((key) => h("label", {class: "map-cell"}, h("span", {}, key),
-              numInput(null, v[key], b, (x) => { v[key] = x; onChange(clone(v)); }, `${lab} – ${key}`))));
+              numInput(null, v[key], (b.keys || {})[key] || b, (x) => { v[key] = x; onChange(clone(v)); }, `${lab} – ${key}`))));
     } else if (k === "table") {
       el = rowsEditor(entry, clone(value), b, (rows) => onChange(clone(rows)), disabled);
     } else if (k === "groups") {
@@ -184,10 +192,25 @@
     return "";
   };
   const recText = (entry) => {
-    const r = entry.recommended;
+    const r = entry.recommended, basis = entry.range_basis;
     if (!r) return "";
-    if (Array.isArray(r)) return t("Recommended: {min} to {max}", {min: r[0], max: r[1]});
-    return t("Recommended: {list}", {list: Object.entries(r).map(([k, x]) => `${k} ${x[0]}–${x[1]}`).join("; ")});
+    const tag = (b) => (b === "source" ? "" : " · " + t("development band"));
+    if (entry.kind === "int" || entry.kind === "float") return t("Recommended: {min} to {max}", {min: r[0], max: r[1]}) + tag(basis);
+    if (entry.kind === "pair") return t("Recommended: {list}", {list: r.map((x, i) => `${x[0]}–${x[1]}${tag(basis[i])}`).join("; ")});
+    return t("Recommended: {list}", {list: Object.entries(r).map(([k, x]) => `${k} ${x[0]}–${x[1]}${tag(basis[k])}`).join("; ")});
+  };
+  const physText = (entry) => {
+    const b = entry.hard, u = entry.unit ? " " + entry.unit : "";
+    if (["int", "float", "pair", "map"].includes(entry.kind) && (b.min != null || b.max != null)) return t("Physical bounds: {min} to {max}", {min: b.min != null ? b.min : "–", max: b.max != null ? b.max + u : "–"});
+    if (["list", "table", "groups"].includes(entry.kind)) return t("Allowed: {min} to {max} items", {min: b.min_items || 0, max: b.max_items});
+    return "";
+  };
+  const limitText = (entry) => {
+    const l = entry.default_limit;
+    if (!l) return "";
+    const flat = entry.kind === "pair" ? l : (entry.kind === "int" || entry.kind === "float" ? [l] : Object.values(l));
+    const lo = Math.min(...flat.map((x) => x[0])), hi = Math.max(...flat.map((x) => x[1]));
+    return t("Default limit: {min} to {max}", {min: lo, max: hi});
   };
   const srcLine = (entry) => {
     const s = entry.source;
@@ -245,8 +268,7 @@
       const refresh = () => {
         warn.textContent = "";
         for (const w of recWarnings(e, value(e))) {
-          warn.append(h("p", {class: "warning"}, t("Outside the recommended values ({min} to {max}) of the source.", {min: w.range[0], max: w.range[1]}),
-            w.where ? " (" + w.where + ")" : "", e.source ? [" ", t("Source: "), e.source.text] : ""));
+          warn.append(h("p", {class: "warning"}, warnText(w, e)));
         }
         err.textContent = st.errors[e.key] || "";
         card.classList.toggle("is-dirty", e.key in st.draft && !same(st.draft[e.key], current(e)));
@@ -289,7 +311,7 @@
       try {
         const r = await api(path(), {method: "PUT", body: JSON.stringify({values, reason: reasonInput.value, base_version: st.data.versions[scope === "parcel" ? "parcel" : scope]})});
         st.draft = {}; st.busy = false;
-        st.flash = r.warnings && r.warnings.length ? t("Saved. {n} values are outside the recommended range of their source.", {n: r.warnings.length}) : t("Saved.");
+        st.flash = r.warnings && r.warnings.length ? t("Saved. {n} values are outside the recommended range.", {n: r.warnings.length}) : t("Saved.");
         await load();
         if (opts.onSaved) opts.onSaved();
       } catch (ex) {
@@ -458,9 +480,11 @@
         "aria-label": t("Users may change: {name}", {name: loc(e.label)}), onchange: (ev) => put({user_editable: ev.target.checked})});
       const inputs = [];
       const hb = e.hard;
+      const dl = e.default_limit ? (e.kind === "pair" ? e.default_limit : (e.kind === "int" || e.kind === "float" ? [e.default_limit] : Object.values(e.default_limit))) : [];
+      const dmin = dl.length ? Math.min(...dl.map((x) => x[0])) : null, dmax = dl.length ? Math.max(...dl.map((x) => x[1])) : null;
       if (["int", "float", "pair", "map"].includes(e.kind)) {
-        inputs.push(h("label", {class: "map-cell"}, h("span", {}, t("Minimum")), h("input", {type: "number", step: "any", value: lim.min != null ? lim.min : "", placeholder: hb.min != null ? String(hb.min) : "", "aria-label": t("Minimum: {name}", {name: loc(e.label)}), oninput: (ev) => put({min: num(ev.target.value)})})),
-                    h("label", {class: "map-cell"}, h("span", {}, t("Maximum")), h("input", {type: "number", step: "any", value: lim.max != null ? lim.max : "", placeholder: hb.max != null ? String(hb.max) : "", "aria-label": t("Maximum: {name}", {name: loc(e.label)}), oninput: (ev) => put({max: num(ev.target.value)})})));
+        inputs.push(h("label", {class: "map-cell"}, h("span", {}, t("Minimum")), h("input", {type: "number", step: "any", value: lim.min != null ? lim.min : "", placeholder: dmin != null ? String(dmin) : (hb.min != null ? String(hb.min) : ""), "aria-label": t("Minimum: {name}", {name: loc(e.label)}), oninput: (ev) => put({min: num(ev.target.value)})})),
+                    h("label", {class: "map-cell"}, h("span", {}, t("Maximum")), h("input", {type: "number", step: "any", value: lim.max != null ? lim.max : "", placeholder: dmax != null ? String(dmax) : (hb.max != null ? String(hb.max) : ""), "aria-label": t("Maximum: {name}", {name: loc(e.label)}), oninput: (ev) => put({max: num(ev.target.value)})})));
       }
       if (["list", "table", "groups"].includes(e.kind)) {
         inputs.push(h("label", {class: "map-cell"}, h("span", {}, t("Fewest items")), h("input", {type: "number", step: "1", value: lim.min_items != null ? lim.min_items : "", placeholder: String(hb.min_items || 0), "aria-label": t("Fewest items: {name}", {name: loc(e.label)}), oninput: (ev) => put({min_items: num(ev.target.value)})})),
@@ -479,7 +503,8 @@
         h("p", {class: "set-key"}, h("code", {}, e.key)),
         h("label", {class: "switch"}, ue, h("span", {}, t("Users may change this"))),
         e.readonly ? h("p", {class: "hint"}, t("Read only: "), loc(e.readonly)) : h("div", {class: "limit-grid"}, inputs),
-        h("p", {class: "hint"}, rangeText(Object.assign({}, e, {bounds: e.hard}))),
+        physText(e) ? h("p", {class: "hint"}, physText(e)) : null,
+        limitText(e) ? h("p", {class: "hint"}, limitText(e), " · ", t("empty fields keep the default limit")) : null,
         e.limit && Object.keys(e.limit).length ? h("p", {}, h("button", {type: "button", class: "button secondary small", onclick: () => { st.draft[e.key] = null; flash.textContent = t("Marked to be cleared; press Save limits."); card.classList.add("is-dirty"); }}, t("Clear the limit"))) : null);
       return card;
     }

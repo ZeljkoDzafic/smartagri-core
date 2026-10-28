@@ -173,7 +173,7 @@ a "changed" marker; tables (Kc by BBCH range, root depth by stage, water capacit
 table editor with validation. The administrator decides per parameter whether users may change it and within which
 range, sees the audit log and can restore a previous version or the file default. Evaluation reads the files only:
 web settings never reach `evalkit`, the protocol lock or the blind rating screen, and every web answer records the
-settings it used. With accounts on, administrators are listed in `SMARTAGRI_ADMINS`; in local mode the local user is
+settings it used. With accounts on, administrators are promoted by the operator on the server (`--make-admin`) or confirm a listed address (`SMARTAGRI_ADMINS`) through its mailbox; in local mode the local user is
 the administrator. See [docs/settings.md](docs/settings.md).
 
 ## Website

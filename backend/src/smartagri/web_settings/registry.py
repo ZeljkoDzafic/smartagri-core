@@ -103,6 +103,8 @@ class Spec:
     item_kind: str = "token"                    # list items: token (a short word), scalar (a number or a word)
     hint_en: str = ""
     hint_sr: str = ""
+    limit: Any = None                           # default administrator limit, same shape as `recommended`; else derived
+    basis: str = ""                             # "development" when `recommended` is not a range of the cited source
 
 
 def c(name, kind, lo=None, hi=None, choices=None, optional=False, en="", sr=""):
@@ -171,8 +173,9 @@ SPECS: List[Spec] = [
     Spec("rules.irrigation.root_depth_m_by_bbch", "table", G_IRR, "Effective root depth by growth stage", "Efektivna dubina korena po fazi", unit="m",
          cols=(c("bbch_max", "int", 0, 99, en="Up to BBCH", sr="Do BBCH"), c("depth", "float", 0.05, 3.0, en="Depth (m)", sr="Dubina (m)")),
          checks=("sorted:bbch_max", "last_min:bbch_max:99"), min_items=1, max_items=8, source="fao56_t22", status="partly",
-         note_en="The last row (1.0 m) lies in the source range 1.0-1.7 m (Table 22; Table 5 of the training manual: 90-150 cm). The 0.3 m and 0.6 m rows have no source. The last row must reach BBCH 99.",
-         note_sr="Poslednji red (1,0 m) je u opsegu izvora 1,0-1,7 m (Tabela 22; Tabela 5 priručnika: 90-150 cm). Redovi 0,3 m i 0,6 m nemaju izvor. Poslednji red mora da dosegne BBCH 99."),
+         recommended={"depth": (0.2, 1.7)}, limit={"depth": (0.1, 2.0)}, basis="development",
+         note_en="The last row (1.0 m) lies in the source range 1.0-1.7 m (Table 22; Table 5 of the training manual: 90-150 cm). The 0.3 m and 0.6 m rows have no source. The last row must reach BBCH 99. The upper end of the recommended range (1.7 m) is the top of that source range; the lower end (0.2 m) and the limit (0.1-2.0 m) are development values.",
+         note_sr="Poslednji red (1,0 m) je u opsegu izvora 1,0-1,7 m (Tabela 22; Tabela 5 priručnika: 90-150 cm). Redovi 0,3 m i 0,6 m nemaju izvor. Poslednji red mora da dosegne BBCH 99. Gornji kraj preporučenog opsega (1,7 m) je vrh tog opsega izvora; donji kraj (0,2 m) i granica (0,1-2,0 m) su razvojne vrednosti."),
     Spec("rules.irrigation.vwc_bands", "pair", G_IRR, "Soil sensor limits: dry / moist / wet (volumetric water content)", "Granice senzora vlage: suvo / umereno / vlažno (zapreminski sadržaj vode)",
          unit="m3/m3", lo=0, hi=1, source="fao56_t19", status="disputed",
          note_en="One pair of limits for all textures does not agree with Table 19, where the wilting point and field capacity depend on texture (for sand 0.18 is above field capacity, for clay it is below the wilting point). Needs a code change to be made texture-dependent.",
@@ -248,15 +251,16 @@ SPECS: List[Spec] = [
     _scalar("rules.optional_inputs.fao_gdd_per_100", "float", G_OPT, "Scaling of thermal time per 100 FAO units", "Skaliranje toplotne sume na 100 FAO jedinica", "share", 0, 1, **_no()),
     Spec("rules.optional_inputs.n_content", "map", G_OPT, "Share of nitrogen in common fertiliser products", "Udeo azota u uobičajenim đubrivima", unit="share", lo=0, hi=1, source="stoich", status="no_source",
          recommended={"urea": (0, 0.4665), "an": (0, 0.35), "map": (0, 0.1218), "dap": (0, 0.2121)},
+         limit={"urea": (0, 0.4665), "an": (0, 0.35), "map": (0, 0.1218), "dap": (0, 0.2121)},
          note_en="No source for the product values (labels were not opened). The upper limits shown are the stoichiometric maxima of the pure compound; the defaults stay below them.",
          note_sr="Za vrednosti proizvoda nema izvora (deklaracije nisu otvorene). Prikazane gornje granice su stehiometrijski maksimumi čistog jedinjenja; podrazumevane vrednosti su ispod njih."),
     # ---------------------------------------------------------------- kc_maize.yaml
     Spec("kc_maize.kc", "table", G_KC, "Single crop coefficient Kc by BBCH range (maize)", "Koeficijent kulture Kc po opsegu BBCH (kukuruz)", unit="Kc",
          cols=(c("bbch_min", "int", 0, 99, en="BBCH from", sr="BBCH od"), c("bbch_max", "int", 0, 99, en="BBCH to", sr="BBCH do"),
                c("kc", "float", 0, 2, en="Kc", sr="Kc"), c("stage", "str", optional=True, en="Stage", sr="Faza")),
-         checks=("kc_ranges",), min_items=2, max_items=10, source="fao56_t12", status="partly",
-         note_en="Kc ini 0.30 (cereals value; footnote 1: higher under frequent wetting) and Kc mid 1.20 match Table 12. Kc end 0.60 is inside the source range 0.60-0.35, but the source interpolates through the late stage and the stepwise value understates ETc early in it. The development value 0.75 is the midpoint of the interpolation, not a table value. The BBCH limits are an assumption. The climate correction (eq. 62) is not applied. Ranges must be contiguous from BBCH 0.",
-         note_sr="Kc ini 0,30 (vrednost grupe žitarica; fusnota 1: raste kod čestog kvašenja) i Kc mid 1,20 odgovaraju Tabeli 12. Kc end 0,60 je u opsegu izvora 0,60-0,35, ali izvor interpoliše kroz kasnu fazu pa stepenasta vrednost potcenjuje ETc na početku te faze. Razvojna vrednost 0,75 je sredina interpolacije, a ne vrednost iz tabele. Granice BBCH su pretpostavka. Korekcija klime (jedn. 62) nije primenjena. Opsezi moraju biti susedni od BBCH 0."),
+         checks=("kc_ranges",), min_items=2, max_items=10, source="fao56_t12", status="partly", recommended={"kc": (0.30, 1.20)},
+         note_en="Kc ini 0.30 (cereals value; footnote 1: higher under frequent wetting) and Kc mid 1.20 match Table 12. Kc end 0.60 is inside the source range 0.60-0.35, but the source interpolates through the late stage and the stepwise value understates ETc early in it. The development value 0.75 is the midpoint of the interpolation, not a table value. The BBCH limits are an assumption. The climate correction (eq. 62) is not applied. Ranges must be contiguous from BBCH 0. The recommended range 0.30-1.20 spans the maize values of Table 12 (ini 0.30, mid 1.20, end 0.60-0.35); the limit is that range widened by a quarter of its width.",
+         note_sr="Kc ini 0,30 (vrednost grupe žitarica; fusnota 1: raste kod čestog kvašenja) i Kc mid 1,20 odgovaraju Tabeli 12. Kc end 0,60 je u opsegu izvora 0,60-0,35, ali izvor interpoliše kroz kasnu fazu pa stepenasta vrednost potcenjuje ETc na početku te faze. Razvojna vrednost 0,75 je sredina interpolacije, a ne vrednost iz tabele. Granice BBCH su pretpostavka. Korekcija klime (jedn. 62) nije primenjena. Opsezi moraju biti susedni od BBCH 0. Preporučeni opseg 0,30-1,20 obuhvata vrednosti Tabele 12 za kukuruz (ini 0,30, mid 1,20, end 0,60-0,35); granica je taj opseg proširen za četvrtinu širine."),
     # ---------------------------------------------------------------- thresholds.yaml (q): ndvi and soil analysis have their own status
     Spec("thresholds.inputs.ndvi_latest.grades", "table", G_Q, "Reliability grades: {name}", "Stepeni pouzdanosti: {name}", cols=GRADE_COLS, max_items=8, user=False, source="sentiwiki", status="partly",
          note_en="The 5-day limit matches the Sentinel-2 revisit period at the equator; the other ages and coverages are engineering choices. Grades are tried top to bottom; the first that holds wins.",
@@ -356,6 +360,7 @@ class Entry:
     name: str                                     # what the `*` matched (an input or an advice type), or ""
     file: str
     default: Any = field(default=None)
+    _ranges: Any = field(default=None, repr=False, compare=False)
 
     @property
     def editable(self) -> bool:
@@ -468,31 +473,167 @@ def choices_of(obj: Any) -> Optional[List[str]]:
 
 
 def hard_bounds(entry: Entry) -> Dict[str, Any]:
+    """The physical bounds of the registry (what the quantity can be at all)."""
     s = entry.spec
     return {"min": s.lo, "max": s.hi, "min_items": s.min_items, "max_items": s.max_items,
             "columns": {col.name: {"min": col.lo, "max": col.hi} for col in s.cols if col.lo is not None or col.hi is not None}}
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Default limits and recommended ranges
+#
+# Three nested ranges for every numeric value:  recommended  inside  default limit  inside  physical bounds (Spec.lo/hi).
+# - physical bounds: the quantity cannot be outside them (a share is in 0..1); never changed by a setting;
+# - default limit: what the registry accepts until an administrator sets the limit of that parameter (the administrator
+#   may widen it up to the physical bounds or narrow it); a value outside it is refused;
+# - recommended: a value between the recommended range and the limit is accepted with a warning.
+# Where the cited source gives a range, `Spec.recommended` is that range (basis "source") and the default limit is the
+# range widened by a quarter of its width on each side, unless the declaration gives its own `limit`. Where no source
+# gives a range, both are a conservative band around the default in the file (basis "development"): a development
+# limit, never a citation. The bands are derived here, so a change of a default in a file moves its band with it.
+# ---------------------------------------------------------------------------------------------------------------------
+WIDEN = 0.25
+RATIO_REC, RATIO_LIM = (0.7, 1.3), (0.5, 2.0)          # around a positive default: -30 % .. +30 %, and /2 .. x2
+ABS_BANDS = {"BBCH": (5, 15), "°C": (2, 5), "pH": (0.5, 1.0), "NDVI": (0.05, 0.15)}   # (recommended, limit) half widths
+ABS_SPAN = (0.05, 0.15)                                 # a default of zero or below, no unit: share of the physical span
+
+
+def _clip(v: float, lo: Optional[float], hi: Optional[float]) -> float:
+    if lo is not None:
+        v = max(v, lo)
+    if hi is not None:
+        v = min(v, hi)
+    return v
+
+
+def _pretty(v: float, integer: bool, up: bool) -> Any:
+    if integer:
+        return int(math.ceil(v) if up else math.floor(v))
+    return round(v, 4)
+
+
+def _auto(values: Sequence[float], lo: Optional[float], hi: Optional[float], integer: bool, unit: str,
+          name: str = "") -> Tuple[List[Any], List[Any]]:
+    """(recommended, limit) as [lo, hi] pairs: a development band around the default value(s)."""
+    vmin, vmax = min(values), max(values)
+    add = ABS_BANDS.get(unit) or ((5, 15) if "bbch" in name else None)
+    if add is None and vmin <= 0:
+        span = (hi - lo) if lo is not None and hi is not None else (abs(vmax - vmin) or 1.0)
+        add = (ABS_SPAN[0] * span, ABS_SPAN[1] * span)
+    out = []
+    for k in (0, 1):
+        if add is not None:
+            a, b = vmin - add[k], vmax + add[k]
+        else:
+            r = (RATIO_REC, RATIO_LIM)[k]
+            a, b = vmin * r[0], vmax * r[1]
+        a, b = _clip(a, lo, hi), _clip(b, lo, hi)
+        out.append([_pretty(a, integer, False), _pretty(b, integer, True)])
+    rec, lim = out
+    rec = [min(rec[0], vmin), max(rec[1], vmax)]
+    lim = [min(lim[0], rec[0]), max(lim[1], rec[1])]
+    return rec, lim
+
+
+def _widen(rng: Sequence[float], lo: Optional[float], hi: Optional[float], integer: bool) -> List[Any]:
+    """The source's range widened by a quarter of its width on each side, rounded outward to a readable number."""
+    w = (rng[1] - rng[0]) * WIDEN
+    out = []
+    for v, up in ((_clip(rng[0] - w, lo, hi), False), (_clip(rng[1] + w, lo, hi), True)):
+        if integer:
+            out.append(_pretty(v, True, up))
+        else:
+            q = 10.0 if abs(v) >= 1 else 1000.0
+            out.append(round((math.ceil if up else math.floor)(v * q) / q, 3))
+    return [_clip(out[0], lo, hi), _clip(out[1], lo, hi)]
+
+
+def _numbers(entry: Entry) -> Dict[str, Tuple[List[float], Optional[float], Optional[float], bool, str]]:
+    """slot -> (default values, physical lo, hi, integer?, column name) for every numeric slot of the entry."""
+    s, d = entry.spec, entry.default
+    if s.kind in ("int", "float"):
+        return {"": ([d], s.lo, s.hi, s.kind == "int", "")}
+    if s.kind == "pair":
+        return {str(i): ([d[i]], s.lo, s.hi, s.unit == "BBCH", "") for i in (0, 1)}
+    if s.kind == "map":
+        return {k: ([v], s.lo, s.hi, False, "") for k, v in d.items()}
+    if s.kind in ("table", "groups"):
+        rows = [r for g in d for r in g] if s.kind == "groups" else d
+        out = {}
+        for col in s.cols:
+            if col.kind in ("int", "float"):
+                vals = [r[col.name] for r in rows if col.name in r]
+                if vals:
+                    out[col.name] = (vals, col.lo, col.hi, col.kind == "int", col.name)
+        return out
+    return {}
+
+
+def _explicit(spec_value: Any, slot: str, kind: str) -> Optional[Sequence[float]]:
+    if spec_value is None:
+        return None
+    if isinstance(spec_value, dict):
+        return spec_value.get(slot)
+    return spec_value if kind in ("int", "float", "pair") else None
+
+
+def ranges(entry: Entry) -> Dict[str, Dict[str, Any]]:
+    """slot -> {"recommended": [lo, hi], "limit": [lo, hi], "basis": "source" | "development"}; the slot is "" for a
+    number, "0"/"1" for the two ends of a pair, the key of a map, the column of a table. Empty for values that are not
+    numbers (switches, choices, texts, lists)."""
+    if entry._ranges is not None:
+        return entry._ranges
+    s, out = entry.spec, {}
+    for slot, (vals, lo, hi, integer, name) in _numbers(entry).items():
+        rec_x, lim_x = _explicit(s.recommended, slot, s.kind), _explicit(s.limit, slot, s.kind)
+        auto_rec, auto_lim = _auto(vals, lo, hi, integer, s.unit, name)
+        if rec_x is not None:
+            rec = [rec_x[0], rec_x[1]]
+            lim = [lim_x[0], lim_x[1]] if lim_x is not None else _widen(rec, lo, hi, integer)
+            basis = "development" if s.basis == "development" else "source"
+        else:
+            rec, lim, basis = auto_rec, auto_lim, "development"
+            if lim_x is not None:
+                lim = [lim_x[0], lim_x[1]]
+        out[slot] = {"recommended": rec, "limit": lim, "basis": basis}
+    entry._ranges = out
+    return out
+
+
+def _slot_bound(entry: Entry, slot: str, lo_hard: Optional[float], hi_hard: Optional[float],
+                admin: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Effective bound of one slot: the administrator's min/max where set, else the default limit; never beyond the
+    physical bounds."""
+    lim = (ranges(entry).get(slot) or {}).get("limit") or [None, None]
+    admin = admin or {}
+    lo = admin["min"] if admin.get("min") is not None else lim[0]
+    hi = admin["max"] if admin.get("max") is not None else lim[1]
+    return {"min": None if lo is None and lo_hard is None else _clip(lo if lo is not None else lo_hard, lo_hard, hi_hard),
+            "max": None if hi is None and hi_hard is None else _clip(hi if hi is not None else hi_hard, lo_hard, hi_hard)}
+
+
 def merged_bounds(entry: Entry, limit: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """The registry's bounds narrowed by the administrator's limit."""
-    b = hard_bounds(entry)
-    limit = limit or {}
-    for k, pick in (("min", max), ("min_items", max)):
+    """The bounds that apply now: the default limit (or the administrator's limit where one was set), inside the
+    physical bounds. `elements` (pair), `keys` (map) and `columns` (table) hold the bound of every slot."""
+    s, hb, limit = entry.spec, hard_bounds(entry), limit or {}
+    b = dict(hb, columns={})
+    admin = {"min": limit.get("min"), "max": limit.get("max")}
+    if s.kind in ("int", "float"):
+        b.update(_slot_bound(entry, "", s.lo, s.hi, admin))
+    elif s.kind == "pair":
+        b["elements"] = [_slot_bound(entry, str(i), s.lo, s.hi, admin) for i in (0, 1)]
+    elif s.kind == "map":
+        b["keys"] = {k: _slot_bound(entry, k, s.lo, s.hi, admin) for k in entry.default}
+    if s.kind in ("pair", "map"):
+        slots = b["elements"] if s.kind == "pair" else list(b["keys"].values())
+        mins, maxs = [x["min"] for x in slots if x["min"] is not None], [x["max"] for x in slots if x["max"] is not None]
+        b["min"], b["max"] = (min(mins) if mins else None), (max(maxs) if maxs else None)
+    for col in s.cols:
+        if col.kind in ("int", "float"):
+            b["columns"][col.name] = _slot_bound(entry, col.name, col.lo, col.hi, (limit.get("columns") or {}).get(col.name))
+    for k, pick in (("min_items", max), ("max_items", min)):
         if limit.get(k) is not None:
-            b[k] = limit[k] if b[k] is None else pick(b[k], limit[k])
-    for k, pick in (("max", min), ("max_items", min)):
-        if limit.get(k) is not None:
-            b[k] = limit[k] if b[k] is None else pick(b[k], limit[k])
-    cols = {}
-    for name, cb in b["columns"].items():
-        lim = (limit.get("columns") or {}).get(name) or {}
-        lo, hi = cb.get("min"), cb.get("max")
-        if lim.get("min") is not None:
-            lo = lim["min"] if lo is None else max(lo, lim["min"])
-        if lim.get("max") is not None:
-            hi = lim["max"] if hi is None else min(hi, lim["max"])
-        cols[name] = {"min": lo, "max": hi}
-    b["columns"] = cols
+            b[k] = pick(b[k], limit[k])
     return b
 
 
@@ -630,8 +771,8 @@ def validate(entry: Entry, value: Any, limit: Optional[Dict[str, Any]] = None) -
             raise Invalid("shape", expected="pair")
         kind = "int" if s.unit == "BBCH" else "float"
         out = [_num(x, kind) for x in value]
-        for x in out:
-            _in_range(x, b["min"], b["max"])
+        for x, el in zip(out, b["elements"]):
+            _in_range(x, el["min"], el["max"])
         if out[0] > out[1]:
             raise Invalid("order", column="pair")
         return out
@@ -641,7 +782,7 @@ def validate(entry: Entry, value: Any, limit: Optional[Dict[str, Any]] = None) -
         out = {}
         for key, v in value.items():
             out[key] = _num(v, "float")
-            _in_range(out[key], b["min"], b["max"])
+            _in_range(out[key], b["keys"][key]["min"], b["keys"][key]["max"])
         return out
     if k == "list":
         if not isinstance(value, list):
@@ -736,32 +877,38 @@ def check_relations(flat: Dict[str, Any]) -> List[Dict[str, Any]]:
 # Warnings: inside the allowed range but outside the recommended values of the source
 # ---------------------------------------------------------------------------------------------------------------------
 def warnings(entry: Entry, value: Any) -> List[Dict[str, Any]]:
+    """A value inside the limit but outside the recommended range of its slot. `basis` says whether that range is the
+    cited source's (`source` is then given) or a development band around the file default (no source is claimed)."""
     s = entry.spec
-    rec = s.recommended
-    if rec is None or value is None:
+    rg = ranges(entry)
+    if not rg or value is None:
         return []
     src = SOURCES.get(s.source)
-    source = {"text": src[0], "url": src[1]} if src else None
     out: List[Dict[str, Any]] = []
 
-    def out_of(v, rng, where):
-        if isinstance(v, (int, float)) and not isinstance(v, bool) and (v < rng[0] or v > rng[1]):
-            out.append({"key": entry.key, "code": "outside_recommended", "where": where, "value": v,
-                        "range": [rng[0], rng[1]], "source": source})
+    def check(v: Any, slot: str, where: str) -> None:
+        r = rg.get(slot)
+        if r is None or not isinstance(v, (int, float)) or isinstance(v, bool):
+            return
+        lo, hi = r["recommended"]
+        if v < lo or v > hi:
+            out.append({"key": entry.key, "code": "outside_recommended", "where": where, "value": v, "range": [lo, hi],
+                        "basis": r["basis"], "source": {"text": src[0], "url": src[1]} if src and r["basis"] == "source" else None})
     if s.kind in ("int", "float"):
-        out_of(value, rec, "")
+        check(value, "", "")
     elif s.kind == "pair":
         for i, v in enumerate(value):
-            out_of(v, rec, str(i))
-    elif s.kind == "map" and isinstance(rec, dict):
+            check(v, str(i), str(i))
+    elif s.kind == "map":
         for name, v in value.items():
-            if name in rec:
-                out_of(v, rec[name], name)
-    elif s.kind == "table" and isinstance(rec, dict):
-        for i, row in enumerate(value):
-            for col, rng in rec.items():
+            check(v, name, name)
+    elif s.kind in ("table", "groups"):
+        rows = [(f"{gi + 1}.{i + 1}", row) for gi, g in enumerate(value) for i, row in enumerate(g)] if s.kind == "groups" else \
+            [(str(i + 1), row) for i, row in enumerate(value)]
+        for label_, row in rows:
+            for col in rg:
                 if col in row:
-                    out_of(row[col], rng, "%d.%s" % (i + 1, col))
+                    check(row[col], col, "%s.%s" % (label_, col))
     return out
 
 
@@ -784,14 +931,20 @@ def describe(entry: Entry) -> Dict[str, Any]:
         shape["item"] = s.item_kind
     if s.kind == "str":
         shape["max_len"] = s.max_len
-    rec = s.recommended
-    if isinstance(rec, tuple):
-        rec = list(rec)
-    elif isinstance(rec, dict):
-        rec = {k: list(v) for k, v in rec.items()}
+    rg = ranges(entry)
+    shaped: Dict[str, Any] = {"recommended": None, "default_limit": None, "range_basis": None}
+    if rg:
+        pick = {"recommended": "recommended", "default_limit": "limit", "range_basis": "basis"}
+        for out_key, in_key in pick.items():
+            if s.kind in ("int", "float"):
+                shaped[out_key] = rg[""][in_key]
+            elif s.kind == "pair":
+                shaped[out_key] = [rg[str(i)][in_key] for i in (0, 1)]
+            else:
+                shaped[out_key] = {slot: v[in_key] for slot, v in rg.items()}
     reason = entry.spec.readonly or entry.blocked()
     return {"key": entry.key, "file": entry.file, "name": entry.name, "label": label(entry), "group": s.group, "kind": s.kind,
-            "unit": s.unit, "shape": shape, "default": entry.default, "hard": hard_bounds(entry), "recommended": rec,
+            "unit": s.unit, "shape": shape, "default": entry.default, "hard": hard_bounds(entry), **shaped,
             "user_editable_default": s.user, "status": s.status,
             "source": {"text": src[0], "url": src[1]} if src else None,
             "note": {"en": s.note_en, "sr": s.note_sr}, "hint": {"en": s.hint_en, "sr": s.hint_sr},

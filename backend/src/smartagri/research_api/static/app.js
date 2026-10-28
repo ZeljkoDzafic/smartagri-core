@@ -358,9 +358,18 @@ $("p-refresh").onclick = async () => {
 // ------------------------------------------------------------------ answer card
 const short = (h) => (h ? String(h).slice(0, 12) + "…" : "–");
 // The settings an answer was computed with (provenance.settings): version, hash and the overrides with their level.
+// "Custom settings applied": on every answer that was computed with a value that differs from the files, so nobody reads
+// an answer from changed settings as the default one. It also says how many of the values are outside the recommended range.
+function customSettingsNotice(s, inWhy) {
+  if (!s || !s.n_overrides) return "";
+  const out = new Set((s.outside_recommended || []).map((w) => w.key)).size;
+  return `<p class="custom-settings" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>
+    <span><b>${esc(t("Custom settings applied"))}</b> ${esc(t("This answer was computed with {n} settings that differ from the file defaults.", {n: s.n_overrides}))}${out ? " " + esc(t("{n} of them are outside the recommended range.", {n: out})) : ""}${inWhy ? "" : " " + esc(t("The list is under “Why?”."))}</span></p>`;
+}
 function settingsUsed(s) {
   if (!s) return "";
-  const rows = Object.entries(s.snapshot || {}).map(([k, v]) => `<li><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v.value))}</code> <span class="hint">(${esc(t(v.layer === "global" ? "global" : v.layer === "user" ? "user" : "parcel"))})</span></li>`).join("");
+  const flagged = new Set((s.outside_recommended || []).map((w) => w.key));
+  const rows = Object.entries(s.snapshot || {}).map(([k, v]) => `<li><code>${esc(k)}</code> = <code>${esc(JSON.stringify(v.value))}</code> <span class="hint">(${esc(t(v.layer === "global" ? "global" : v.layer === "user" ? "user" : "parcel"))})</span>${flagged.has(k) ? ` <span class="warn-inline">${esc(t("outside the recommended range"))}</span>` : ""}</li>`).join("");
   return `<div class="layers"><div class="layer"><b>${esc(t("Settings used"))}</b>${s.n_overrides ? esc(t("{n} values differ from the files", {n: s.n_overrides})) : esc(t("the configuration files only"))}
     <br><span class="hint">${esc(t("version"))} <code>${esc(s.version || "–")}</code> · <code>${esc(short(s.hash))}</code></span>${rows ? `<ul class="set-used">${rows}</ul>` : ""}</div></div>`;
 }
@@ -374,6 +383,7 @@ function whyPanel(run) {
   const counts = (obj, names) => Object.keys(obj).length ? Object.entries(obj).map(([k, n]) => `${n} ${esc(tr(names, k))}`).join(", ") : t("none");
   const code = (x) => (x ? `<code>${esc(x)}</code>` : "");
   return `<details class="why"><summary>${esc(t("Why?"))}</summary>
+    ${customSettingsNotice(p.settings, true)}
     <p class="hint">${esc(t("The deterministic layers decided this before any text was written."))}</p>
     <div class="layers">
       ${layer("δ", "Decision", `${esc(tr(ACTS, pol.act, pol.act || "–"))}<br><span class="hint">${code(pol.reason_code)} · ${esc(pol.allow_quantity ? t("quantity allowed") : t("no quantity"))}</span>`)}
@@ -414,6 +424,7 @@ function answerCard(run) {
     <span class="grabber" aria-hidden="true"></span>
     <header><span class="act-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${ACT_ICON[a.act] || ACT_ICON.abstain}"/></svg></span>
       <span class="act-head"><span class="act-badge">${esc(tr(ACTS, a.act, a.act_label))}</span><span class="meta">${esc(run.variant)} · ${esc(tr(ADVICE, run.advice_type, t("advice type not yet known")))} · ${esc(t("{name} generator", {name: a.generator}))}</span></span></header>
+    ${customSettingsNotice((run.provenance || {}).settings, false)}
     <p class="summary" ${L}>${esc(a.summary)}</p>
     ${kv}
     ${nq ? `<div class="nextq"><p ${L}>${esc(nq.text)}${nq.how_to_obtain ? `<span class="how">${esc(nq.how_to_obtain)}</span>` : ""}</p><div class="options" ${L}>${opts}</div></div>` : ""}
@@ -463,7 +474,7 @@ $("a-form").onsubmit = async (e) => {
     aiConv = run.conversation_id;
     $("a-text").value = "";
     const shownLang = run.answer.language ? (run.answer.translation && run.answer.translation.shown === "local" ? "sr-Latn" : run.answer.language.detected) : "sr-Latn";
-    $("a-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div><article class="answer act-ai"><p class="ai-text" lang="${esc(shownLang)}">${esc(run.answer.text)}</p>
+    $("a-out").insertAdjacentHTML("beforeend", `<div class="bubble">${esc(run.question)}</div><article class="answer act-ai">${run.provenance && run.provenance.mode === "app" ? customSettingsNotice(run.provenance.settings, false) : ""}<p class="ai-text" lang="${esc(shownLang)}">${esc(run.answer.text)}</p>
       <details class="raw"><summary>${esc(t("Provenance"))}</summary><pre>${esc(JSON.stringify(run.provenance, null, 2))}</pre></details></article>`);
   } catch (err) { $("a-out").insertAdjacentHTML("beforeend", `<p class="error">${esc(err.message)}</p>`); }
   finally { btn.removeAttribute("aria-busy"); }

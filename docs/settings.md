@@ -30,16 +30,47 @@ The effective value is the parcel's value, else the user's, else the global one,
 
 ## Administrator role
 
-With `SMARTAGRI_ACCOUNTS=optional` the administrators are the accounts whose email address is listed in
-`SMARTAGRI_ADMINS` (comma-separated, compared without regard to case). With email confirmation switched on
-(SMTP configured) the address must also be confirmed. Without SMTP an address cannot be verified: register the
-administrator account before the server is reachable by others (a second sign-up with the same address is refused),
-and keep the list short.
+With `SMARTAGRI_ACCOUNTS=off` the local user is the administrator. With `SMARTAGRI_ACCOUNTS=optional` an account is an
+administrator in exactly two cases:
+
+1. **The operator promoted it on the server.** `python -m smartagri.research_api --make-admin EMAIL` is run by whoever
+   controls the server (in the container: `docker exec -it smartagri python -m smartagri.research_api --make-admin EMAIL`).
+   It never works over HTTP. The grant is stored in the database and written to the audit log (level `admin_role`,
+   actor `operator (server command)`).
+2. **Its address is listed in `SMARTAGRI_ADMINS` and was confirmed through that mailbox** (SMTP configured; see
+   [deployment.md](deployment.md)). Listing an address grants nothing by itself: an account that nobody confirmed through
+   its mailbox, which is every account on a server without SMTP, is never an administrator because its address is listed.
+
+Why: without SMTP a server cannot tell who owns an address, so "register the administrator account first" would hand the
+role to whoever registers the listed address first (the audit that found this reproduced it: a sign-up with the owner's
+address got the role and locked the owner out).
+
+What the command does, and what happens when the address is already taken:
+
+| Situation | `--make-admin EMAIL` |
+|---|---|
+| no such account | creates it (asks for a password; `--password-stdin` reads it from standard input) and marks it as confirmed by the operator |
+| an account that was never confirmed through its mailbox (someone signed up with the address first) | **takes it over**: asks for a new password, the old password stops working, every session and pending link of the account ends; then promotes it |
+| an account confirmed through its mailbox | adds the role and changes nothing else |
+| any existing account with `--reset-password` | also replaces the password and ends its sessions (an administrator who lost the password on a server without email) |
+
+`python -m smartagri.research_api --revoke-admin EMAIL` removes the role and ends the account's sessions. An address that is
+still listed in `SMARTAGRI_ADMINS` and confirmed through its mailbox stays an administrator until it is removed from the
+list; the command says so.
+
+Sign-up with an address listed in `SMARTAGRI_ADMINS`:
+
+- **SMTP off:** refused with the answer for a taken address (409). The owner does not have to be first: nobody can take the
+  address, and the operator creates the account with the command above.
+- **SMTP on:** the sign-up is accepted like any other, but the mail that goes to that address carries a link that **sets the
+  password** instead of a "confirm" link, and an account listed as an administrator cannot be confirmed by the ordinary
+  link. Whoever signed up first with someone else's address therefore cannot keep their password: the mailbox owner's link
+  replaces it. An owner who never saw the mail uses "forgot password" (it ends the same way).
 
 | Variable | Meaning |
 |---|---|
 | `SMARTAGRI_ACCOUNTS` | `off` (default; the local user is the administrator) or `optional` |
-| `SMARTAGRI_ADMINS` | comma-separated email addresses of the administrators (mode `optional` only) |
+| `SMARTAGRI_ADMINS` | comma-separated email addresses that may become administrators by confirming the mailbox (mode `optional` only, compared without regard to case); the operator command does not need it |
 
 Administrator endpoints (global values, limits, the log of every level, versions of those levels) answer 403 to
 everyone else.
@@ -54,14 +85,54 @@ For every parameter the administrator sets:
   type, asking, parcel features) and the irrigation-quantity safety gate are administrator-only until opened;
 - the allowed range (`min`, `max`) and, for lists and tables, the number of rows and a range per numeric column.
 
+### Three nested ranges
+
+Every numeric value has three ranges, one inside the other:
+
+| Range | Meaning | Who sets it |
+|---|---|---|
+| **physical bounds** | what the quantity can be at all (a share is between 0 and 1; wind up to 40 m/s) | the registry; no setting changes it |
+| **default limit** | what is accepted until the administrator sets a limit for that parameter; a value outside it is refused | the registry; the administrator may narrow it or widen it up to the physical bounds |
+| **recommended range** | a value between this range and the limit is accepted with a warning | the registry |
+
+The physical bounds alone were too wide to protect anything (a wind limit for spraying of 40 m/s, a rain wait of 0 mm that
+means "always wait", a soil-sensor band of 0.01-0.02). The default limits are narrower on purpose, and the file default is
+always inside the recommended range, so resetting never produces a warning.
+
+Where a range comes from, stated for every range (`range_basis` in the API):
+
+- **source**: the cited document gives a range. Used for the largest net depth per irrigation (15-70 mm, FAO Training
+  Manual 4, Table 4), the available water capacity per texture (FAO-56 Table 19, a range per texture), the single crop
+  coefficient (0.30-1.20, the maize values of FAO-56 Table 12) and the nitrogen share of four fertilisers (the
+  stoichiometric maximum of the pure compound; the limit is that maximum). The default limit is the source range widened
+  by a quarter of its width on each side, rounded outward.
+- **development**: no source gives a range, so both ranges are a conservative band around the default in the file, called a
+  **development limit**, not a citation. Around a positive default the recommended range is the default -30 % to +30 % and
+  the limit is half to double; for stages (BBCH), temperatures, pH and NDVI differences the band is an absolute distance
+  (recommended +-5 stages, limit +-15; +-2 and +-5 degrees C; and so on); a table column takes the band around the smallest
+  and the largest value in its rows. The bands are computed from the files, so a changed default moves its band. They are
+  not agronomic advice: an agronomist should replace them where a source exists, by giving the declaration a
+  `recommended` range (see below).
+
+The client shows the allowed range, the recommended range and whether it is a source or a development band, and warns while
+typing when a value leaves the recommended range (with the source for a source range, and "no source is claimed" for a
+development band). The same warnings are returned by the API after a save.
+
 A value outside the allowed range is refused, at every level including the global one; the administrator's range can
-only narrow the registry's own bounds. A value inside the range but outside the **recommended** values of its source
-is accepted with a warning that names the source. A user value that was valid when saved and falls outside a limit
-set later is ignored in the effective value and reported as ignored. A limit cannot be set so that the current global
-value falls outside it.
+only narrow the physical bounds. A value inside the range but outside the recommended range is accepted with a warning
+that names the source where there is one. A user value that was valid when saved and falls outside a limit set later is
+ignored in the effective value and reported as ignored. A limit cannot be set so that the current global value falls
+outside it.
 
 Cross-parameter relations are checked on every write (for example the cloud-share limit for "high" may not exceed the
 one for "medium"). Tables carry their own rules: ordered rows, a catch-all last row, contiguous ranges.
+
+### "Custom settings applied"
+
+Every answer that was computed with at least one value that differs from the files shows **Custom settings applied** on
+the answer card and in the "Why?" panel: the number of values that differ and how many of them are outside the recommended
+range. The "Why?" panel lists the values with their level and marks those outside the recommended range. An answer from the
+files alone shows no notice. The same facts are in `provenance.settings` (`n_overrides`, `outside_recommended`).
 
 ## Source and status
 
@@ -96,12 +167,14 @@ JSON export (`settings_used`):
 ```json
 {"version": "g1.u2.p0", "hash": "<sha256 of the overrides>", "layers": {"global": 1, "user": 2, "parcel": 0},
  "n_overrides": 1, "snapshot": {"rules.irrigation.max_single_net_mm": {"value": 40, "layer": "user"}},
- "ignored": [], "defaults": "config files (hashes in config_hashes)"}
+ "ignored": [], "outside_recommended": [], "defaults": "config files (hashes in config_hashes)"}
 ```
 
 The files' hashes plus this block reconstruct every value the answer used. With no overrides the block says so
-(`n_overrides: 0`) and the decision is byte-identical to the one computed from the files; this is tested on every
-development scenario and every variant.
+(`n_overrides: 0`) and the decision is byte-identical to the one computed from the files; this is tested against stored
+digests of every development scenario and every variant (`backend/tests/golden_dev/`; ids and timestamps removed; the
+file is rewritten only by `python tests/golden_dev/update.py`, run on purpose when a decision is meant to change). Two
+requests that run at the same moment with different settings each see only their own (tested).
 
 Settings that act when a profile is built (the base temperature of the growing-degree-day sum) apply when the parcel
 profile is refreshed; the decision parameters apply to the next answer.
@@ -126,13 +199,13 @@ Origin check in the local mode) and are rate limited per user.
 
 | Request | Purpose |
 |---|---|
-| `GET /api/settings[?parcel_id=]` | the registry with defaults, bounds, recommended values, source, status, the layers and the effective value of every parameter, the capabilities of the caller |
+| `GET /api/settings[?parcel_id=]` | the registry with defaults, physical bounds (`hard`), the bounds that apply now (`bounds`), the default limit (`default_limit`), the recommended range (`recommended`) and where it comes from (`range_basis`), source, status, the layers and the effective value of every parameter, the capabilities of the caller |
 | `GET /api/settings/protocol` | the locked protocol files, read only, with the reason |
 | `PUT /api/settings/user`, `/global`, `/parcels/{id}` | set (`{"values": {key: value}, "reason": "", "base_version": n}`); a `null` value removes the override |
 | `POST /api/settings/user/reset`, `/global/reset`, `/parcels/{id}/reset` | remove overrides (`{"keys": [...]}` or `{"all": true}`) |
 | `GET /api/settings/versions?scope=&parcel_id=` | versions of a level |
 | `POST /api/settings/restore` | `{"scope", "parcel_id", "version": n \| "default", "keys": [...]}` |
-| `GET /api/settings/audit?scope=&parcel_id=&param=&who=&since=&until=&action=&limit=&offset=` | the audit log |
+| `GET /api/settings/audit?scope=&parcel_id=&param=&who=&since=&until=&action=&limit=&offset=` | the audit log (administrator: also `scope=admin_role`, the operator's grants and revocations) |
 | `GET/PUT /api/settings/limits` | administrator: user-editable switch and ranges |
 
 A refused write answers 400 with `{"detail": "Some values were refused.", "errors": [{"key", "code", "params"}]}`:
@@ -169,7 +242,9 @@ sowing) cannot be fixed by a setting either; they need code changes.
    (`bool`, `int`, `float`, `str`, `enum`, `pair`, `list`, `map`, `table`, `groups`), group, label in English and
    Serbian, unit, bounds, columns for a table, the source key and status, a note, and whether users may change it by
    default. Put a specific declaration before a wildcard one. A recommended range is given only where the source gives
-   a range.
+   a range; then give the declaration `recommended` (and, if the default limit should not be the source range widened by a
+   quarter, `limit`), in the shape of the value (a pair for a number, a dictionary per key or column). Without them the
+   registry derives a development band around the file default.
 3. Add the source to `SOURCES` if it is new. Do not claim a source that was not opened; use status `development` or
    `no source` and say so.
 4. Run `pytest backend/tests/test_web_settings.py`. The coverage test names any leaf without an entry; the

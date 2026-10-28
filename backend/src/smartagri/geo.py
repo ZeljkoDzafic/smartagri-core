@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 EARTH_RADIUS_M = 6371008.8          # mean radius; area error against the ellipsoid stays below about 0.5 %
 MIN_AREA_HA, MAX_AREA_HA = 0.05, 200.0
+MAX_VERTICES = 500                   # ring positions, the closing one included (the check for crossings is quadratic)
 SMALL_PARCEL_HA = 0.3
 
 
@@ -19,6 +20,8 @@ def _ring(geometry: Dict[str, Any]) -> List[Tuple[float, float]]:
     coords = geometry.get("coordinates") or []
     if len(coords) != 1:
         raise GeometryError("Poligon sa rupama nije podržan; ucrtajte jednu zatvorenu liniju.")
+    if isinstance(coords[0], list) and len(coords[0]) > MAX_VERTICES:
+        raise GeometryError("Poligon ima previše temena (najviše %d)." % MAX_VERTICES)
     try:
         ring = [(float(p[0]), float(p[1])) for p in coords[0]]
     except (TypeError, ValueError, IndexError):

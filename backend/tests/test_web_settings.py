@@ -66,6 +66,30 @@ def _accounts_app(store, monkeypatch, admins="admin@example.org"):
     return create_app(svc, auth.Accounts(store)), svc
 
 
+class Outbox:
+    """A mailer that keeps the messages (SMTP is on for the test that uses it)."""
+
+    def __init__(self):
+        self.sent = []
+
+    def send(self, to, subject, text):
+        self.sent.append({"to": to, "subject": subject, "text": text})
+
+    def token(self, kind):
+        text = self.sent[-1]["text"]
+        start = text.index("/#/%s/" % kind) + len("/#/%s/" % kind)
+        return text[start:].split()[0]
+
+
+def _admin(app, store, email="admin@example.org"):
+    """A signed-in administrator, promoted the way an operator does it on the server (SMTP is off in these tests)."""
+    auth.Accounts(store, mailer=False).make_admin(email, PW)
+    c = _browser(app)
+    r = _send(c, "POST", "/api/auth/signin", {"email": email, "password": PW})
+    assert r.status_code == 200, r.text
+    return c
+
+
 def _browser(app):
     c = TestClient(app, base_url="http://testserver")
     c.get("/api/auth/me")
@@ -235,11 +259,14 @@ def test_an_override_reaches_quality_and_requirements(variants):
 def test_values_are_validated_server_side_against_the_registry(local):
     client, _ = local
     put = lambda values: client.put("/api/settings/user", json={"values": values})           # noqa: E731
-    assert put({CAP: 9999}).json()["errors"][0] == {"key": CAP, "code": "range", "params": {"min": 1, "max": 300}}
+    assert put({CAP: 9999}).json()["errors"][0] == {"key": CAP, "code": "range", "params": {"min": 1.2, "max": 83.8}}
     assert put({CAP: "30"}).json()["errors"][0]["code"] == "type"
     assert put({CAP: True}).json()["errors"][0]["code"] == "type"
     nan = client.put("/api/settings/user", content='{"values": {"%s": NaN}}' % CAP, headers={"Content-Type": "application/json"})
-    assert nan.status_code == 400 and nan.json()["errors"][0]["code"] == "type"
+    assert nan.status_code == 400 and "not valid JSON" in nan.json()["detail"]                 # refused before parsing (guards.py)
+    with pytest.raises(reg.Invalid) as refused:                                                # and by the registry itself
+        reg.validate(reg.entry_map()[CAP], float("nan"), None)
+    assert refused.value.code == "type"
     assert put({"rules.nothing.here": 1}).json()["errors"][0]["code"] == "unknown_key"
     assert put({"parcel_features.schema_version": 2}).json()["errors"][0]["code"] == "not_editable"
     assert put({"asking.inputs.ndvi_latest.user_obtainable": True}).json()["errors"][0]["code"] == "not_editable"
@@ -252,7 +279,8 @@ def test_values_are_validated_server_side_against_the_registry(local):
                ).json()["errors"][0]["code"] == "contiguous"
     assert put({"rules.optional_inputs.legumes": ["ok", "no spaces allowed"]}).json()["errors"][0]["code"] == "type"
     g = lambda values: client.put("/api/settings/global", json={"values": values, "reason": "t"})         # noqa: E731
-    assert g({"parcel_features.ndvi_quality.max_masked_share_for_high": 0.9}).json()["errors"][0]["code"] == "relation_masked"
+    assert g({"parcel_features.ndvi_quality.max_masked_share_for_medium": 0.25, "parcel_features.ndvi_quality.max_masked_share_for_high": 0.4}
+             ).json()["errors"][0]["code"] == "relation_masked"
     assert g({"asking.inputs.phenophase.question_sr": "x" * 401}).json()["errors"][0]["code"] == "type"
     r = put({CAP: 9999, "rules.nothing.here": 1})
     assert {e["key"] for e in r.json()["errors"]} == {CAP, "rules.nothing.here"} and r.json()["detail"] == "Some values were refused."
@@ -264,15 +292,127 @@ def test_values_are_validated_server_side_against_the_registry(local):
 
 def test_a_warning_inside_the_range_but_outside_the_recommended_values_cites_the_source(local):
     client, _ = local
-    r = client.put("/api/settings/user", json={"values": {CAP: 100}}).json()
+    r = client.put("/api/settings/user", json={"values": {CAP: 80}}).json()
     w = r["warnings"][0]
     assert w["code"] == "outside_recommended" and w["range"] == [15, 70] and "FAO" in w["source"]["text"] and w["source"]["url"]
-    assert _entry(client, CAP)["warnings"][0]["value"] == 100
+    assert w["basis"] == "source" and _entry(client, CAP)["warnings"][0]["value"] == 80
     r = client.put("/api/settings/user", json={"values": {CAP: 40}}).json()
     assert r["warnings"] == [] and _entry(client, CAP)["warnings"] == []
     sand = dict(config.load_file("rules")["soil"]["awc_by_texture_mm_m"], sand=120)
     r = client.put("/api/settings/user", json={"values": {"rules.soil.awc_by_texture_mm_m": sand}}).json()
     assert r["warnings"][0]["where"] == "sand" and r["warnings"][0]["range"] == [50, 110]
+
+
+# ------------------------------------------------------------------------------------------------ default limits (S2)
+def _numeric_entries():
+    return [e for e in reg.entries() if e.editable and reg.ranges(e)]
+
+
+def test_every_numeric_parameter_has_a_default_limit_inside_the_physical_bounds_and_a_recommended_range():
+    numeric = _numeric_entries()
+    kinds = {e.spec.kind for e in numeric}
+    assert kinds == {"int", "float", "pair", "map", "table"} and len(numeric) >= 70
+    editable_numeric_kinds = {"int", "float", "pair", "map"}
+    for e in reg.entries():                                           # nothing numeric is left without a range
+        if e.editable and e.spec.kind in editable_numeric_kinds:
+            assert reg.ranges(e), e.key
+    for e in numeric:
+        hb = reg.hard_bounds(e)
+        for slot, r in reg.ranges(e).items():
+            (rlo, rhi), (llo, lhi) = r["recommended"], r["limit"]
+            assert llo <= rlo <= rhi <= lhi, (e.key, slot, r)         # recommended inside the default limit
+            assert r["basis"] in ("source", "development")
+            if e.spec.kind in ("int", "float", "pair", "map"):
+                assert hb["min"] is None or llo >= hb["min"], (e.key, slot, r)
+                assert hb["max"] is None or lhi <= hb["max"], (e.key, slot, r)
+            else:
+                col = hb["columns"].get(slot, {})
+                assert col.get("min") is None or llo >= col["min"], (e.key, slot, r)
+                assert col.get("max") is None or lhi <= col["max"], (e.key, slot, r)
+
+
+def test_the_file_defaults_are_inside_their_own_limits_and_raise_no_warning():
+    """Resetting to the file is always allowed, and a default never looks like a deviation."""
+    for e in _numeric_entries():
+        assert reg.validate(e, e.default, None) == e.default or e.spec.kind in ("table", "groups"), e.key
+        assert reg.warnings(e, e.default) == [], e.key
+
+
+def test_only_the_ranges_of_cited_sources_carry_a_citation():
+    cited = {}
+    for e in _numeric_entries():
+        for slot, r in reg.ranges(e).items():
+            if r["basis"] == "source":
+                cited.setdefault(e.key, []).append(slot)
+                assert e.spec.source and e.spec.source in reg.SOURCES, e.key       # a range of a source names that source
+    assert sorted(cited) == ["kc_maize.kc", "rules.irrigation.max_single_net_mm", "rules.optional_inputs.n_content",
+                             "rules.soil.awc_by_texture_mm_m"]
+    assert sorted(cited["rules.soil.awc_by_texture_mm_m"]) == ["clay", "clay_loam", "loam", "sand", "sandy_loam"]
+    assert sorted(cited["rules.optional_inputs.n_content"]) == ["an", "dap", "map", "urea"]
+    # every other numeric range is a development limit: no source is attached to a warning about it
+    wind = reg.entry_map()["rules.field_ops.spraying_max_wind_ms"]
+    w = reg.warnings(wind, 7.5)
+    assert w[0]["basis"] == "development" and w[0]["source"] is None and w[0]["range"] == [3.5, 6.5]
+
+
+def test_the_audit_examples_are_refused_or_warned_by_default(local):
+    client, _ = local
+    put = lambda values: client.put("/api/settings/user", json={"values": values})           # noqa: E731
+    wind, rain, late, vwc = ("rules.field_ops.spraying_max_wind_ms", "rules.irrigation.rain_wait_mm_3d",
+                             "rules.irrigation.late_season_bbch", "rules.irrigation.vwc_bands")
+    assert put({wind: 40}).json()["errors"][0] == {"key": wind, "code": "range", "params": {"min": 2.5, "max": 10.0}}
+    assert put({rain: 0}).json()["errors"][0]["code"] == "range"                              # was: "always wait for rain"
+    assert put({vwc: [0.01, 0.02]}).json()["errors"][0]["code"] == "range"
+    ok = put({wind: 8, late: 95})                                                              # inside the limit, outside the recommended band
+    assert ok.status_code == 200 and {(w["key"], w["basis"]) for w in ok.json()["warnings"]} == {(wind, "development"), (late, "development")}
+    e = _entry(client, wind)
+    assert e["recommended"] == [3.5, 6.5] and e["default_limit"] == [2.5, 10.0] and e["range_basis"] == "development"
+    assert e["bounds"]["min"] == 2.5 and e["bounds"]["max"] == 10.0 and e["hard"]["max"] == 40
+    assert [w["basis"] for w in e["warnings"]] == ["development"]
+
+
+def test_an_administrator_widens_or_narrows_the_default_limit_within_the_physical_bounds(local):
+    client, _ = local
+    wind = "rules.field_ops.spraying_max_wind_ms"
+    assert client.put("/api/settings/user", json={"values": {wind: 20}}).status_code == 400
+    r = client.put("/api/settings/limits", json={"limits": {wind: {"max": 20}}, "reason": "windy site"})
+    assert r.status_code == 200
+    assert client.put("/api/settings/user", json={"values": {wind: 20}}).status_code == 200
+    assert client.put("/api/settings/limits", json={"limits": {wind: {"max": 41}}, "reason": "x"}).status_code == 400   # beyond physical
+    assert client.put("/api/settings/user", json={"values": {wind: 25}}).status_code == 400
+    assert client.put("/api/settings/limits", json={"limits": {wind: None}, "reason": "back"}).status_code == 200      # default again
+    e = _entry(client, wind)
+    assert e["bounds"]["max"] == 10.0 and e["effective"] == 5.0 and e["ignored"][0]["reason"] == "range"   # the user's 20 is ignored again
+
+
+def test_pairs_maps_and_table_columns_have_a_range_per_slot(local):
+    client, _ = local
+    awc = _entry(client, "rules.soil.awc_by_texture_mm_m")
+    assert awc["recommended"]["sand"] == [50, 110] and awc["default_limit"]["sand"] == [35.0, 125.0]
+    assert awc["bounds"]["keys"]["clay"] == {"min": 100.0, "max": 220.0}
+    sand = dict(config.load_file("rules")["soil"]["awc_by_texture_mm_m"], sand=300)
+    assert client.put("/api/settings/user", json={"values": {"rules.soil.awc_by_texture_mm_m": sand}}).json()["errors"][0]["code"] == "range"
+    topdress = _entry(client, "rules.fertilization.topdress_bbch")
+    assert topdress["recommended"] == [[9, 19], [13, 23]] and topdress["range_basis"] == ["development", "development"]
+    kc = _entry(client, "kc_maize.kc")
+    assert kc["recommended"]["kc"] == [0.3, 1.2] and kc["default_limit"]["kc"] == [0.075, 1.5]
+    assert kc["range_basis"]["kc"] == "source" and kc["range_basis"]["bbch_max"] == "development"
+    rows = [{"bbch_min": 0, "bbch_max": 20, "kc": 0.3}, {"bbch_min": 21, "bbch_max": 99, "kc": 1.4}]
+    r = client.put("/api/settings/user", json={"values": {"kc_maize.kc": rows}})
+    assert r.status_code == 200 and [(w["where"], w["basis"]) for w in r.json()["warnings"] if w["where"].endswith(".kc")] == [("2.kc", "source")]
+    rows[1]["kc"] = 1.6
+    assert client.put("/api/settings/user", json={"values": {"kc_maize.kc": rows}}).json()["errors"][0]["code"] == "range"
+
+
+def test_the_settings_of_an_answer_name_the_values_outside_the_recommended_range(local):
+    client, _ = local
+    p = _parcel(client)
+    wind = "rules.field_ops.spraying_max_wind_ms"
+    assert client.put("/api/settings/user", json={"values": {wind: 8}}).status_code == 200
+    run = client.post("/api/parcels/%s/chat" % p["id"], json={"text": "Can I spray tomorrow?", "advice_type": "field_ops_window"}).json()
+    s = run["provenance"]["settings"]
+    assert s["n_overrides"] == 1 and s["outside_recommended"] == [{"key": wind, "where": "", "value": 8, "range": [3.5, 6.5], "basis": "development"}]
+    assert empty_summary()["outside_recommended"] == []
 
 
 # ------------------------------------------------------------------------------------------------ layers and limits
@@ -374,7 +514,7 @@ def test_versions_and_restore_whole_set_one_parameter_and_file_default(local):
     client, _ = local
     awc = "rules.soil.efficiency_by_system"
     client.put("/api/settings/user", json={"values": {CAP: 40}})                      # v1
-    client.put("/api/settings/user", json={"values": {CAP: 30, "rules.scouting.contrast_priority": 0.5}})    # v2
+    client.put("/api/settings/user", json={"values": {CAP: 30, "rules.scouting.contrast_priority": 0.35}})    # v2
     client.put("/api/settings/user", json={"values": {CAP: 20, awc: {"sprinkler": 0.7, "drip": 0.9, "furrow": 0.6}}})   # v3
     versions = client.get("/api/settings/versions?scope=user").json()["versions"]
     assert [v["n"] for v in versions] == [3, 2, 1] and versions[0]["values"][CAP] == 20 and versions[2]["values"] == {CAP: 40}
@@ -439,7 +579,7 @@ def test_users_cannot_read_or_write_each_others_settings_or_parcels(env, monkeyp
 
 def test_anonymous_users_read_the_global_values_and_cannot_write(env, monkeypatch):
     app, _ = _accounts_app(env, monkeypatch)
-    admin = _signup(app, "admin@example.org")
+    admin = _admin(app, env)
     assert _send(admin, "PUT", "/api/settings/global", {"values": {CAP: 44}, "reason": "region"}).status_code == 200
     anon = _browser(app)
     view = anon.get("/api/settings").json()
@@ -460,7 +600,7 @@ def test_anonymous_users_read_the_global_values_and_cannot_write(env, monkeypatc
 
 def test_admin_endpoints_are_for_administrators_only(env, monkeypatch):
     app, _ = _accounts_app(env, monkeypatch, admins="Admin@Example.org, other@example.org")
-    admin, user = _signup(app, "admin@example.org"), _signup(app, "user@example.org")
+    admin, user = _admin(app, env), _signup(app, "user@example.org")
     assert admin.get("/api/settings").json()["capabilities"]["is_admin"] is True
     assert user.get("/api/settings").json()["capabilities"]["is_admin"] is False
     for method, path, body in (("PUT", "/api/settings/global", {"values": {CAP: 30}, "reason": "x"}),
@@ -478,23 +618,64 @@ def test_admin_endpoints_are_for_administrators_only(env, monkeypatch):
     # an administrator sees every layer in the log, with who did it; a user cannot
     _send(user, "PUT", "/api/settings/user", {"values": {CAP: 33}})
     log = admin.get("/api/settings/audit").json()
-    assert {i["scope"] for i in log["items"]} == {"global", "limits", "user"}
-    assert {i["actor"] for i in log["items"] if i["scope"] != "user"} == {"you"}
+    assert {i["scope"] for i in log["items"]} == {"global", "limits", "user", "admin_role"}
+    role = [i for i in log["items"] if i["scope"] == "admin_role"]
+    assert len(role) == 1 and role[0]["action"] == "grant" and role[0]["actor"] == "operator (server command)"
+    assert {i["actor"] for i in log["items"] if i["scope"] in ("global", "limits")} == {"you"}
     assert [i["actor"] for i in log["items"] if i["scope"] == "user"] == ["user@example.org"]
     assert user.get("/api/settings/audit?scope=user").json()["items"][0]["actor"] == "you"
 
 
 def test_the_admin_list_is_an_allow_list_of_verified_accounts(env, monkeypatch):
-    app, _ = _accounts_app(env, monkeypatch, admins="")
-    c = _signup(app, "admin@example.org")
-    assert c.get("/api/settings").json()["capabilities"]["is_admin"] is False             # no SMARTAGRI_ADMINS: nobody
-    monkeypatch.setenv("SMARTAGRI_ADMINS", "someone@example.org")
-    assert c.get("/api/settings").json()["capabilities"]["is_admin"] is False
+    """Administrator = listed in SMARTAGRI_ADMINS AND the address was confirmed through its mailbox (or the operator
+    promoted the account on the server). Every other combination is a plain user."""
+    monkeypatch.setenv("SMARTAGRI_PUBLIC_URL", "https://app.example.org")
+    monkeypatch.setenv("SMARTAGRI_ACCOUNTS", "optional")
+    outbox = Outbox()
+    app = create_app(ResearchService(env), auth.Accounts(env, mailer=outbox))
+
+    def browser():
+        c = TestClient(app, base_url="https://app.example.org")
+        c.get("/api/auth/me")
+        return c
+
+    def is_admin(c):
+        return c.get("/api/settings").json()["capabilities"]["is_admin"]
+
+    def confirm_and_sign_in(email, password, kind):
+        _send(browser(), "POST", "/api/auth/signup", {"email": email, "password": password})
+        c = browser()
+        if kind == "verify":
+            assert _send(c, "POST", "/api/auth/verify", {"token": outbox.token("verify")}).status_code == 200
+        else:
+            assert _send(c, "POST", "/api/auth/password/reset", {"token": outbox.token("reset"), "password": PW}).status_code == 200
+        return _send(c, "POST", "/api/auth/signin", {"email": email, "password": PW}).status_code, c
+
+    # 1. nobody is listed: a confirmed account is not an administrator
+    monkeypatch.delenv("SMARTAGRI_ADMINS", raising=False)
+    status, plain = confirm_and_sign_in("plain@example.org", PW, "verify")
+    assert status == 200 and is_admin(plain) is False
+    # 2. someone else is listed: still not
+    monkeypatch.setenv("SMARTAGRI_ADMINS", "Boss@Example.org")
+    assert is_admin(plain) is False
+    # 3. listed, but nobody confirmed the address: the sign-up cannot even sign in, so there is no administrator session
+    _send(browser(), "POST", "/api/auth/signup", {"email": "boss@example.org", "password": "attacker-passw0rd-1"})
+    assert _send(browser(), "POST", "/api/auth/signin", {"email": "boss@example.org", "password": "attacker-passw0rd-1"}).status_code == 403
+    assert auth.Accounts(env, mailer=outbox).is_admin(env.find("core_users", email="boss@example.org")[0]) is False
+    # 4. listed and confirmed through the mailbox (any case of the address): administrator
+    status, boss = confirm_and_sign_in("boss@example.org", PW, "reset")
+    assert status == 200 and is_admin(boss) is True and is_admin(plain) is False
+    # 5. the list is read on every request: removing the address ends the role at once
+    monkeypatch.setenv("SMARTAGRI_ADMINS", "someone-else@example.org")
+    assert is_admin(boss) is False
+    # 6. the operator's promotion does not depend on the list
+    auth.Accounts(env, mailer=False).make_admin("plain@example.org")
+    assert is_admin(plain) is True
 
 
 def test_csrf_origin_and_rate_limit(env, monkeypatch):
     app, _ = _accounts_app(env, monkeypatch)
-    c = _signup(app, "admin@example.org")
+    c = _signup(app, "user@example.org")
     r = _send(c, "PUT", "/api/settings/user", {"values": {CAP: 30}}, csrf=False)
     assert r.status_code == 403 and "security check" in r.json()["detail"]
     r = c.put("/api/settings/user", json={"values": {CAP: 30}}, headers={"X-CSRF-Token": c.cookies.get("sa_csrf"), "Origin": "https://evil.example"})
@@ -599,19 +780,71 @@ def test_the_rating_screen_and_its_endpoints_are_unchanged():
     assert "SmartSettings" not in rating and "/settings" not in rating
 
 
-def test_the_dev_set_decides_identically_with_an_empty_overlay(variants):
-    """The 15 development scenarios (never the test set): every variant gives the same decision with and without an overlay."""
-    dev = Path(__file__).resolve().parents[1] / "eval" / "scenarios" / "dev"
-    from smartagri.core.types import Context
-    passages = [Passage.from_dict(p) for p in yaml.safe_load((dev / "_passages.yaml").read_text(encoding="utf-8"))]
-    files = sorted(p for p in dev.glob("*.yaml") if not p.name.startswith("_"))
-    assert files
-    for path in files:
-        ctx = Context.from_dict(yaml.safe_load(path.read_text(encoding="utf-8"))["context"])
-        for name in ("V0", "V1", "V2", "V3", "V4", "V5"):
-            plain = json.dumps(decide(ctx, passages, variants[name]).to_dict(), sort_keys=True, default=str)
-            with config.use_overlay(config.Overlay({}, empty_summary())):
-                assert json.dumps(decide(ctx, passages, variants[name]).to_dict(), sort_keys=True, default=str) == plain, (path.stem, name)
+def test_the_dev_set_decides_as_the_golden_digests_with_and_without_an_empty_overlay():
+    """The 15 development scenarios (never the test set), every variant: the decision hashes to the stored digest, with the
+    plain code path and inside an empty overlay. The digests (ids and timestamps removed) are in tests/golden_dev and are
+    rewritten only by `python tests/golden_dev/update.py`, so a changed decision cannot pass unnoticed and a change of
+    the overlay code cannot pass by comparing the code with itself."""
+    from golden_dev import digest
+    golden = digest.load()
+    assert golden["scenarios"] == 15 and len(golden["items"]) == 15 * 6 and golden["overall"] == digest.overall(golden["items"])
+    for overlay in (False, True):
+        now = digest.compute(overlay=overlay)
+        assert sorted(now) == sorted(golden["items"]), "scenarios or variants changed: run tests/golden_dev/update.py on purpose"
+        moved = sorted(k for k in now if now[k] != golden["items"][k])
+        assert not moved, "decisions changed (overlay=%s): %s; if intended, run python tests/golden_dev/update.py" % (overlay, moved[:10])
+
+
+def test_the_golden_digest_notices_a_changed_decision(monkeypatch):
+    """The comparison is not vacuous: a changed decision parameter moves the digests that depend on it."""
+    from golden_dev import digest
+    golden = digest.load()["items"]
+    with config.use_overlay(config.Overlay({"rules.irrigation.rain_wait_mm_3d": 0.0}, empty_summary())):
+        changed = digest.compute()
+    assert {k for k in changed if changed[k] != golden[k]}, "no decision depends on the rain-wait limit?"
+    assert {k.split("/")[0] for k in changed if changed[k] != golden[k]} <= {k.split("/")[0] for k in golden}
+
+
+def test_two_concurrent_requests_with_different_overlays_do_not_see_each_other(env, monkeypatch):
+    """Two users answer at the same moment with different settings; each answer is computed with its own overlay only.
+    The decision is held for a moment so that the two requests are inside it together."""
+    import time
+    from smartagri.research_api import service as service_module
+    app, _ = _accounts_app(env, monkeypatch, admins="")
+    a, b = _signup(app, "a@example.org"), _signup(app, "b@example.org")
+    pa, pb = _parcel(a)["id"], _parcel(b)["id"]
+    assert _send(a, "PUT", "/api/settings/user", {"values": {CAP: 20}}).status_code == 200
+    assert _send(b, "PUT", "/api/settings/user", {"values": {CAP: 70}}).status_code == 200
+    real = service_module.advise
+    seen, windows = [], []
+    barrier = threading.Barrier(2)
+
+    def slow_advise(*args, **kwargs):
+        start = time.time()
+        overlay = config.active_overlay()
+        before = dict(overlay.values) if overlay else {}
+        barrier.wait(timeout=10)                                   # both requests are inside the decision here
+        time.sleep(0.05)
+        after = dict(config.active_overlay().values) if config.active_overlay() else {}
+        seen.append((before, after, config.load("rules")["irrigation"]["max_single_net_mm"]))
+        windows.append((start, time.time()))
+        return real(*args, **kwargs)
+    monkeypatch.setattr(service_module, "advise", slow_advise)
+    results = {}
+
+    def ask(name, client, pid):
+        results[name] = _send(client, "POST", "/api/parcels/%s/chat" % pid,
+                              {"text": "How much water per irrigation?", "advice_type": "irrigation_amount"}).json()
+    threads = [threading.Thread(target=ask, args=("a", a, pa)), threading.Thread(target=ask, args=("b", b, pb))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert len(seen) == 2 and max(w[0] for w in windows) < min(w[1] for w in windows)       # they overlapped in time
+    assert sorted(x[2] for x in seen) == [20, 70] and all(x[0] == x[1] for x in seen)        # each read only its own value
+    assert results["a"]["provenance"]["settings"]["snapshot"][CAP] == {"value": 20, "layer": "user"}
+    assert results["b"]["provenance"]["settings"]["snapshot"][CAP] == {"value": 70, "layer": "user"}
+    assert config.active_overlay() is None and config.load("rules")["irrigation"]["max_single_net_mm"] == 50   # nothing global moved
 
 
 # ------------------------------------------------------------------------------------------------ storage

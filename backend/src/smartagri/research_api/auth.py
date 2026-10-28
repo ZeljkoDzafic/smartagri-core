@@ -59,6 +59,10 @@ PURGE_EVERY_S = 600                     # lazy purge of stale anonymous work at 
 EXEMPT_PATHS = ("/api/eval/",)
 UNSAFE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
+# The web-settings administrator role (stored in `instance_roles`, one document per user, set by the operator CLI only).
+ADMIN_ROLE = "settings_admin"
+OPERATOR = "operator-cli"
+
 MIN_PASSWORD = 10
 MAX_PASSWORD = 256
 COMMON_PASSWORDS = frozenset([
@@ -135,6 +139,12 @@ def _sha(text: str) -> str:
 
 def normalize_email(value: Any) -> str:
     return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _admin_addresses() -> frozenset:
+    """The addresses listed in SMARTAGRI_ADMINS (lower case). Listing an address grants nothing by itself."""
+    from ..web_settings.service import admin_emails
+    return admin_emails()
 
 
 # ---------------------------------------------------------------------------------------------------- passwords
@@ -328,8 +338,19 @@ class Accounts:
     def _mail(self, user: Dict[str, Any], purpose: str) -> None:
         if not self.email_enabled:
             return
-        self.store.delete("core_tokens", user_id=user["id"], purpose=purpose)   # only the newest link works
-        if purpose == "verify":
+        # An address listed as an administrator is not confirmed by a "confirm" link: whoever signed up first chose the
+        # password, and the mailbox owner who clicks would confirm it. The owner gets a link that sets the password.
+        admin_link = purpose == "verify" and user["email"] in _admin_addresses()
+        for kind in (("verify", "reset") if admin_link else (purpose,)):
+            self.store.delete("core_tokens", user_id=user["id"], purpose=kind)   # only the newest link works
+        if admin_link:
+            token = self._new_token(user, "reset", RESET_HOURS)
+            subject = "Set the password of your SmartAgri administrator account"
+            text = ("Someone asked for a SmartAgri account with this address, which is listed as an administrator. "
+                    "If it was you, choose your password by opening this link:\n\n%s/#/reset/%s\n\n"
+                    "The link is valid for %d hour. Opening it replaces any password that was set at sign-up. If it "
+                    "was not you, ignore this message." % (public_url(), token, RESET_HOURS))
+        elif purpose == "verify":
             token = self._new_token(user, "verify", VERIFY_HOURS)
             subject = "Confirm your SmartAgri account"
             text = ("Confirm the email address of your SmartAgri account by opening this link:\n\n%s/#/verify/%s\n\n"
@@ -358,6 +379,11 @@ class Accounts:
         if problem:
             raise AuthError(400, problem)
         existing = self._user_by_email(email)
+        if existing is None and not self.email_enabled and email in _admin_addresses():
+            # An address that the operator listed as an administrator cannot be proven by anyone here (no email), so it
+            # is not open to sign-up: the operator creates that account on the server (`--make-admin`). The answer is
+            # the one for a taken address.
+            raise AuthError(409, "An account with this email already exists. Sign in instead.")
         if existing is not None:
             if self.email_enabled:
                 return {"email": email, "verified": False}, None
@@ -399,7 +425,7 @@ class Accounts:
     def verify(self, token: Any, ip: str) -> Dict[str, Any]:
         self.limit("verify", ip)
         user = self._use_token(token, "verify")
-        if user is None:
+        if user is None or user["email"] in _admin_addresses():     # an administrator address is confirmed by a reset only
             raise AuthError(400, INVALID_LINK)
         user.update(verified=True, verified_at=now_iso())
         self.store.put("core_users", user)
@@ -451,6 +477,96 @@ class Accounts:
         self.store.delete("core_sessions", user_id=user["id"])
         self.store.delete("core_users", id=user["id"])
         return len(ids)
+
+    # ------------------------------------------------------------ administrators of the web settings
+    def _role_doc(self, user_id: str) -> Dict[str, Any]:
+        return self.store.get("instance_roles", user_id) or {"id": user_id, "created_at": now_iso(), "user_id": user_id,
+                                                              "roles": [], "history": []}
+
+    def has_admin_role(self, user_id: Optional[str]) -> bool:
+        return bool(user_id) and ADMIN_ROLE in (self.store.get("instance_roles", user_id) or {}).get("roles", [])
+
+    def is_admin(self, user: Optional[Dict[str, Any]]) -> bool:
+        """The administrator role is held by (a) an account the operator promoted on the server (`--make-admin`), or
+        (b) an account whose address is listed in SMARTAGRI_ADMINS AND was confirmed through the link sent to that
+        mailbox (an account that nobody confirmed, which is every account when SMTP is off, never qualifies)."""
+        if not user:
+            return False
+        if self.has_admin_role(user["id"]):
+            return True
+        return bool(user.get("verified")) and normalize_email(user.get("email")) in _admin_addresses()
+
+    def _audit_role(self, user: Dict[str, Any], action: str, detail: str) -> None:
+        now = now_iso()
+        self.store.put("settings_audit", {"id": new_id(), "created_at": now, "at": now, "scope": "admin_role",
+                                          "scope_id": user["id"], "actor": OPERATOR, "param": "admin_role",
+                                          "old": action == "revoke", "new": action == "grant", "action": action,
+                                          "version": 0, "reason": detail})
+
+    def admin_needs_password(self, email_in: str, reset_password: bool = False) -> bool:
+        """True when make_admin creates or takes over the account (a password must be given)."""
+        user = self._user_by_email(normalize_email(email_in))
+        return reset_password or user is None or not user.get("verified")
+
+    def make_admin(self, email_in: str, password: Optional[str] = None, reset_password: bool = False) -> Dict[str, Any]:
+        """Operator task (runs on the server, never over HTTP): give the account the administrator role.
+        - no such account: it is created (a password is needed) and counts as confirmed by the operator;
+        - an account that was never confirmed (every account when SMTP is off, so possibly someone else's, signed up
+          with the owner's address first): the operator takes it over: a new password is required, the old one stops
+          working, every session and pending link of the account ends;
+        - an account confirmed through its mailbox: the role is added, nothing else changes (with `reset_password` the
+          operator also replaces the password, for an administrator who lost it on a server without email).
+        The change is written to the audit log (actor `operator-cli`)."""
+        email = normalize_email(email_in)
+        if len(email) > 254 or not EMAIL_RE.match(email):
+            raise AuthError(400, "Enter a valid email address.")
+        user = self._user_by_email(email)
+        outcome = "role added to an account confirmed through its mailbox"
+        if user is None or not user.get("verified") or reset_password:
+            problem = password_problem(password, email) if password is not None else "A password is required."
+            if problem:
+                raise AuthError(400, problem)
+            if user is None:
+                user = {"id": new_id(), "created_at": now_iso(), "email": email, "verified": True}
+                outcome = "account created by the operator"
+            else:
+                outcome = ("unconfirmed account taken over by the operator (password replaced, sessions ended)"
+                           if not user.get("verified") else "password replaced by the operator (sessions ended)")
+                self.store.delete("core_sessions", user_id=user["id"])
+                self.store.delete("core_tokens", user_id=user["id"])
+            user.update(password_hash=hash_password(password), verified=True, verified_at=now_iso(),
+                        verified_by="operator")
+            self.store.put("core_users", user)
+        doc = self._role_doc(user["id"])
+        if ADMIN_ROLE not in doc["roles"]:
+            before = list(doc["roles"])
+            doc["roles"] = sorted(set(before) | {ADMIN_ROLE})
+            doc["history"] = list(doc.get("history", [])) + [{"at": now_iso(), "by": OPERATOR, "from": before,
+                                                              "to": doc["roles"]}]
+            self.store.put("instance_roles", doc)
+            self._audit_role(user, "grant", outcome)
+        elif reset_password:
+            self._audit_role(user, "password_reset", outcome)
+        return {"email": email, "outcome": outcome, "user_id": user["id"]}
+
+    def revoke_admin(self, email_in: str) -> Dict[str, Any]:
+        """Operator task: remove the administrator role (and end the account's sessions). An address that is still
+        listed in SMARTAGRI_ADMINS and was confirmed through its mailbox stays an administrator until it is removed
+        from the list; the result says so."""
+        email = normalize_email(email_in)
+        user = self._user_by_email(email)
+        if user is None:
+            raise AuthError(404, "No account with this email.")
+        doc = self._role_doc(user["id"])
+        had = ADMIN_ROLE in doc["roles"]
+        if had:
+            doc["roles"] = [r for r in doc["roles"] if r != ADMIN_ROLE]
+            doc["history"] = list(doc.get("history", [])) + [{"at": now_iso(), "by": OPERATOR, "from": sorted(doc["roles"] + [ADMIN_ROLE]),
+                                                              "to": doc["roles"]}]
+            self.store.put("instance_roles", doc)
+            self._audit_role(user, "revoke", "role removed by the operator")
+        self.store.delete("core_sessions", user_id=user["id"])
+        return {"email": email, "had_role": had, "still_listed": bool(user.get("verified")) and email in _admin_addresses()}
 
     # ------------------------------------------------------------ ownership
     def own(self, parcel_id: str, owner: str) -> None:

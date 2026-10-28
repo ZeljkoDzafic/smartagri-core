@@ -578,6 +578,10 @@ MESSAGES: Dict[str, str] = {
     "Poligon seče sam sebe; ucrtajte granicu bez ukrštanja.": "The polygon intersects itself; draw a boundary without crossings.",
     "Površina parcele je %.2f ha; podržan je opseg od %.2f do %.0f ha.": "The parcel area is %s ha; the supported range is %s to %s ha.",
     "Koordinate poligona nisu ispravne.": "The polygon coordinates are not valid.",
+    "Poligon ima previše temena (najviše %d).": "The polygon has too many vertices (at most %d).",
+    "Polje %s nije ispravno.": "The field %s is not valid.",
+    "Neispravan datum u polju %s (očekuje se GGGG-MM-DD).": "Invalid date in the field %s (expected YYYY-MM-DD).",
+    "BBCH mora biti ceo broj od 0 do 99.": "BBCH must be a whole number from 0 to 99.",
     "Koordinate moraju biti geografska dužina i širina (WGS84).": "Coordinates must be longitude and latitude (WGS84).",
     # ---- api/service.py
     "Kapacitet sistema (mm/dan)": "System capacity (mm/day)",

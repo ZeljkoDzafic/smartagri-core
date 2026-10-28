@@ -26,6 +26,9 @@ from ..web_settings.service import empty_summary
 from . import views
 
 DEFAULT_VARIANT = "V5"
+MAX_NAME, MAX_NOTES, MAX_TEXT = 120, 2000, 2000      # characters of a parcel name, its notes, a chat question
+FIELD_INVALID = "Polje %s nije ispravno."
+FIELD_TOO_LONG = "Polje %s je predugačko (najviše %s znakova)."
 PROFILE_MAX_AGE_HOURS = 6
 
 
@@ -51,6 +54,31 @@ class BadRequest(Exception):
 
 class Unavailable(Exception):
     pass
+
+
+def text_field(body: Dict[str, Any], key: str, limit: int, default: str = "") -> str:
+    """A text value of a request body: absent or null is `default`, anything but a string is a 400 (never a 500)."""
+    value = body.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise BadRequest(FIELD_INVALID % key)
+    if len(value) > limit:
+        raise BadRequest(FIELD_TOO_LONG % (key, limit))
+    return value
+
+
+def date_field(body: Dict[str, Any], key: str, with_time: bool = False) -> Optional[datetime]:
+    """An ISO date (or date and time) of a request body, or None when absent."""
+    value = body.get(key)
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or len(value) > 40:
+        raise BadRequest(FIELD_INVALID % key)
+    try:
+        return datetime.fromisoformat(value) if with_time else datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise BadRequest("Neispravan datum u polju %s (očekuje se GGGG-MM-DD)." % key)
 
 
 class ResearchService:
@@ -96,27 +124,38 @@ class ResearchService:
         return parcel
 
     def create_parcel(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(body, dict):
+            raise BadRequest(FIELD_INVALID % "body")
         try:
             g = geo.validate(body.get("geometry"))
         except geo.GeometryError as exc:
             raise BadRequest(str(exc))
-        if not (body.get("name") or "").strip():
+        name = text_field(body, "name", MAX_NAME).strip()
+        if not name:
             raise BadRequest("Naziv parcele je obavezan.")
-        agronomic = {"crop": "maize", "irrigation_available": body.get("irrigation_available") or "unknown"}
+        notes = text_field(body, "notes", MAX_NOTES)
+        agronomic = {"crop": "maize", "irrigation_available": text_field(body, "irrigation_available", 40) or "unknown"}
         for key in ("sowing_date", "irrigation_system_type", "soil_texture"):
-            if body.get(key):
-                agronomic[key] = body[key]
-        pinned_day = datetime.fromisoformat(body["pinned_as_of"]).date().isoformat() if body.get("pinned_as_of") else None
+            if key == "sowing_date":
+                sowing = date_field(body, key)
+                if sowing is not None:
+                    agronomic[key] = sowing.date().isoformat()
+            elif body.get(key):
+                agronomic[key] = text_field(body, key, 40)
+        pinned = date_field(body, "pinned_as_of", with_time=True)
+        pinned_day = pinned.date().isoformat() if pinned is not None else None
         if body.get("bbch") is not None:
+            bbch = body["bbch"]
+            if isinstance(bbch, bool) or not isinstance(bbch, int) or not 0 <= bbch <= 99:
+                raise BadRequest("BBCH mora biti ceo broj od 0 do 99.")
             # a parcel with a decision date describes that moment: what the user reports is dated on it
-            agronomic.update(bbch=int(body["bbch"]), bbch_origin="user_reported",
-                             bbch_reported_on=pinned_day or self._today())
+            agronomic.update(bbch=bbch, bbch_origin="user_reported", bbch_reported_on=pinned_day or self._today())
         lat, lon = g["centroid"]["lat"], g["centroid"]["lon"]
-        parcel = {"id": new_id(), "created_at": now_iso(), "name": body["name"].strip(), "geometry": body["geometry"],
+        parcel = {"id": new_id(), "created_at": now_iso(), "name": name, "geometry": body["geometry"],
                   "area_ha": g["area_ha"], "centroid": g["centroid"], "warnings": g["warnings"],
-                  "notes": body.get("notes") or "", "agronomic": agronomic, "region_class": geo.region_class(lat, lon)}
-        if body.get("pinned_as_of"):
-            parcel["pinned_as_of"] = datetime.fromisoformat(body["pinned_as_of"]).isoformat()
+                  "notes": notes, "agronomic": agronomic, "region_class": geo.region_class(lat, lon)}
+        if pinned is not None:
+            parcel["pinned_as_of"] = pinned.isoformat()
         return self.store.save_parcel(parcel)
 
     def list_parcels(self) -> List[Dict[str, Any]]:
@@ -201,13 +240,16 @@ class ResearchService:
     def chat(self, parcel_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         """One turn: a new question (advice type given or classified) or a reply to the pending follow-up question."""
         parcel = self._parcel(parcel_id)
-        text = (body.get("text") or "").strip()
+        text = text_field(body, "text", MAX_TEXT).strip()
         reply = body.get("reply")
-        variant_name = body.get("variant") or DEFAULT_VARIANT
+        if reply is not None and not isinstance(reply, dict):
+            raise BadRequest(FIELD_INVALID % "reply")
+        variant_name = text_field(body, "variant", 40) or DEFAULT_VARIANT
+        conversation_id = text_field(body, "conversation_id", 64)
         if variant_name not in self.variants:
             raise BadRequest("Nepoznata varijanta: %s." % variant_name)
-        conv = self.store.get_conversation(body["conversation_id"]) if body.get("conversation_id") else None
-        if body.get("conversation_id") and (not conv or conv["parcel_id"] != parcel_id):
+        conv = self.store.get_conversation(conversation_id) if conversation_id else None
+        if conversation_id and (not conv or conv["parcel_id"] != parcel_id):
             raise NotFound("Razgovor nije pronađen.")
         if not conv:
             conv = {"id": new_id(), "parcel_id": parcel_id, "created_at": now_iso(), "variant": variant_name,
@@ -248,7 +290,7 @@ class ResearchService:
                 raise BadRequest("Pitanje je prazno.")
             conv.update(questions_asked=0, declined=[], pending=None)
             question_text, shown = text, text
-            advice_type = body.get("advice_type")
+            advice_type = text_field(body, "advice_type", 64) or None
             if advice_type and advice_type not in labels.ADVICE_TYPES:
                 raise BadRequest("Nepoznata vrsta saveta.")
             if not advice_type:
@@ -287,12 +329,12 @@ class ResearchService:
         from ..pipeline import ai_chat as ai
         from ..pipeline import language as chat_language
         parcel = self._parcel(parcel_id)
-        message = (body.get("message") or "").strip()
+        message = text_field(body, "message", 100000).strip()
         if not message:
             raise BadRequest("Poruka je prazna.")
         if len(message) > 2000:
             raise BadRequest("Poruka je predugačka (najviše 2000 znakova).")
-        mode = body.get("mode") or "baseline"
+        mode = text_field(body, "mode", 20) or "baseline"
         if mode not in ("baseline", "app"):
             raise BadRequest("Nepoznata varijanta: %s." % mode)
         try:
@@ -301,8 +343,9 @@ class ResearchService:
             raise Unavailable("AI razgovor nije podešen: %s." % exc)
         if provider is None:
             raise Unavailable("AI razgovor nije podešen (LLM_PROVIDER).")
-        conv = self.store.get_conversation(body["conversation_id"]) if body.get("conversation_id") else None
-        if body.get("conversation_id") and (not conv or conv["parcel_id"] != parcel_id or conv.get("kind") != "ai"):
+        conversation_id = text_field(body, "conversation_id", 64)
+        conv = self.store.get_conversation(conversation_id) if conversation_id else None
+        if conversation_id and (not conv or conv["parcel_id"] != parcel_id or conv.get("kind") != "ai"):
             raise NotFound("Razgovor nije pronađen.")
         if not conv:
             conv = {"id": new_id(), "parcel_id": parcel_id, "created_at": now_iso(), "kind": "ai", "variant": "ai",

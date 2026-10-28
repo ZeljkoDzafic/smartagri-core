@@ -10,3 +10,7 @@ select = ["E4", "E7", "E9", "F", "W"]
 [lint.per-file-ignores]
 # conftest.py groups the storage fixtures in a second import block on purpose.
 "tests/conftest.py" = ["E402"]
+
+# The security tests reuse the fixtures of test_web_settings.py by import; a fixture imported by name is "redefined" by the
+# test argument that asks for it.
+"tests/test_web_security.py" = ["F811"]

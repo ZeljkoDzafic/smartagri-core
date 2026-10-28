@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from ..store import Store
 from ..web_settings import registry as reg
-from ..web_settings.service import LOCAL_USER, Actor, SettingsError, SettingsService, admin_emails
+from ..web_settings.service import LOCAL_USER, Actor, SettingsError, SettingsService
 from . import auth
 
 WRITE_LIMIT = (120, 15 * 60)                      # writes per user per 15 minutes
@@ -28,10 +28,9 @@ def actor_of(request: Request, accounts: Optional[auth.Accounts]) -> Actor:
     user = getattr(request.state, "user", None)
     if user is None:
         return Actor(None, False, "optional")
-    email = (user.get("email") or "").lower()
-    # an address that was never confirmed (no SMTP on this server) is listed by the operator and counts as the owner
-    confirmed = bool(user.get("verified")) or not accounts.email_enabled
-    return Actor(user["id"], email in admin_emails() and confirmed, "optional", email)
+    # Administrator: promoted by the operator on the server, or listed in SMARTAGRI_ADMINS and confirmed through the
+    # mailbox. An address nobody confirmed (no SMTP) is never an administrator by being listed (docs/settings.md).
+    return Actor(user["id"], accounts.is_admin(user), "optional", (user.get("email") or "").lower())
 
 
 def _limit(store: Store, actor: Actor, request: Request) -> None:
