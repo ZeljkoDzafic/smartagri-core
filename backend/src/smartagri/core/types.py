@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -73,6 +74,69 @@ def to_date(value: Any) -> Optional[date]:
     if isinstance(value, date):
         return value
     return datetime.fromisoformat(str(value)).date()
+
+
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ].*)?$")
+
+
+def parse_date(value: Any) -> Optional[date]:
+    """The calendar date of `value`, or None when it is absent or is not an ISO date (never raises). A string must start
+    with YYYY-MM-DD: the compact form (20260425) is read by Python 3.11+ but not by 3.9, and a result that depends on the
+    interpreter is not reproducible."""
+    if isinstance(value, str) and not _ISO_DAY.match(value.strip()):
+        return None
+    if value is not None and not isinstance(value, (str, date, datetime)):
+        return None
+    try:
+        return to_date(value.strip() if isinstance(value, str) else value)
+    except (ValueError, TypeError):
+        return None
+
+
+# Inputs a person or a device reports AT a moment: they cannot be dated after the decision moment.
+REPORT_DATE_FIELDS = ("bbch_reported_on", "soil_water_reported_on", "soil_moisture_measured_on", "last_irrigation_date",
+                      "manure_date")
+ALL_DATE_FIELDS = ("sowing_date",) + REPORT_DATE_FIELDS
+
+
+def check_dates(d: Dict[str, Any], as_of: Optional[datetime]) -> None:
+    """Raise ValueError for a malformed date, or a reported date after the decision moment, in a scenario's context.
+
+    A planned sowing date may lie after the decision moment (nothing is sown yet); every other date of the agronomic
+    record, the forecast issue time and the dated lists (soil analysis, observations, fertilisation records) describes
+    something that already happened or was already issued, so it cannot be later than `as_of`. A scenario file is an
+    authoring artefact: such an error is reported with the field name, never silently repaired. Granularity is the
+    calendar day (as in the quality profile); a forecast issue time with a clock time is compared exactly when `as_of`
+    has one too and both are naive or both aware."""
+    a = d.get("A") or {}
+    day = as_of.date() if as_of is not None else None
+
+    def one(label: str, value: Any, future_ok: bool = False) -> None:
+        if value is None or value == "":
+            return
+        parsed = parse_date(value)
+        if parsed is None:
+            raise ValueError("%s is not an ISO date: %r" % (label, value))
+        if day is not None and parsed > day and not future_ok:
+            raise ValueError("%s (%s) is dated after the decision time (%s)" % (label, value, day.isoformat()))
+
+    for name in ALL_DATE_FIELDS:
+        one("A." + name, a.get(name), future_ok=name == "sowing_date")
+    if isinstance(a.get("soil_analysis"), dict):
+        one("A.soil_analysis.date", a["soil_analysis"].get("date"))
+    for i, o in enumerate(a.get("observations") or []):
+        one("A.observations[%d].date" % i, o.get("date") if isinstance(o, dict) else None)
+    for i, r in enumerate(a.get("fertilization_records") or []):
+        one("A.fertilization_records[%d].date" % i, r.get("date") if isinstance(r, dict) else None)
+    issued = (d.get("W") or {}).get("forecast_issued_at")
+    one("W.forecast_issued_at", issued)
+    if issued and as_of is not None:
+        try:
+            moment = datetime.fromisoformat(str(issued))
+        except ValueError:
+            return
+        if (moment.tzinfo is None) == (as_of.tzinfo is None) and moment > as_of:
+            raise ValueError("W.forecast_issued_at (%s) is dated after the decision time (%s)" % (issued, as_of.isoformat()))
 
 
 def _plain(obj: Any) -> Any:
@@ -225,6 +289,8 @@ class Context(Record):
     as_of: Optional[datetime] = None
     questions_asked: int = 0
     declined_inputs: List[str] = field(default_factory=list)   # inputs the user said they cannot supply
+    # Free questions of a model (variants without the sufficiency layer) the user could not answer: the question texts.
+    declined_free: List[str] = field(default_factory=list)
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Context":
@@ -235,6 +301,7 @@ class Context(Record):
         as_of = d.get("as_of")
         if as_of is not None and not isinstance(as_of, datetime):
             as_of = datetime.fromisoformat(str(as_of))
+        check_dates(d, as_of)
         if s.get("parcel_features") is not None:
             # A scenario file is an authoring artefact: a features block that breaks the contract (or the decision
             # moment) is an error, never silently dropped. The provider path rejects instead (providers/parcel_features).
@@ -253,6 +320,7 @@ class Context(Record):
             as_of=as_of,
             questions_asked=int(d.get("questions_asked", 0)),
             declined_inputs=list(d.get("declined_inputs", [])),
+            declined_free=list(d.get("declined_free", [])),
         )
 
 
@@ -269,6 +337,12 @@ class Observation(Record):
     source_ref: str = ""
     # Facts the grading rules may only use to LOWER a grade (NDVI quality fields, a stage conflict); None = none.
     detail: Optional[Dict[str, Any]] = None
+    # True when the input is one that must carry the date or time it was reported or measured and does not: its age is
+    # then unknown (age_days None), which is never the same as "fresh" (audit D1).
+    date_unknown: bool = False
+    # The reason the value cannot be right (core/plausibility.py), or None. Such an input is graded low and is never
+    # handed to the decision cores or the tools (core/quality.values) (audit D3).
+    implausible: Optional[str] = None
 
 
 @dataclass

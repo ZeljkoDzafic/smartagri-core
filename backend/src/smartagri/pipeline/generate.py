@@ -26,7 +26,8 @@ ACT_VALUES = ("recommend", "conditional", "ask", "abstain")
 # answer is not a result of that rung and must never be presented as one.
 TEMPLATE_LABEL = "template, not a baseline"
 
-# Tools whose inputs or outputs reveal an irrigation amount; shown only when the policy allows a quantity.
+# Tools whose inputs or outputs reveal an irrigation amount; shown only when the policy allows a quantity (and, for a
+# variant whose model chooses the act, only when the quantity gate rules.irrigation.quantity_validated is open).
 QUANTITY_TOOLS = ("net_irrigation_need", "gross_irrigation", "application_time")
 
 
@@ -69,11 +70,22 @@ def sources(d: Decision, corpus: Corpus) -> List[Dict[str, Any]]:
     return out
 
 
-def calculations(d: Decision) -> List[Dict[str, Any]]:
+def quantity_open() -> bool:
+    """Has an agronomist reviewed the balance parameters (rules.irrigation.quantity_validated)?"""
+    return bool(config.load("rules")["irrigation"]["quantity_validated"])
+
+
+def calculations(d: Decision, gated: bool = False) -> List[Dict[str, Any]]:
+    """The calculation steps shown with an answer. A quantity tool is shown only when the policy allows a quantity;
+    with `gated` (the answer of a variant whose model chooses the act, V0-V3) also only when the quantity gate is open,
+    so that no irrigation depth or volume of an unreviewed balance reaches a model that is free to quote it. The card of
+    the product and of V4/V5 keeps showing the calculation steps next to the withheld quantity, as it always did."""
     out = []
     for t in d.tools:
         if t.tool in QUANTITY_TOOLS and not d.policy.allow_quantity:
             continue                                  # no quantity is shown unless the policy allows one
+        if t.tool in QUANTITY_TOOLS and gated and not quantity_open():
+            continue
         out.append({"tool": t.tool, "label": L().TOOLS.get(t.tool, t.tool), "formula": t.formula,
                     "inputs": t.inputs, "output": t.output, "source_ref": t.source_ref, "reason": t.reason})
     return out
@@ -375,7 +387,7 @@ def template_answer(ctx: Context, d: Decision, corpus: Corpus, act_free: Optiona
         referral = L().PLANT_PROTECTION_REFERRAL
     out = {"act": act, "act_label": L().ACTS[act], "summary": summary.strip(), "action": action,
            "rationale": rationale(ctx, d) + extra, "data_used": used, "sources": sources(d, corpus),
-           "calculations": calculations(d), "next_question": next_question(d),
+           "calculations": calculations(d, gated=delegated), "next_question": next_question(d),
            "limitations": limitations(ctx, d, used), "referral": referral, "basis": basis(ctx, d),
            "generator": "template"}
     if delegated:
@@ -482,6 +494,12 @@ def prompt_hash(free: bool = False) -> str:
     return hashlib.sha256((system_prompt(free) + json.dumps(answer_schema(free), sort_keys=True)).encode("utf-8")).hexdigest()
 
 
+def declined_free_facts(ctx: Context) -> List[str]:
+    """One statement per free question of the model that the user could not answer (ctx.declined_free), so that a variant
+    whose model asks free questions can adapt exactly as V4 and V5 do when an input is declined."""
+    return [T("Korisnik nije znao odgovor na pitanje: %s") % text for text in ctx.declined_free if text]
+
+
 def fact_sheet(ctx: Context, d: Decision, answer: Dict[str, Any], free: Optional[bool] = None) -> Dict[str, Any]:
     """The JSON payload a language model receives for one turn.
 
@@ -499,9 +517,11 @@ def fact_sheet(ctx: Context, d: Decision, answer: Dict[str, Any], free: Optional
                 "limitations": answer["limitations"],
                 "next_question": (answer["next_question"] or {}).get("text"),
                 "sources": sources_,
-                "calculations": [c for c in answer["calculations"] if c["output"]]}
+                "calculations": [c for c in answer["calculations"]
+                                 if c["output"] and (c["tool"] not in QUANTITY_TOOLS or quantity_open())]}
     return {"question": ctx.Q.text, "advice_type": L().ADVICE_TYPES[d.advice_type.value],
-            "facts": rationale(ctx, d, conclusions=False), "data": [_fact_row(r) for r in answer["data_used"]],
+            "facts": rationale(ctx, d, conclusions=False) + declined_free_facts(ctx),
+            "data": [_fact_row(r) for r in answer["data_used"]],
             "limitations": answer["limitations"], "sources": sources_,
             "calculations": [c for c in answer["calculations"] if c["output"]]}
 

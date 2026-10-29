@@ -37,7 +37,10 @@ def n_level(prev: Any) -> str:
         return UNKNOWN
     if isinstance(prev, str):
         return prev
-    total = sum(float(item.get("n_kg_ha", 0) or 0) for item in prev)
+    try:
+        total = sum(float(item.get("n_kg_ha", 0) or 0) for item in prev)
+    except (AttributeError, TypeError, ValueError):
+        return UNKNOWN                              # a malformed record is not "no nitrogen"
     if total <= 0:
         return "none"
     return "full" if total >= config.load("rules")["fertilization"]["season_n_full_kg_ha"] else "partial"
@@ -80,14 +83,32 @@ def _fert_window(bbch: Optional[int]) -> str:
     return "topdress_now" if bbch <= hi else "late_window_caution"
 
 
+def heavy_rain(v: Dict[str, Any], windows=("precip_forecast_7d", "precip_forecast_3d")) -> bool:
+    """Is a forecast of at least rules.field_ops.heavy_rain_postpone_mm in the first of `windows` that has a value?"""
+    for name in windows:
+        if v.get(name) is not None:
+            return v[name] >= config.load("rules")["field_ops"]["heavy_rain_postpone_mm"]
+    return False
+
+
+def _postpone_for_rain(window: str, v: Dict[str, Any]) -> str:
+    """Top-dressing that is due now (or late) is postponed when heavy rain is forecast (leaching, run-off); a stage that
+    already says "wait" or "too late" stays as it is. The 7-day forecast (a required input of the timing advice) is
+    used, else the 3-day one."""
+    if window in ("topdress_now", "late_window_caution") and heavy_rain(v):
+        return "postpone_heavy_rain"
+    return window
+
+
 def fertilization_timing(v: Dict[str, Any]) -> str:
-    return _fert_window(v.get("phenophase"))
+    return _postpone_for_rain(_fert_window(v.get("phenophase")), v)
 
 
 def fertilization_plan(v: Dict[str, Any]) -> str:
     window = _fert_window(v.get("phenophase"))
     if window == "too_late":
         return window
+    window = _postpone_for_rain(window, v)
     prev = n_level(v.get("previous_fertilization"))
     if prev == "full":
         return "no_additional_n"
@@ -121,6 +142,8 @@ def field_ops_window(v: Dict[str, Any]) -> str:
         rain = v.get("precip_forecast_7d")
     temp = v.get("temp_forecast") or {}
     wind = v.get("wind_forecast")
+    if rain is not None and rain >= r["heavy_rain_postpone_mm"]:
+        return "postpone"                    # heavy rain: no field operation (development threshold, see rules.yaml)
     if op == "spraying":
         if (wind is not None and wind > r["spraying_max_wind_ms"]) or (rain is not None and rain > r["rain_block_mm_3d"]):
             return "postpone"

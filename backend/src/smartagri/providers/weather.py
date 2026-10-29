@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .. import config
-from ..core.types import to_date
+from ..core.types import parse_date, to_date
 from ..store import Store
 from .base import cached, http_json
 
@@ -65,6 +65,30 @@ def request_timezone(time_zone: Optional[str]) -> str:
     return time_zone
 
 
+def parcel_zone(time_zone: Optional[str] = None):
+    """The tzinfo of the parcel's zone (the default zone for a parcel without one), or None without a tz database."""
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(request_timezone(time_zone))
+    except Exception:
+        return None
+
+
+def in_parcel_zone(as_of: datetime, time_zone: Optional[str] = None) -> datetime:
+    """`as_of` expressed in the parcel's zone (the same instant). A naive moment already is the parcel's own clock and is
+    returned as it is; so is any moment when the zone is unknown. Every calendar date of a profile (the weather days, the
+    ages of the inputs, the satellite window) is the date of this value, never the date in the zone of the server."""
+    if as_of.tzinfo is None:
+        return as_of
+    tz = parcel_zone(time_zone)
+    return as_of.astimezone(tz) if tz is not None else as_of
+
+
+def local_day(as_of: datetime, time_zone: Optional[str] = None) -> date:
+    """The calendar day of `as_of` in the parcel's zone."""
+    return in_parcel_zone(as_of, time_zone).date()
+
+
 def build_request(lat: float, lon: float, as_of: datetime, today: Optional[date] = None,
                   time_zone: Optional[str] = None) -> Dict[str, Any]:
     """Choose the endpoint and parameters for as_of.
@@ -75,15 +99,16 @@ def build_request(lat: float, lon: float, as_of: datetime, today: Optional[date]
     forecast days come from `forecast_request` (Previous Runs API: the forecast as issued before as_of). The
     combined profile is retrospective_constructed (see docs/architecture.md): it was assembled after the fact.
     """
-    today = today or datetime.now(as_of.tzinfo).date()
+    day = local_day(as_of, time_zone)
+    today = today or datetime.now(parcel_zone(time_zone) or as_of.tzinfo).date()      # today in the parcel's zone
     params: Dict[str, Any] = {"latitude": round(lat, 4), "longitude": round(lon, 4), "daily": DAILY,
                               "timezone": request_timezone(time_zone), "wind_speed_unit": "ms"}
-    if as_of.date() >= today:
+    if day >= today:
         params.update(past_days=PAST_DAYS, forecast_days=FORECAST_DAYS)
         return {"endpoint": FORECAST_ENDPOINT, "url": _base() + "/forecast", "params": params,
                 "key": dict(params, day=today.isoformat()), "retrospective_constructed": False}
-    params.update(start_date=(as_of.date() - timedelta(days=PAST_DAYS)).isoformat(),
-                  end_date=(as_of.date() - timedelta(days=1)).isoformat())
+    params.update(start_date=(day - timedelta(days=PAST_DAYS)).isoformat(),
+                  end_date=(day - timedelta(days=1)).isoformat())
     return {"endpoint": ARCHIVE_ENDPOINT, "url": _archive_base() + "/forecast", "params": params,
             "key": dict(params), "retrospective_constructed": True}
 
@@ -181,7 +206,10 @@ def combine(history: Dict[str, Any], forecast_raw: Dict[str, Any], as_of: dateti
     days from the runs issued before as_of. `forecast_issued_at` = the oldest issue time among the forecast values of
     the first three days (conservative age of the forecast that W reports)."""
     hist = dict(history.get("daily") or {})
-    first = as_of.date()
+    zone = parcel_zone(time_zone)
+    if as_of.tzinfo is None and zone is not None:
+        as_of = as_of.replace(tzinfo=zone)         # a naive moment is the parcel's own clock, not UTC
+    first = local_day(as_of, time_zone)
     keep = [i for i, t in enumerate(hist.get("time") or []) if to_date(t) < first]
     daily = {k: [v[i] for i in keep] for k, v in hist.items() if isinstance(v, list)}
     rows = forecast_as_issued(forecast_raw, as_of)
@@ -250,15 +278,19 @@ def _sum(rows: List[Dict[str, Any]], key: str) -> Optional[float]:
     return round(sum(vals), 1) if vals and len(vals) == len(rows) else None
 
 
-def summarize(rows: List[Dict[str, Any]], as_of: datetime, sowing_date: Optional[str], fetched_at: str) -> Dict[str, Any]:
-    """Weather summary W. Days before as_of are history; as_of and later are forecast."""
-    today = as_of.date()
+def summarize(rows: List[Dict[str, Any]], as_of: datetime, sowing_date: Optional[str], fetched_at: str,
+              time_zone: Optional[str] = None) -> Dict[str, Any]:
+    """Weather summary W. Days before as_of are history; as_of and later are forecast. The day of as_of is its day in the
+    parcel's zone (`time_zone`; None = the default zone), the zone the weather days are cut in."""
+    today = local_day(as_of, time_zone)
     past = [r for r in rows if to_date(r["date"]) < today]
     future = [r for r in rows if to_date(r["date"]) >= today]
     base = config.load("rules")["phenology"]["gdd_base_c"]
     gdd = None
-    sow = to_date(sowing_date)
-    if sow and past and to_date(past[0]["date"]) <= sow:
+    sow = parse_date(sowing_date)
+    # No thermal time for a sowing that has not happened (an empty sum would be 0 GDD, read as "just sown"), nor for a
+    # date that cannot be read.
+    if sow and sow <= today and past and to_date(past[0]["date"]) <= sow:
         season = [r for r in past if to_date(r["date"]) >= sow and r["tmin_c"] is not None and r["tmax_c"] is not None]
         gdd = round(sum(max(0.0, (min(r["tmax_c"], 30.0) + max(r["tmin_c"], base)) / 2.0 - base) for r in season), 0)
     tmins = [r["tmin_c"] for r in future if r["tmin_c"] is not None]

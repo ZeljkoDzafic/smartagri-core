@@ -4,12 +4,13 @@ from __future__ import annotations
 import dataclasses
 import re
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .. import config
 from . import parcel_features as pfm
+from . import plausibility
 from .tools import estimate_bbch, ndvi_summary
-from .types import Context, Observation, Origin, Quality, QualityProfile, Reliability, to_date
+from .types import Context, Observation, Origin, Quality, QualityProfile, Reliability, parse_date
 
 SMALL_PARCEL_HA = 0.3
 
@@ -24,15 +25,78 @@ TRACKED_INPUTS = (
 
 
 def product_key(name: Any) -> str:
-    """'NPK 15-15-15' -> 'npk_15_15_15', 'UREA' -> 'urea': the keys of rules.optional_inputs.n_content."""
-    return re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+    """'NPK 15-15-15' -> 'npk_15_15_15', 'UREA' -> 'urea', 'KAN 27%' -> 'kan': the keys of rules.optional_inputs.n_content.
+    A declared percentage ('27%', '46 %') is not part of the key; other digits are ('npk_15_15_15')."""
+    text = re.sub(r"\d+(?:[.,]\d+)?\s*%", " ", str(name or "").lower())
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+
+
+def n_share(product: Any, table: Dict[str, float]) -> Optional[float]:
+    """Share of nitrogen of a product from the catalogue (rules.optional_inputs.n_content), or None when it is not there.
+    The exact key is tried first ('npk_20_10_10'), then the key without trailing numbers ('kan_27' -> 'kan'); a product
+    that is not found is unknown, never zero."""
+    key = product_key(product)
+    if not key:
+        return None
+    if key in table:
+        return table[key]
+    parts = key.split("_")
+    while len(parts) > 1 and parts[-1].isdigit():
+        parts.pop()
+        if "_".join(parts) in table:
+            return table["_".join(parts)]
+    return None
+
+
+def _fertilization(raw: Any, opt: Dict[str, Any], full_kg_ha: float) -> Tuple[Any, Optional[str]]:
+    """(value, why it cannot be used) of the fertilisation history: a list of records [{product, rate_kg_ha, n_kg_ha?}] or
+    one of the class words none | partial | full.
+
+    The nitrogen of a record is the entered `n_kg_ha`, else rate x the product's share of N from the catalogue. A record
+    with a dose whose nitrogen cannot be told is NOT zero nitrogen: unless the known nitrogen already counts as "full"
+    (more nitrogen can only keep it full), the whole history is unknown. A bad number or record makes it unusable too
+    (audit D4); the reason becomes the basis of the "low" grade."""
+    if isinstance(raw, str):
+        return raw, None if raw in ("none", "partial", "full") else "not one of none, partial, full"
+    if not isinstance(raw, (list, tuple)):
+        return raw, "not a list of records"
+    limit = plausibility.limits("fertilizer_rate_kg_ha")
+    records, known, unknown = [], 0.0, []
+    for rec in raw:
+        if not isinstance(rec, dict):
+            return raw, "a record is not an object"
+        rec = dict(rec)
+        for key in ("n_kg_ha", "rate_kg_ha"):
+            if rec.get(key) is not None:
+                reason = plausibility.check_number(rec[key], limit[0], limit[1])
+                if reason:
+                    return raw, "%s: %s" % (key, reason)
+        if rec.get("n_kg_ha") is None and rec.get("rate_kg_ha"):
+            share = n_share(rec.get("product"), opt["n_content"])
+            if share is None:
+                unknown.append(str(rec.get("product") or "?"))
+            else:
+                rec["n_kg_ha"] = round(float(rec["rate_kg_ha"]) * share, 1)
+        known += float(rec.get("n_kg_ha") or 0)
+        records.append(rec)
+    if unknown and known < full_kg_ha:
+        return records, "nitrogen content of the product is not known (%s)" % ", ".join(sorted(set(unknown)))
+    return records, None
 
 
 def _age(ctx: Context, when: Any) -> Optional[float]:
-    d = to_date(when)
+    """Age in calendar days at the decision moment; None when the date is absent, malformed or there is no decision
+    moment. Negative when the date lies after the decision moment (never "fresh": grade() makes it missing)."""
+    d = parse_date(when)
     if d is None or ctx.as_of is None:
         return None
     return float((ctx.as_of.date() - d).days)
+
+
+def _dated(ctx: Context, when: Any) -> Dict[str, Any]:
+    """Age fields of an input that must carry a date: an unknown date is flagged, never turned into age 0."""
+    age = _age(ctx, when)
+    return {"age_days": age, "date_unknown": age is None}
 
 
 def observe_all(ctx: Context) -> Dict[str, Observation]:
@@ -49,9 +113,12 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
     # is used, so that an old report never pushes out a better estimate (sigma stays monotone).
     candidates = []
     if a.bbch is not None:
-        candidates.append(Observation(a.bbch, Origin(a.bbch_origin), _age(ctx, a.bbch_reported_on) or 0.0))
-    if a.sowing_date and as_of:
-        est = estimate_bbch(w.gdd_since_sowing, (as_of - to_date(a.sowing_date)).days, a.hybrid_fao)
+        candidates.append(Observation(a.bbch, Origin(a.bbch_origin), **_dated(ctx, a.bbch_reported_on)))
+    sowing = parse_date(a.sowing_date)
+    if sowing is not None and as_of and sowing <= as_of:
+        # A sowing date after the decision moment is a plan: nothing is sown, so there is no stage to estimate (an empty
+        # thermal sum would read as "just sown", BBCH 5). A date that cannot be read gives none either (audit D6).
+        est = estimate_bbch(w.gdd_since_sowing, (as_of - sowing).days, a.hybrid_fao)
         if est.output:
             candidates.append(Observation(est.output["bbch"], Origin.DERIVED, 0.0,
                                           source_ref="estimate_bbch:" + est.output["method"]))
@@ -109,7 +176,7 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
 
     if a.soil_water_status:
         obs["soil_water_status"] = Observation(a.soil_water_status, Origin(a.soil_water_origin),
-                                               _age(ctx, a.soil_water_reported_on) or 0.0)
+                                               **_dated(ctx, a.soil_water_reported_on))
     opt = rules["optional_inputs"]
     recent = [o for o in (a.observations or []) if _age(ctx, o.get("date")) is not None
               and 0 <= _age(ctx, o.get("date")) <= opt["field_event_days"]]
@@ -127,7 +194,7 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
                                                    source_ref="observation:wilting")
     if a.soil_moisture_vwc is not None:
         obs["soil_moisture_sensor"] = Observation(a.soil_moisture_vwc, Origin.MEASURED,
-                                                  _age(ctx, a.soil_moisture_measured_on) or 0.0)
+                                                  **_dated(ctx, a.soil_moisture_measured_on))
     if a.soil_awc_mm_m is not None:
         obs["soil_awc"] = Observation(a.soil_awc_mm_m, user)
     elif a.soil_texture in rules["soil"]["awc_by_texture_mm_m"]:
@@ -147,19 +214,11 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
     elif a.irrigation_system_type in rules["soil"]["efficiency_by_system"]:
         obs["irrigation_efficiency"] = Observation(rules["soil"]["efficiency_by_system"][a.irrigation_system_type],
                                                    Origin.DERIVED, source_ref="system:" + a.irrigation_system_type)
-    if a.fertilization_records is not None:
-        # Records take precedence: N per record from the entered value or the product catalogue.
-        records = []
-        for rec in a.fertilization_records:
-            rec = dict(rec)
-            if rec.get("n_kg_ha") is None and rec.get("rate_kg_ha") is not None:
-                share = opt["n_content"].get(product_key(rec.get("product", "")))
-                if share is not None:
-                    rec["n_kg_ha"] = round(float(rec["rate_kg_ha"]) * share, 1)
-            records.append(rec)
-        obs["previous_fertilization"] = Observation(records, user)
-    elif a.previous_fertilization is not None:
-        obs["previous_fertilization"] = Observation(a.previous_fertilization, user)
+    history = a.fertilization_records if a.fertilization_records is not None else a.previous_fertilization
+    if history is not None:
+        # Records take precedence over the legacy field; both go through the same check.
+        value, why = _fertilization(history, opt, rules["fertilization"]["season_n_full_kg_ha"])
+        obs["previous_fertilization"] = Observation(value, user, implausible=why)
     if a.irrigation_capacity_mm_day is not None:
         obs["irrigation_capacity"] = Observation(a.irrigation_capacity_mm_day, user)
     if a.previous_crop:
@@ -178,6 +237,10 @@ def observe_all(ctx: Context) -> Dict[str, Observation]:
         obs["yield_target"] = Observation(a.yield_target_t_ha, user)
     if a.operation:
         obs["operation"] = Observation(a.operation, user)
+    for name, o in list(obs.items()):
+        reason = plausibility.problem(name, o.value)
+        if reason:
+            obs[name] = dataclasses.replace(o, implausible=reason)
     return obs
 
 
@@ -187,6 +250,19 @@ def grade(name: str, o: Observation) -> Quality:
         return Quality(name, Origin.UNKNOWN, None, None, Reliability.MISSING, "not available")
     if name in pfm.FEATURE_INPUTS:
         return pfm.grade_feature_input(name, o)
+    if o.age_days is not None and o.age_days < 0:
+        # Dated after the decision moment: nothing from the future may enter a decision (audit D2).
+        return Quality(name, o.origin, o.age_days, o.coverage, Reliability.MISSING,
+                       "dated after the decision time", o.source_ref)
+    if o.date_unknown:
+        # No date or time of the report or measurement (audit D1): never "fresh". A device reading without its time
+        # cannot be used; a person's report without a date is at most low.
+        if o.origin == Origin.MEASURED:
+            return Quality(name, o.origin, None, o.coverage, Reliability.MISSING, "measurement time unknown", o.source_ref)
+        return Quality(name, o.origin, None, o.coverage, Reliability.LOW, "date unknown", o.source_ref)
+    if o.implausible:
+        return Quality(name, o.origin, o.age_days, o.coverage, Reliability.LOW, "implausible value: " + o.implausible,
+                       o.source_ref)
     spec = config.load("thresholds")["inputs"].get(name, {})
     limit = spec.get("missing_after_days")
     if limit is not None and o.age_days is not None and o.age_days > limit:
@@ -229,6 +305,9 @@ def annotate_quality(ctx: Context, quality_aware: bool = True) -> QualityProfile
                                         q.detail)
         elif o.value is None:
             profile[name] = Quality(name, Origin.UNKNOWN, None, None, Reliability.MISSING, "not available")
+        elif o.implausible:
+            profile[name] = Quality(name, o.origin, o.age_days, o.coverage, Reliability.MISSING,
+                                    "implausible value: " + o.implausible, o.source_ref)
         else:
             profile[name] = Quality(name, o.origin, o.age_days, o.coverage, Reliability.UNGRADED,
                                     "quality layer off: not graded", o.source_ref)
@@ -236,4 +315,5 @@ def annotate_quality(ctx: Context, quality_aware: bool = True) -> QualityProfile
 
 
 def values(ctx: Context) -> Dict[str, Any]:
-    return {name: o.value for name, o in observe_all(ctx).items()}
+    """The value of every tracked input as the decision cores and the tools see it: an implausible value is unknown."""
+    return {name: (None if o.implausible else o.value) for name, o in observe_all(ctx).items()}

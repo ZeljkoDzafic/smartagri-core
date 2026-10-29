@@ -18,6 +18,22 @@ any result produced with this version; results should be read together with it.
   `make_retriever`). The value `retrieval: hybrid` in `config/variants.yaml` names the intended mode; the effective
   mode depends on that setting.
 
+## Input checks
+
+- **Plausible ranges are development values.** `rules.input_limits` only catches values that cannot be right (a percentage
+  for a fraction, metres for mm/m, a negative rain); it does not judge unusual values. The AWC range (20-300 mm/m) spans
+  FAO-56 Table 19 (50-200 mm/m by texture); the other ranges are engineering choices awaiting agronomist review.
+- **Heavy rain.** The 25 mm threshold that postpones field work and top-dressing is a development value; it applies to the
+  3-day (else 7-day) forecast total and does not distinguish intensity or soil.
+- **Ages are calendar days.** A forecast issued 23 h before the decision can be one day old, one issued 25 h before can be
+  one day old as well (audit D8, proposal: ages in hours, `max_age_hours`; not done because it changes the meaning of
+  every `max_age_days` in `thresholds.yaml`). Satellite publication lag (D9) is not modelled: a scene of the previous
+  day is assumed available.
+- **Grounding by value (D14)** accepts a number that appears anywhere in the context; the lexical support check does not
+  see negation. Both stay as limits of gamma.
+- **Reply parsing** is rule-based Serbian; English replies use a separate, simpler parser (`pipeline/intent_en.py`) that
+  has not had these fixes. The research API confirms every free-text value before writing it.
+
 ## Agronomic parameters
 
 - **Development defaults, not reviewed.** `config/rules.yaml` begins with "PLACEHOLDER VALUES for development";

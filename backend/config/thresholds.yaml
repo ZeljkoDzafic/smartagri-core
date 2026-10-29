@@ -26,6 +26,7 @@ inputs:
       - {reliability: medium, max_age_days: 10, min_coverage: 0.60}
     default: low
   ndvi_trend:
+    missing_after_days: 30           # as ndvi_latest: a trend of observations this old is not used (development value)
     grades:
       - {reliability: high, min_count: 3}
       - {reliability: medium, min_count: 2}

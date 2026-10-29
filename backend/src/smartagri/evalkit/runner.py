@@ -18,6 +18,10 @@ from .scenarios import load_scenarios, scenario_dir  # noqa: F401  (re-exported)
 from .sources import retrieval_record
 
 MAX_TURNS = 3
+# What the simulated user says to a question the scenario has no prepared reply for. The same for every variant and for
+# VC: a question that cannot be answered ends neither a structured nor a free conversation, it is answered "I do not
+# know" and the model (or the layers) continue without it. MAX_TURNS is the hard cap that ends a loop.
+DECLINE_REPLY = "Ne znam."
 
 
 def context_text(ctx: Context) -> List[str]:
@@ -63,11 +67,13 @@ def baseline_record(turns: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 
 def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, generator) -> Dict[str, Any]:
-    """Play one scenario. A question of the alpha layer the scenario has no reply for is answered with 'I do not know'.
+    """Play one scenario. A question the scenario has no reply for is answered with 'I do not know' (DECLINE_REPLY).
 
-    A free question of the model (variants without the sufficiency layer, `next_question.input` is None) is mapped
-    to a prepared reply by keywords exactly as for the LLM baseline VC (`evalkit.vc.match_reply`); when no reply
-    matches, the conversation ends, as it does for VC."""
+    A structured question of the alpha layer (V4, V5) is declined by its input name (`ctx.declined_inputs`). A free
+    question of the model (variants without the sufficiency layer, `next_question.input` is None) is mapped to a
+    prepared reply by keywords exactly as for the LLM baseline VC (`evalkit.vc.match_reply`); when no reply matches it
+    is declined too: its text goes into `ctx.declined_free`, the fact sheet tells the model the user did not know, and
+    the conversation continues, as it does for V4 and V5 and for VC. The turn cap MAX_TURNS ends it."""
     from .vc import match_reply
     variant = load_variants()[variant_name]
     ctx = Context.from_dict(sc["context"])
@@ -90,19 +96,26 @@ def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, gener
             name = match_reply(nq.get("text") or "", replies, used)
             matched.append(name)
             if name is None:
-                break
+                turn["user_reply"] = DECLINE_REPLY
+                ctx.declined_free.append((nq.get("text") or "").strip())
+                continue
             used.add(name)
         else:
             matched.append(name)
         if name in replies:
+            # The same parse_reply as the interactive services use (word boundaries, negation, targeted number patterns);
+            # the evaluation does not wait for a confirmation: the scenario's reply is the user's final word.
             kind, value = intent.parse_reply(name, str(replies[name]))
-            if kind != "value":
-                kind, value = "value", replies[name]            # the scenario gave a structured value
             turn["user_reply"] = str(replies[name])
-            ctx.A = Agronomic(**intent.apply_reply(dataclasses.asdict(ctx.A), name, value, today))
-            ctx.questions_asked += 1
+            if kind == "declined":
+                ctx.declined_inputs.append(name)                # the scenario's reply says the user does not know
+            else:
+                if kind != "value":
+                    value = replies[name]                       # the scenario gave a structured value (e.g. "loam", 65)
+                ctx.A = Agronomic(**intent.apply_reply(dataclasses.asdict(ctx.A), name, value, today))
+                ctx.questions_asked += 1
         else:
-            turn["user_reply"] = "Ne znam."
+            turn["user_reply"] = DECLINE_REPLY
             ctx.declined_inputs.append(name)
     first = turns[0]["answer"]
     baseline = baseline_record(turns)

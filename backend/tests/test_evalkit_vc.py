@@ -95,12 +95,13 @@ def test_conversation_sends_the_matching_reply_then_stops(corpus):
     assert res["scenario"]["id"] == "IRR-T-02" and res["scenario"]["quality"]
 
 
-def test_conversation_stops_without_question_without_reply_and_at_three_turns(corpus):
+def test_conversation_stops_without_question_and_at_three_turns(corpus):
     retriever = make_retriever(corpus)
     sc = load_scenario("dev", "IRR-T-02")
     assert vc.run_scenario(sc, ScriptedProvider([(TEXT, "")]), corpus, retriever)["n_turns"] == 1
+    # a question with no prepared reply is answered "Ne znam." and the conversation goes on to the cap (as for V4 and V5)
     res = vc.run_scenario(sc, ScriptedProvider([(TEXT, "Kakvo je vreme kod vas?")]), corpus, retriever)
-    assert res["n_turns"] == 1 and res["turns"][0]["user_reply"] is None and res["first_question_input"] is None
+    assert res["n_turns"] == 3 and res["turns"][0]["user_reply"] == "Ne znam." and res["first_question_input"] is None
     sc2 = copy.deepcopy(sc)
     sc2["user_replies"]["phenophase"] = "Svilanje je počelo."
     fake = ScriptedProvider([(TEXT, SOIL_Q), (TEXT, PHASE_Q), (TEXT, SOIL_Q)])
@@ -150,10 +151,10 @@ def test_cli_run_report_compare_and_tables(env, capsys, monkeypatch):
     out = json.loads(capsys.readouterr().out)
     a = out["automatic"]["VC"]
     assert a["answer_format"] == "text" and a["act_accuracy"] is None and a["coverage"] is None
-    # IRR-T-02 has a reply for the soil-water question (2 turns); IRR-T-01 has none, so it stops after one.
-    assert a["mean_turns"] == 1.5 and a["first_ends_with_question_share"] == 1.0 and a["ends_with_question_share"] == 0.667
+    # IRR-T-02 has a reply for the soil-water question; IRR-T-01 has none, so it is answered "Ne znam." (2 turns each).
+    assert a["mean_turns"] == 2.0 and a["first_ends_with_question_share"] == 1.0 and a["ends_with_question_share"] == 0.5
     assert a["reply_matched_share"] == 0.5
-    assert a["usd"] == pytest.approx(3 * 0.003) and a["removed_sentence_rate"] is not None
+    assert a["usd"] == pytest.approx(4 * 0.003) and a["removed_sentence_rate"] is not None
     assert out["automatic"]["V5"]["act_accuracy_n"] > 0
     assert out["rated"]["VC"]["k4_rate"] == 1.0 and out["rated"]["V5"]["critical_rate"] == 0.0
     assert out["paired"]["a"] == "V5" and out["paired"]["b"] == "VC" and out["paired"]["critical_rate_diff"] == -1.0
@@ -163,9 +164,9 @@ def test_cli_run_report_compare_and_tables(env, capsys, monkeypatch):
     rows = {r.split("|")[1].strip(): [c.strip() for c in r.strip("|").split("|")] for r in md.split("Tabela 7.10.")[1]
             .split("\n\n")[1].splitlines()[2:]}
     assert rows["Stopa K4 (preuranjena preporuka)"][1:4] == ["1,00", "0,00", "-1,00"]
-    assert rows["Prosečno koraka razgovora"][1] == "1,50"
+    assert rows["Prosečno koraka razgovora"][1] == "2,00"
     assert rows["Udeo prvih odgovora sa pitanjem korisniku"][1] == "1,00"
-    assert rows["Trošak po scenariju (USD)"][1] == "0,0045"
+    assert rows["Trošak po scenariju (USD)"][1] == "0,0060"
 
 
 def test_failed_model_call_is_recorded_and_not_rateable(two):

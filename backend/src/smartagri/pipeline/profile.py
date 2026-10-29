@@ -75,7 +75,10 @@ def quality_rows(ctx: Context, log_sources: Optional[Dict[str, List[str]]] = Non
 def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime] = None,
                   refresh: bool = True) -> Dict[str, Any]:
     """Fetch what can be fetched. A provider that fails leaves its part 'missing'; the profile is still usable."""
-    as_of = as_of or datetime.now().astimezone().replace(microsecond=0)
+    # One calendar for the whole profile: the parcel's zone, whatever the zone of the server. A moment given with
+    # an offset is expressed in that zone; a naive one already is the parcel's own clock.
+    tz = weather.request_timezone(parcel.get("time_zone"))
+    as_of = weather.in_parcel_zone(as_of or datetime.now().astimezone().replace(microsecond=0), tz)
     lat, lon = parcel["centroid"]["lat"], parcel["centroid"]["lon"]
     sowing = (parcel.get("agronomic") or {}).get("sowing_date")
 
@@ -87,7 +90,6 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
                          "retrospective_constructed": False}
     try:
         # The parcel's zone; home-area parcels make exactly the call they always made.
-        tz = weather.request_timezone(parcel.get("time_zone"))
         got = weather.fetch(store, lat, lon, as_of, refresh) if tz == weather.DEFAULT_TIMEZONE else \
             weather.fetch(store, lat, lon, as_of, refresh, time_zone=tz)
         rows = weather.daily_rows(got["raw"], as_of.date())
@@ -97,7 +99,7 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
                                            # a past as_of: the (conservative) issue time of the runs used, never the
                                            # time we fetched the archive; live: the fetch time
                                            (got.get("forecast_issued_at") or None) if got.get("retrospective_constructed")
-                                           else got["fetched_at"]), daily=rows[-(30 + 7):])
+                                           else got["fetched_at"], time_zone=tz), daily=rows[-(30 + 7):])
     except ProviderUnavailable as exc:
         w["message"] = str(exc)
 

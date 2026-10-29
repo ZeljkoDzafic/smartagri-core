@@ -8,6 +8,7 @@ from .applicability import applicability, select_budget
 from .asking import choose_question
 from .conflicts import detect as detect_conflicts
 from .parcel_features import input_conflicts
+from .plausibility import check_number, limits
 from .policy import decide as decide_act
 from .quality import annotate_quality, values
 from .rules import decide_action_core, soil_status
@@ -21,9 +22,10 @@ IRRIGATION = (AdviceType.IRRIGATION_TIMING, AdviceType.IRRIGATION_AMOUNT)
 def _root_depth(bbch):
     if bbch is None:
         return None
+    lo, hi = limits("root_depth_m")
     for row in config.load("rules")["irrigation"]["root_depth_m_by_bbch"]:
         if bbch <= row["bbch_max"]:
-            return row["depth"]
+            return row["depth"] if check_number(row["depth"], lo, hi) is None else None   # an unusable depth gives no dose
     return None
 
 
