@@ -20,9 +20,15 @@ def _parser() -> argparse.ArgumentParser:
                    help="variant name; repeatable; default: every variant of variants.yaml. VC (LLM baseline, E5) "
                         "runs only when named and needs LLM_PROVIDER")
     r.add_argument("--repeats", type=int, default=1)
+    r.add_argument("--decision-hour-utc", type=int, metavar="H",
+                   help="fix the decision moment of every scenario to H:00 UTC of its own day (default: as written in the "
+                        "files; a locked run must use the locked value)")
     r.add_argument("--locked", action="store_true",
                    help="required for a protected set (test): verify the protocol lock before running")
-    r.add_argument("--lock-file", help="default: backend/eval/protocol-lock.json")
+    r.add_argument("--lock-file", help="default: backend/eval/protocol-lock.json (the repository's lock). Any other file "
+                                       "is accepted only together with --lock-sha256")
+    r.add_argument("--lock-sha256", help="sha256 of the lock file, as recorded (registration, tag); required with a "
+                                         "--lock-file other than the repository's lock, and checked against the file")
     r.add_argument("--scenarios-dir", help="read scenarios from this folder instead of eval/scenarios/<set>")
     q = sub.add_parser("report", help="automatic measures and, with raters, rated measures")
     q.add_argument("--set", help="scenario set to report (required when the store holds more than one set)")
@@ -59,6 +65,11 @@ def _parser() -> argparse.ArgumentParser:
     a.add_argument("--variant", action="append", help="variant; repeatable; default: every variant")
     a.add_argument("--rater", required=True)
     a.add_argument("--seed", type=int, default=7)
+    a.add_argument("--repeat", type=int, help="rate only this repetition of every scenario")
+    a.add_argument("--pick-repeat", action="store_true",
+                   help="rate one repetition per scenario, chosen with the seed (the same for every variant and rater)")
+    a.add_argument("--per-stratum", type=int, metavar="N",
+                   help="a balanced subset: N scenarios of each stratum, chosen with the seed (the same for every rater)")
     a.add_argument("--dry-run", action="store_true", help="print the assignment without writing it")
     k = sub.add_parser("lock", help="write (or --check) the protocol lock: sha256 of scenarios, corpus, config, prompt, rater guide")
     k.add_argument("--set", default="test")
@@ -70,6 +81,11 @@ def _parser() -> argparse.ArgumentParser:
                                            "protected set (test)")
     k.add_argument("--out", help="default: backend/eval/protocol-lock.json")
     k.add_argument("--tag", default="protocol-v1")
+    k.add_argument("--repeats", type=int, default=1, help="generations per scenario and variant of the locked run "
+                                                          "(part of the lock; a locked run must use the same number)")
+    k.add_argument("--variant", action="append", help="variants of the first lock; repeatable; default: not restricted")
+    k.add_argument("--decision-hour-utc", type=int, metavar="H",
+                   help="fixed decision hour (UTC) of the locked run; default: the moments as written in the files")
     k.add_argument("--check", action="store_true", help="verify the existing lock instead of writing one")
     k.add_argument("--force", action="store_true", help="overwrite an existing lock file")
     return p
@@ -146,10 +162,15 @@ def cmd_lock(args) -> int:
     if env["code"]["dirty"]:
         print("lock: refused, uncommitted changes in " + ", ".join(env["code"]["dirty"]), file=sys.stderr)
         return 2
+    try:
+        run = lock.run_section(args.repeats, args.variant, args.decision_hour_utc)
+    except ValueError as exc:
+        print("lock: refused, %s" % exc, file=sys.stderr)
+        return 2
     data = lock.make_lock(args.set, files, prompt, Path(args.cache_snapshot) if args.cache_snapshot else None, args.tag,
-                          env=env)
+                          env=env, run=run)
     lock.write(data, out)
-    print(json.dumps({"lock": str(out), "set": args.set, "files": len(files), "prompt_hash": prompt,
+    print(json.dumps({"lock": str(out), "set": args.set, "files": len(files), "prompt_hash": prompt, "run": run,
                       "protocol_sha256": data["protocol_sha256"], "combined_sha256": data["combined_sha256"],
                       "commit": env["code"]["commit"], "src_sha256": env["code"]["src_sha256"]}, indent=2))
     print("lock: written; tag the commit with `git tag %s` once the human has approved it" % args.tag, file=sys.stderr)
@@ -165,7 +186,10 @@ def protected_folder(folder) -> Optional[str]:
         return None
     f = Path(folder).resolve()
     for name in PROTECTED_SETS:
-        home = scenario_dir(name).resolve()
+        try:
+            home = scenario_dir(name).resolve()
+        except ValueError:                      # a retrospective set whose folder is not configured has no home to compare
+            continue
         if f == home or home in f.parents:
             return name
         if home.is_dir() and f.is_dir():
@@ -176,8 +200,12 @@ def protected_folder(folder) -> Optional[str]:
 
 
 def check_run_allowed(args) -> int:
-    """0 when `run` may proceed. A protected set needs --locked and a lock that matches the files and the environment.
-    A --scenarios-dir that holds protected scenarios counts as that protected set, whatever --set says."""
+    """0 when `run` may proceed. A protected set needs --locked and a lock that matches the files, the environment and
+    the run section (repeats, variants). The lock is the repository's own lock, or a file whose sha256 the operator
+    states with --lock-sha256 (an arbitrary lock written to an arbitrary path is refused). On success `args.lock_info`
+    holds the lock's identity, which every item of the run records. A --scenarios-dir that holds protected scenarios
+    counts as that protected set, whatever --set says."""
+    args.lock_info = None
     from . import lock
     from .scenarios import PROTECTED_SETS
     owner = protected_folder(getattr(args, "scenarios_dir", None))
@@ -185,7 +213,7 @@ def check_run_allowed(args) -> int:
         print("run: refused, %s holds scenarios of the protected %r set; run them only as --set %s --locked"
               % (args.scenarios_dir, owner, owner), file=sys.stderr)
         return 2
-    if args.set not in PROTECTED_SETS:
+    if args.set not in PROTECTED_SETS and not args.locked:
         return 0
     if not args.locked:
         print("run: refused, the %r set runs only under the locked protocol (pass --locked; see `evalkit lock`)" % args.set,
@@ -195,16 +223,32 @@ def check_run_allowed(args) -> int:
     if not path.is_file():
         print("run: refused, no protocol lock at %s" % path, file=sys.stderr)
         return 2
+    sha = lock.lock_sha256(path)
+    if path.resolve() != lock.default_lock_path().resolve():
+        stated = (getattr(args, "lock_sha256", None) or "").strip().lower()
+        if not stated:
+            print("run: refused, %s is not the repository's lock (%s); state its sha256 with --lock-sha256"
+                  % (path, lock.default_lock_path()), file=sys.stderr)
+            return 2
+        if stated != sha:
+            print("run: refused, the sha256 of %s (%s) does not match --lock-sha256 (%s)" % (path, sha, stated),
+                  file=sys.stderr)
+            return 2
     locked = lock.read(path)
     try:
         files, prompt = _lock_inputs(args.set, args.scenarios_dir, None, None, locked.get("cache_snapshot"))
     except FileNotFoundError as exc:
         print("run: refused, %s" % exc, file=sys.stderr)
         return 2
-    diff = lock.differences(locked, files, prompt, args.set) + lock.environment_differences(locked, _lock_environment())
+    from ..config import load_variants
+    names = args.variant or sorted(load_variants())
+    diff = lock.differences(locked, files, prompt, args.set) + lock.environment_differences(locked, _lock_environment()) \
+        + lock.run_differences(locked, args.repeats, names, getattr(args, "decision_hour_utc", None))
     if diff:
         print("run: refused, the files differ from the protocol lock:\n  " + "\n  ".join(diff), file=sys.stderr)
         return 2
+    args.lock_info = {"lock_sha256": sha, "lock_combined_sha256": locked.get("combined_sha256"),
+                      "lock_tag": locked.get("tag")}
     return 0
 
 
@@ -300,7 +344,8 @@ def main(argv=None) -> int:
         failed = 0
         for name in names:
             try:
-                res = run_batch(store, args.set, name, args.repeats, Path(args.scenarios_dir) if args.scenarios_dir else None)
+                res = run_batch(store, args.set, name, args.repeats, Path(args.scenarios_dir) if args.scenarios_dir else None,
+                                lock_info=getattr(args, "lock_info", None), decision_hour_utc=args.decision_hour_utc)
             except (ModelCallError, vc.Unavailable) as exc:
                 print("run: failed, %s" % exc, file=sys.stderr)
                 return 2
@@ -317,7 +362,12 @@ def main(argv=None) -> int:
 
     if args.cmd == "assign":
         from . import rating
-        data = rating.assign(store, args.rater, args.set, args.batch, args.variant, args.seed, write=not args.dry_run)
+        try:
+            data = rating.assign(store, args.rater, args.set, args.batch, args.variant, args.seed, write=not args.dry_run,
+                                 repeat=args.repeat, pick_repeat=args.pick_repeat, per_stratum=args.per_stratum)
+        except ValueError as exc:
+            print("assign: refused, %s" % exc, file=sys.stderr)
+            return 2
         shown = dict({k: v for k, v in data.items() if k != "items"}, n=len(data["items"]))
         print(json.dumps(shown, ensure_ascii=False, indent=2))
         return 0 if data["items"] else 1

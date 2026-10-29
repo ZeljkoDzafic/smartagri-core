@@ -5,6 +5,13 @@ named batches, an explicit list of items in a seeded order, written to eval/assi
 without one, as every unrated item of one set (and of the named batches) in the same seeded order. The order of an
 item is sha256(seed | rater | scenario | variant | repeat): it does not depend on the random item id, so the same
 protocol over a new run gives the same order, and the seed is recorded with the assignment.
+
+An assignment can also choose what is rated: one repetition per scenario (`repeat`: a fixed number, or `pick_repeat`: a
+seeded choice per scenario, the same for every variant and every rater) and a balanced subset (`per_stratum`: n
+scenarios per stratum, seeded and independent of the rater, so every rater gets the same scenarios in an order of
+their own). The rule, the picked repetitions, the chosen scenarios and the lock the items come from are recorded in the
+assignment file. The queue refuses to mix batches of one variant (a re-run would be rated twice) and items of
+different protocol locks.
 """
 from __future__ import annotations
 
@@ -17,6 +24,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from .. import labels
 from ..store import Store, new_id, now_iso
+from . import lock as lock_mod
 
 CRITICAL_KEYS = {c["key"] for c in labels.RUBRIC["critical"]}
 
@@ -50,15 +58,22 @@ def blind_answer(answer: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _blind(item: Dict[str, Any]) -> Dict[str, Any]:
+    from . import settings as st
+    from .runner import raw_rows
     turns = []
     for t in item["turns"]:
         answer = blind_answer(t["answer"])
         turns.append({"question": t["question"], "answer": answer, "user_reply": t.get("user_reply")})
-    return {"item_id": item["id"], "scenario": item["scenario"], "turns": turns}
+    scenario = dict(item["scenario"])
+    if st.rater_view() == "raw" and scenario.get("quality"):
+        scenario["quality"], scenario["rater_view"] = raw_rows(scenario["quality"]), "raw"     # also an item stored graded
+    return {"item_id": item["id"], "scenario": scenario, "turns": turns}
 
 
 DEFAULT_SEED = 7
-ASSIGNMENT_FORMAT = "smartagri-rating-assignment/1"
+ASSIGNMENT_FORMAT = "smartagri-rating-assignment/2"
+FORMATS_READ = ("smartagri-rating-assignment/1", ASSIGNMENT_FORMAT)
+ORDER_RULE = "sha256(seed|rater|scenario|variant|repeat), ties by item id"
 
 
 def order_key(item: Dict[str, Any], rater: str, seed: int = DEFAULT_SEED) -> str:
@@ -85,7 +100,7 @@ def load_assignment(rater: str) -> Optional[Dict[str, Any]]:
     if not path.is_file():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("format") != ASSIGNMENT_FORMAT or data.get("rater") != rater:
+    if data.get("format") not in FORMATS_READ or data.get("rater") != rater:
         raise ValueError("Neispravna dodela stavki za ocenjivača %s (%s)." % (rater, path))
     return data
 
@@ -98,16 +113,88 @@ def eligible(store: Store, set_name: str, batches: Optional[Sequence[str]] = Non
             and (not variants or i.get("variant") in variants)]
 
 
+def check_pool(items: List[Dict[str, Any]]) -> Optional[str]:
+    """The one lock of the items; ValueError when they mix locks, or hold one scenario, variant and repetition in
+    several batches (a re-run of a variant): name the batches to rate."""
+    lock = lock_mod.single_lock(items)
+    seen: Dict[Any, set] = {}
+    for i in items:
+        seen.setdefault((i.get("scenario_id"), i.get("variant"), i.get("repeat")), set()).add(i.get("batch_id"))
+    dup = sorted({b for bs in seen.values() if len(bs) > 1 for b in bs})
+    if dup:
+        raise ValueError("The items of several batches repeat the same scenario, variant and repetition (%s); name the "
+                         "batches to rate." % ", ".join(dup))
+    return lock
+
+
+def _pick(seed: int, *parts: Any) -> int:
+    return int(hashlib.sha256(("%s|" % seed + "|".join(str(p) for p in parts)).encode("utf-8")).hexdigest()[:12], 16)
+
+
+def choose_repeats(items: List[Dict[str, Any]], repeat: Optional[int], pick_repeat: bool, seed: int):
+    """Items of one repetition per scenario, and the rule recorded for the assignment."""
+    if repeat is not None and pick_repeat:
+        raise ValueError("Choose one repetition (repeat) or a seeded choice per scenario (pick_repeat), not both.")
+    if repeat is not None:
+        kept = [i for i in items if i.get("repeat") == repeat]
+        if not kept:
+            raise ValueError("No item has repetition %s." % repeat)
+        return kept, {"mode": "fixed", "repeat": repeat}
+    if pick_repeat:
+        available: Dict[str, List[int]] = {}
+        for i in items:
+            available.setdefault(i["scenario_id"], [])
+            if i.get("repeat") not in available[i["scenario_id"]]:
+                available[i["scenario_id"]].append(i.get("repeat"))
+        picked = {s: sorted(r)[_pick(seed, "repeat", s) % len(r)] for s, r in available.items()}
+        return [i for i in items if i.get("repeat") == picked[i["scenario_id"]]], \
+            {"mode": "seeded", "seed": seed, "picked": picked}
+    return items, {"mode": "all"}
+
+
+def choose_subset(items: List[Dict[str, Any]], per_stratum: Optional[int], seed: int):
+    """Items of a balanced subset: `per_stratum` scenarios of each stratum, in a seeded order that does not depend on the
+    rater. Only scenarios present in every variant of the pool are chosen (a paired design)."""
+    if per_stratum is None:
+        return items, None
+    if per_stratum < 1:
+        raise ValueError("per_stratum must be at least 1")
+    variants = {i["variant"] for i in items}
+    have: Dict[str, set] = {}
+    stratum_of: Dict[str, str] = {}
+    for i in items:
+        have.setdefault(i["scenario_id"], set()).add(i["variant"])
+        stratum_of[i["scenario_id"]] = str(i.get("stratum"))
+    complete = sorted(s for s, v in have.items() if v == variants)
+    by: Dict[str, List[str]] = {}
+    for s in sorted(complete, key=lambda s: (_pick(seed, "subset", s), s)):
+        by.setdefault(stratum_of[s], []).append(s)
+    chosen = {k: v[:per_stratum] for k, v in sorted(by.items())}
+    subset = {"per_stratum": per_stratum, "seed": seed, "scenarios": chosen,
+              "short": {k: len(v) for k, v in sorted(chosen.items()) if len(v) < per_stratum},
+              "incomplete": sorted(set(have) - set(complete))}
+    keep = {s for v in chosen.values() for s in v}
+    return [i for i in items if i["scenario_id"] in keep], subset
+
+
 def assign(store: Store, rater: str, set_name: str, batches: Optional[Sequence[str]] = None,
-           variants: Optional[Sequence[str]] = None, seed: int = DEFAULT_SEED, write: bool = True) -> Dict[str, Any]:
+           variants: Optional[Sequence[str]] = None, seed: int = DEFAULT_SEED, write: bool = True,
+           repeat: Optional[int] = None, pick_repeat: bool = False,
+           per_stratum: Optional[int] = None) -> Dict[str, Any]:
     """Assign items of one set to a rater in the seeded order; the list and its sha256 are written to
-    eval/assignments/<rater>.json (hash it, or commit it, before rating starts)."""
+    eval/assignments/<rater>.json (hash it, or commit it, before rating starts). `repeat` / `pick_repeat` keep one
+    repetition per scenario, `per_stratum` a balanced seeded subset; both rules are recorded."""
     if not rater.strip():
         raise ValueError("Ime ocenjivača je obavezno.")
-    items = sorted(eligible(store, set_name, batches, variants), key=lambda i: order_key(i, rater, seed))
+    pool = eligible(store, set_name, batches, variants)
+    lock = check_pool(pool)
+    pool, repeat_rule = choose_repeats(pool, repeat, pick_repeat, seed)
+    pool, subset = choose_subset(pool, per_stratum, seed)
+    items = sorted(pool, key=lambda i: order_key(i, rater, seed))
     order = [i["id"] for i in items]
     data = {"format": ASSIGNMENT_FORMAT, "rater": rater, "set": set_name, "batches": sorted(batches or []),
-            "variants": sorted(variants or []), "seed": seed,
+            "variants": sorted(variants or []), "seed": seed, "order_rule": ORDER_RULE, "lock_sha256": lock,
+            "repeat_rule": repeat_rule, "subset": subset,
             "created_at": datetime.now().astimezone().isoformat(timespec="seconds"), "items": order,
             "items_sha256": hashlib.sha256("\n".join(order).encode("utf-8")).hexdigest()}
     if write:
@@ -141,6 +228,8 @@ def next_item(store: Store, rater: str, set_name: Optional[str] = None, batches:
             raise ValueError("Stavke pripadaju različitim skupovima (%s); izaberite skup." % ", ".join(sets))
         set_name = sets[0] if sets else None
     todo = [i for i in pool if i.get("set") == set_name]
+    check_pool([i for i in store.list_eval_items() if i.get("set") == set_name and i.get("rateable", True)
+                and not i.get("error") and (not batches or i.get("batch_id") in batches)])
     if not todo:
         return {"item_id": None, "remaining": 0}
     todo.sort(key=lambda i: order_key(i, rater, seed))

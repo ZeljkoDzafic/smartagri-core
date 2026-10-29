@@ -96,9 +96,10 @@ def test_eval_batch_rating_and_report(monkeypatch, store):
 
 def test_cluster_bootstrap_and_wilcoxon():
     diffs = [1.0, 1.0, 2.0, 0.0, 3.0, 1.0, 2.0, 1.0]
-    lo, hi = report.bootstrap_ci(diffs, clusters=["a", "a", "b", "b", "c", "c", "d", "d"])
+    lo, hi = report.bootstrap_ci(diffs, clusters=["a", "a", "b", "b", "c", "c", "d", "d"], min_clusters=4)
     assert lo <= report.mean(diffs) <= hi
-    assert report.bootstrap_ci([1.0, 2.0], clusters=["a", "a"]) is None
+    assert report.bootstrap_ci(diffs, clusters=["a", "a", "b", "b", "c", "c", "d", "d"]) is None   # 4 < the default 5
+    assert report.bootstrap_ci([1.0, 2.0], clusters=["a", "a"], min_clusters=1) is None
     w = report.wilcoxon_signed_rank([1, 2, 3, 4, 5, 6, 7, -1])
     assert w["n"] == 8 and w["p_two_sided"] < 0.05
     assert report.wilcoxon_signed_rank([1, -1, 0]) is None

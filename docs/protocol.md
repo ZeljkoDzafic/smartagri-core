@@ -6,8 +6,16 @@ the lock nothing in it changes; a later change is a new experiment. Items marked
 the protocol owner and written here and in `backend/config/analysis.yaml` before the lock. Until then the report
 prints intervals without a verdict.
 
-The machine-readable parameters (alpha, bootstrap, margins, the primary comparison) are in
-`backend/config/analysis.yaml`; `evalkit report` reads them from there and never from this text.
+The machine-readable parameters (alpha, bootstrap, `min_clusters`, margins, the primary comparison and measure, the
+Holm family, the scope of the first lock) are in `backend/config/analysis.yaml`; `evalkit report` reads them from there
+and never from this text. This text and the file must say the same; `tests/test_evalkit_plan.py` checks it.
+
+**Scope of the first lock.** The ablation ladder below is the design. The first lock covers V3, V4 and VC on the 40
+scenarios, plus a retrospective set (`docs/retrospective-set.md`; season 2024 development, season 2025 test).
+V0-V2, V5 and E2-E5 remain in the design and the code and are run only on a small subset or in a later lock; E5 is
+excluded by a switch (`scope.include_e5: false`, section 7). The independent agronomist rates; a second agronomist
+reviews the configuration. The rater sees the input facts without the reliability grades of the q layer
+(`rater_view: raw`, `docs/RATER_GUIDE.md`).
 
 ## 1. Design in one paragraph
 
@@ -21,7 +29,7 @@ unreliable-input or conflicting-source scenarios per group) are answered by ever
 | V1 | hybrid retrieval (standard RAG) | |
 | V2 | applicability pi from the question (condition-aware RAG) | |
 | V3 | dynamic parcel context: pi reads the parcel, weather W and NDVI S become visible | E2 = V3 − V2 |
-| V4 | the sufficiency-and-asking model: input quality q, sufficiency sigma, question choice alpha (one layer by design) | **E1 = V4 − V3 (primary)** |
+| V4 | the sufficiency-and-asking model: input quality q, sufficiency sigma, question choice alpha (one layer by design) | **E1 = V4 − V3 (primary, K4 ∪ K5)** |
 | V5 | decision policy delta and grounding check gamma | E3 = V5 − V4 |
 | V5-weather, V5-satellite | V5 without one source of the dynamic context | E4 |
 | VC | language model with the same data, reliability labels and passages, no decision model | E5 = V5 − VC |
@@ -59,14 +67,15 @@ every variant.
 
 ## 2. Primary outcome (E1)
 
-**One primary outcome: the critical-error rate** — the share of a scenario's answers (repeats averaged first) in which
-the independent agronomist marks at least one critical error K1-K5 (K4, premature recommendation, included) — compared
-as the paired difference V4 − V3 over the 40 test scenarios.
+**One primary outcome: the rate of scenarios with a K4 or K5 error (K4 ∪ K5)** — the share of a scenario's answers
+(repeats averaged first) in which the independent agronomist marks at least one of K4 (premature recommendation) and K5
+(unjustified abstention or question), compared as the paired difference V4 − V3 over the 40 test scenarios
+(`primary.measure: k4_or_k5`). Decided by the product owner on 28 October 2026.
 
-Note on the choice: three measures are candidates for E1 (the rate of contextually wrong and premature
-recommendations, the rubric score for applicability and the correctness of the act). The plan takes the first one as
-the single primary outcome; this choice is flagged for confirmation by the protocol owner before the lock. The other
-two are key secondary outcomes (section 3).
+Note on the choice: the union with K1 is not used. K1 cannot occur while `quantity_validated` is false (quantities are
+excluded), and K2 and K3 do not depend on the layer under test, so including them would only add noise. The any-class
+rate K1-K5 is still reported, as a secondary outcome. The rubric score and the correctness of the first act are key
+secondary outcomes (section 3).
 
 Estimate: mean paired difference with a 95 % percentile bootstrap interval (10,000 resamples, seed 7). E1 is supported
 when the whole interval lies below zero.
@@ -76,8 +85,10 @@ secondary analyses. Without the independent rating E1 is reported as author-rate
 
 ## 3. Secondary outcomes
 
-Key secondary (E1, same pairs): rubric total (0-10), K4 rate, K5 rate (unjustified abstention or question), first-turn
-act correctness against the reference act.
+Key secondary (E1, same pairs): K1, K2 and K3 rates, rubric total (0-10), first-turn act correctness against the
+reference act; reported also: the K4 and K5 rates separately and the any-class rate K1-K5. V4 − VC (same data and
+sources, no decision model) is pre-specified; whether it is co-primary or key secondary is **TO BE DECIDED** and it is
+not in the Holm family until it is.
 
 Other secondary:
 
@@ -96,9 +107,14 @@ descriptively; no interval is shown for a subset of fewer than 10 scenarios (`mi
 ## 4. Alpha and multiple comparisons
 
 - alpha = 0.05, two-sided (95 % intervals). Proposed default, to be confirmed before the lock.
-- Hierarchy: E1 is the only confirmatory test and is tested at the full alpha. E2-E5 and every secondary outcome are
+- Hierarchy: E1 is the only confirmatory test and is tested at the full alpha. The key secondary outcomes of the first lock are
   tested only after E1 and are reported with Holm-adjusted p-values (Wilcoxon signed-rank, supplementary;
-  `evalkit/report.py:holm`) across the family {E2, E3, E4, E5}; their intervals are unadjusted and described as such. Proposed rule, to be confirmed.
+  `evalkit/report.py:holm_family`) across the family listed in `analysis.yaml` (`holm.family`): E1-rubrika, E1-K1,
+  E1-K2, E1-K3 and E1-prvi-cin (all V4 − V3). A member without variation (for example K1 while quantities are off) has
+  no p-value and is not counted. Their intervals are unadjusted and described as such. E2-E5 are not in the first lock
+  and not in the family; a later lock that adds them must list them in `holm.family` first. Earlier drafts of this plan
+  named the family {E2, E3, E4, E5} and the code {E2, E3}; neither is the plan of the first lock. Proposed rule, to be
+  confirmed.
 - Nothing else is called significant.
 
 ## 5. Sample size and power
@@ -128,18 +144,23 @@ interval that includes zero is reported as inconclusive, never as "no effect".
 
 The resampling unit is the scenario's `cluster` field; a scenario without it falls back to its parcel id
 (`P.parcel_id`) and then to its own id (`evalkit/runner.py:cluster_of`), so scenarios on one parcel share a cluster. Whole clusters are resampled with replacement
-(`evalkit/report.py:bootstrap_ci`). If the test set has fewer than about ten clusters, the cluster definition (base
-situation versus parcel x date) is **TO BE DECIDED** before the lock, because a bootstrap over three or four clusters
-gives an unusable interval.
+(`evalkit/report.py:bootstrap_ci`). A cluster bootstrap over fewer than `min_clusters` clusters (`backend/config/analysis.yaml`, proposed default 5) is
+**not estimable**: the report prints the point difference and the reason, never an interval, and no verdict (supported or
+non-inferior) is drawn from it. With about ten clusters or fewer the cluster definition (base situation versus parcel x
+date) is **TO BE DECIDED** before the lock, because a bootstrap over a few clusters gives an unusable interval.
 
 ## 7. Non-inferiority (E5)
+
+**E5 is not in the first lock** (`scope.include_e5: false`): the report prints no E5 table and uses no margin. The
+implementation stays, behind the switch, for a later lock. The text below is the design.
 
 The rubric total of V5 is non-inferior to VC when the lower limit of the two-sided 95 % interval of V5 − VC (a
 one-sided test at alpha/2 = 0.025) lies above −margin.
 
 **Non-inferiority margin: TO BE DECIDED BY THE PROTOCOL OWNER** (`noninferiority.margin` in
 `backend/config/analysis.yaml`, currently null). A margin must be locked before measurement; no value is
-justified or assumed here. The justification (for example a minimal important difference agreed
+justified or assumed here. With a null margin the report does not evaluate the test and says why (status
+`not_evaluated`); a margin that is not a positive number is an error. The justification (for example a minimal important difference agreed
 with the agronomist) is written in this section when the margin is set.
 
 ## 8. Negative control: equivalence on the complete stratum
@@ -149,7 +170,7 @@ nothing. This is tested as equivalence, not as "no difference": two one-sided te
 90 % percentile bootstrap interval of V4 − V3 on the rubric total must lie inside (−margin, +margin).
 
 **Equivalence margin: TO BE DECIDED BY THE PROTOCOL OWNER** (`equivalence.margin` in `backend/config/analysis.yaml`,
-currently null). Until it is set the report gives the interval and no verdict.
+currently null). Until it is set the report does not evaluate the test (it says the margin is not set) and draws no verdict.
 
 ## 9. Rater agreement
 

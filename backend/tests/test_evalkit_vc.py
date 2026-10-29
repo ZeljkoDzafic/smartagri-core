@@ -160,6 +160,8 @@ def test_cli_run_report_compare_and_tables(env, capsys, monkeypatch):
     assert out["paired"]["a"] == "V5" and out["paired"]["b"] == "VC" and out["paired"]["critical_rate_diff"] == -1.0
 
     md = tables.render(store, items, "agro")
+    assert "Tabela 7.10." not in md and "E5 nije u prvom zaključavanju" in md      # E5 is outside the first lock
+    md = tables.render(store, items, "agro", settings=dict(report.analysis_settings(), scope={"include_e5": True}))
     assert "Tabela 7.10." in md and "| VC |" in md
     rows = {r.split("|")[1].strip(): [c.strip() for c in r.strip("|").split("|")] for r in md.split("Tabela 7.10.")[1]
             .split("\n\n")[1].splitlines()[2:]}
