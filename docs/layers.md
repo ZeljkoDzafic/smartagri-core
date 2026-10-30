@@ -62,6 +62,11 @@ recommends; its answers carry `baseline_label` = "template, not a baseline" (run
 
 ## Inputs of q
 
+Before grading, every input passes a plausibility check (`core/plausibility.py`, limits in `rules.input_limits`): an
+implausible value is graded **low** ("implausible value") and the decision cores and tools see it as unknown, for every
+rung alike (V0-V3 treat it as missing). An input that must carry a date and has none is at most low ("date unknown"), a
+measured one without a time is missing, and an input dated after the decision moment is missing.
+
 q describes every input by origin, age, coverage and a reliability grade. The grade comes from `config/thresholds.yaml`
 (origin, age, coverage, count). Two sets of facts can only **lower** that grade; both read the optional
 `parcel_features` block of the satellite context S (see [parcel-features.md](parcel-features.md)) and are

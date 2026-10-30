@@ -178,8 +178,9 @@ def test_numbers_from_code_stay_available_to_the_rungs_that_have_the_inputs():
     sc = _scenario("IRR-T-01_complete")
     p3 = _first_payload("V3", sc)["payload"]
     tools = {c["tool"]: c for c in p3["calculations"]}
-    assert {"etc", "net_irrigation_need", "gross_irrigation"} <= set(tools) and tools["etc"]["output"]
-    # quantity tools are filtered by the policy exactly as before: V3 has none (delegated), so they are shown when computed
+    # ETc is not an irrigation quantity; net and gross depth follow rules.irrigation.quantity_validated (closed by
+    # default, see tests/test_quantity_gate.py) exactly as for V4 and V5
+    assert "etc" in set(tools) and tools["etc"]["output"] and not ({"net_irrigation_need", "gross_irrigation"} & set(tools))
     for c in p3["calculations"]:
         assert c["output"] and set(c) >= {"tool", "label", "formula", "inputs", "output", "source_ref", "reason"}
     # the answer of V3 never carries the core's action, whatever the model returns

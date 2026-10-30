@@ -49,6 +49,11 @@ jobs:
         run: ruff check src tests
       - name: Test
         run: pytest -q
+      - name: Coverage of the decision core (core/, branch coverage, at least 90 %; measured 96 %)
+        if: matrix.python == '3.12'
+        run: |
+          coverage run --branch --source=src/smartagri/core -m pytest -q
+          coverage report --include='src/smartagri/core/*' --fail-under=90
       - name: Leakage guard on the development set
         run: python -m smartagri.evalkit guard --set dev > /dev/null
       - name: Example (examples/advise_one_parcel.py, offline, template generator)

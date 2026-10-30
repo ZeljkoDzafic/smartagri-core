@@ -18,7 +18,7 @@ from ..pipeline import intent, intent_en
 from ..pipeline.generate import make_generator
 from ..pipeline.profile import AGRONOMIC_FIELDS, build_profile, context_from, quality_rows
 from ..pipeline.run import advise
-from ..providers import satellite
+from ..providers import satellite, weather
 from ..providers.base import offline
 from ..retrieval import load_corpus, make_retriever
 from ..store import Store, make_store, new_id, now_iso
@@ -81,6 +81,15 @@ def date_field(body: Dict[str, Any], key: str, with_time: bool = False) -> Optio
         raise BadRequest("Neispravan datum u polju %s (očekuje se GGGG-MM-DD)." % key)
 
 
+def _reply_hint(name: str) -> str:
+    """How to word a reply that could not be read, for the inputs whose free text is easy to misread."""
+    return {"previous_fertilization": T("Navedite proizvod i količinu po hektaru, na primer „150 kg/ha KAN”, ili „ništa”."),
+            "phenophase": T("Navedite fazu kao „BBCH 16”, kao broj listova („6 listova”) ili rečima (metličenje, svilanje)."),
+            "yield_target": T("Navedite broj tona po hektaru, na primer „9 t/ha”."),
+            "soil_water_status": T("Navedite da li je zemljište suvo, umereno vlažno ili vlažno.")
+            }.get(name, T("Izaberite jednu od ponuđenih opcija."))
+
+
 class ResearchService:
     def __init__(self, store: Optional[Store] = None):
         self.store = store or make_store()
@@ -108,14 +117,15 @@ class ResearchService:
 
     # ------------------------------------------------------------ parcels
     @staticmethod
-    def _today() -> str:
-        return datetime.now().astimezone().date().isoformat()
+    def _today(time_zone: Optional[str] = None) -> str:
+        """Today's date in the parcel's zone (the default zone without one), not in the zone of the server."""
+        return weather.local_day(datetime.now().astimezone(), time_zone).isoformat()
 
     def _reported_on(self, parcel: Dict[str, Any]) -> str:
         """The date of a reply: the decision date of a parcel that has one (a retrospective decision describes that
         moment, so a reported value is not dated after it), otherwise today."""
         pinned = self._pinned(parcel)
-        return pinned.date().isoformat() if pinned is not None else self._today()
+        return pinned.date().isoformat() if pinned is not None else self._today(parcel.get("time_zone"))
 
     def _parcel(self, parcel_id: str) -> Dict[str, Any]:
         parcel = self.store.get_parcel(parcel_id)
@@ -215,27 +225,50 @@ class ResearchService:
                    variant=conv["variant"], created_at=now_iso(), question=shown)
         return self.store.save_run(run)
 
-    def _ask_advice_type(self, conv: Dict[str, Any], text: str) -> Dict[str, Any]:
-        """The question names no advice type: ask for it (same turn shape as the product API)."""
-        question = {"input": "advice_type", "text": T("Na šta se pitanje odnosi?"), "how_to_obtain": "",
-                    "options": L().OPTIONS["advice_type"]}
-        answer = {"act": "ask", "act_label": L().ACTS["ask"],
-                  "summary": T("Nisam siguran na koju vrstu saveta se pitanje odnosi."), "action": None, "rationale": [],
+    def _clarify(self, conv: Dict[str, Any], shown: str, summary: str, question: Dict[str, Any], pending: Dict[str, Any],
+                 reason_code: str) -> Dict[str, Any]:
+        """A turn that only asks the user something (no decision is made): the same turn shape as the product API."""
+        answer = {"act": "ask", "act_label": L().ACTS["ask"], "summary": summary, "action": None, "rationale": [],
                   "data_used": [], "sources": [], "calculations": [], "next_question": question, "limitations": [],
                   "referral": None, "basis": {"deciding": [], "missing": [], "text": ""}, "generator": "template"}
         out = {"advice_type": None, "advice_type_label": None, "answer": answer,
                "decisions": {"quality": {}, "applicability": [], "passage_budget": [], "sufficiency": None,
                              "question": None, "core_action": None,
-                             "policy": {"act": "ask", "reason_code": "advice_type_unclear", "allow_quantity": False,
+                             "policy": {"act": "ask", "reason_code": reason_code, "allow_quantity": False,
                                         "warnings": []},
                              "grounding": {"unsupported_numbers": [], "action": "none"}},
                "provenance": {"as_of": None, "config_hashes": config.config_hashes(), "corpus_hash": self.corpus.hash,
                               "model": "none", "prompt_hash": None, "judge_prompt_hash": None, "scene_dates": [],
                               "forecast_issued_at": None},
                "cost": {"seconds": 0.0, "llm_calls": 0, "input_tokens": 0, "output_tokens": 0}}
-        conv["pending"] = {"input": "advice_type", "question_text": text, "advice_type": None}
+        conv["pending"] = pending
         self.store.save_conversation(conv)
-        return self._record(conv, text, out, None)
+        return self._record(conv, shown, out, None)
+
+    def _ask_advice_type(self, conv: Dict[str, Any], text: str) -> Dict[str, Any]:
+        """The question names no advice type: ask for it (same turn shape as the product API)."""
+        question = {"input": "advice_type", "text": T("Na šta se pitanje odnosi?"), "how_to_obtain": "",
+                    "options": L().OPTIONS["advice_type"]}
+        return self._clarify(conv, text, T("Nisam siguran na koju vrstu saveta se pitanje odnosi."), question,
+                             {"input": "advice_type", "question_text": text, "advice_type": None}, "advice_type_unclear")
+
+    def _confirm_turn(self, conv: Dict[str, Any], held: Dict[str, Any], shown: str, note: str = "") -> Dict[str, Any]:
+        """What was understood from a free-text reply, shown before it is written to the parcel: nothing is stored until
+        the user says it is right (a wrongly read reply would otherwise become an input graded "user reported")."""
+        name, value = held["input"], held["value"]
+        understood = "%s: %s" % (L().INPUTS.get(name, name), L().value_text(name, value))
+        question = {"input": "confirm", "text": T("Razumeo sam: %s. Tačno?") % understood, "how_to_obtain": "",
+                    "options": L().OPTIONS["confirm"]}
+        summary = (note + " " if note else "") + T("Pre nego što upišem podatak, potvrdite da sam vas dobro razumeo.")
+        return self._clarify(conv, shown, summary.strip(), question,
+                             {"input": "confirm", "question_text": held["pending"]["question_text"],
+                              "advice_type": held["pending"]["advice_type"], "held": held}, "reply_to_confirm")
+
+    def _repeat_question(self, conv: Dict[str, Any], parcel: Dict[str, Any], pending: Dict[str, Any], shown: str,
+                         note: str) -> Dict[str, Any]:
+        """The pending question again, with a note on why (a reply that could not be read, a confirmation refused)."""
+        conv["pending"] = pending
+        return self._run_turn(conv, parcel, pending["question_text"], pending["advice_type"], shown, note)
 
     def chat(self, parcel_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         """One turn: a new question (advice type given or classified) or a reply to the pending follow-up question."""
@@ -256,14 +289,35 @@ class ResearchService:
                     "pending": None, "questions_asked": 0, "declined": [], "first_question": text}
         conv["variant"] = variant_name
         pending = conv.get("pending")
+        if pending and pending["input"] == "confirm":
+            # The previous turn showed what was understood from a free-text reply; nothing was written yet.
+            held = pending["held"]
+            choice = None
+            if reply and reply.get("input") == "confirm":
+                choice = reply.get("value")
+            elif not reply and text:
+                choice = intent.parse_confirmation(text)
+            if choice == "yes":
+                reply, text, pending = {"input": held["input"], "value": held["value"]}, held["text"], held["pending"]
+                conv["pending"] = pending
+            elif choice == "no":
+                return self._repeat_question(conv, parcel, held["pending"], text or L().OPTIONS["confirm"][1]["label"],
+                                             T("U redu, odgovor nije upisan. Pitanje se ponavlja."))
+            else:
+                return self._confirm_turn(conv, held, text, T("Nisam razumeo odgovor na pitanje."))
         if pending and not reply and text and pending["input"] != "advice_type":
             kind, value = intent.parse_reply(pending["input"], text)
             if kind == "unparsed" and current() == "en":               # English replies
                 kind, value = intent_en.parse_reply(pending["input"], text)
             if kind == "value":
-                reply = {"input": pending["input"], "value": value}
-            elif kind == "declined":
+                # A free-text reply is confirmed before it is written (an option chosen by the client is not).
+                return self._confirm_turn(conv, {"pending": pending, "input": pending["input"], "value": value, "text": text}, text)
+            if kind == "declined":
                 reply = {"input": pending["input"], "value": labels.DECLINE_OPTION["value"]}
+            elif intent.classify(text) is None and (current() != "en" or intent_en.classify(text) is None):
+                # Neither an answer nor a new question: ask again instead of treating the text as a new question.
+                return self._repeat_question(conv, parcel, pending, text, T("Nisam razumeo odgovor.") + " " +
+                                             _reply_hint(pending["input"]))
         if reply:
             if not pending or reply.get("input") != pending["input"]:
                 raise BadRequest("Nema otvorenog pitanja na koje se ovaj odgovor odnosi.")
@@ -300,6 +354,11 @@ class ResearchService:
                 if classified is None:
                     return self._ask_advice_type(conv, text)
                 advice_type = classified.value
+        return self._run_turn(conv, parcel, question_text, advice_type, shown)
+
+    def _run_turn(self, conv: Dict[str, Any], parcel: Dict[str, Any], question_text: str, advice_type: str, shown: str,
+                  note: str = "") -> Dict[str, Any]:
+        """Decide and answer the question of the conversation with what the parcel holds now."""
         profile = self._profile_for_chat(parcel)
         query = question_text
         if current() == "en" and intent.classify(question_text) is None:
@@ -310,8 +369,10 @@ class ResearchService:
                            conv.get("questions_asked", 0), conv.get("declined", []))
         if current() == "en" and advice_type == AdviceType.FIELD_OPS_WINDOW.value and not ctx.A.operation:
             ctx.A.operation = intent_en.operation_in(question_text)
-        out = advise(ctx, self.corpus, self.retriever, self.variants[variant_name], self.generator)
+        out = advise(ctx, self.corpus, self.retriever, self.variants[conv["variant"]], self.generator)
         nq = out["answer"]["next_question"]
+        if note:
+            out["answer"]["summary"] = (note + " " + out["answer"]["summary"]).strip()
         conv["pending"] = {"input": nq["input"], "question_text": question_text, "advice_type": advice_type} if nq else None
         self.store.save_conversation(conv)
         return self._record(conv, shown, out, profile["id"])

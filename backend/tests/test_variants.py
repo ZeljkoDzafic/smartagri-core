@@ -176,7 +176,7 @@ def test_v3_may_ask_a_free_question_that_the_runner_answers_from_the_scenario(va
     assert all((t["answer"]["next_question"] or {}).get("origin") != "model" for t in out4["turns"])
 
 
-def test_a_free_question_without_a_matching_reply_ends_the_conversation(variants):
+def test_a_free_question_without_a_matching_reply_is_answered_i_do_not_know_and_the_conversation_goes_on(variants):
     import yaml
     from smartagri.evalkit.runner import run_scenario
     from smartagri.retrieval import Retriever, load_corpus
@@ -186,7 +186,9 @@ def test_a_free_question_without_a_matching_reply_ends_the_conversation(variants
     sc = yaml.safe_load((Path(__file__).resolve().parents[1] / "eval" / "scenarios" / "dev" /
                          "IRR-T-02_missing_soil_water.yaml").read_text(encoding="utf-8"))
     out = run_scenario(sc, "V3", corpus, Retriever(corpus.passages), _fake_model(body))
-    assert out["n_turns"] == 1 and out["first_question_input"] is None
+    # as for the structured question of V4/V5 and for VC: "Ne znam." and on, until the turn cap
+    assert out["n_turns"] == 3 and out["first_question_input"] is None
+    assert [t["user_reply"] for t in out["turns"]] == ["Ne znam."] * 3
 
 
 def test_the_template_cannot_ask_for_variants_without_sufficiency(variants):

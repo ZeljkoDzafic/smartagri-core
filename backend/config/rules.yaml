@@ -22,6 +22,9 @@ field_ops:
   spraying_max_wind_ms: 5.0
   rain_block_mm_3d: 2.0
   frost_tmin_c: 0.0
+  # DEVELOPMENT VALUE, awaiting agronomist review: forecast rain within the window (3 days, else 7) at or above which
+  # fertilising and every other field operation is postponed (leaching and run-off of nitrogen, a saturated soil).
+  heavy_rain_postpone_mm: 25.0
   # DEVELOPMENT VALUES (72 h field-operations window card). Not used by the decision cores.
   # The agronomist reviews them before the protocol is locked.
   window:
@@ -54,6 +57,19 @@ phenology:
     - {days_max: 115, bbch: 75}
     - {days_max: 140, bbch: 85}
     - {days_max: 9999, bbch: 89}
+# DEVELOPMENT VALUES (plausibility of inputs, core/plausibility.py). A value outside its range is not used: q grades it
+# "low" (basis "implausible value") and the decision cores and the tools see the input as unknown. The ranges only catch
+# values that cannot be right (a percentage for a fraction, metres for mm/m, a negative rain), not unusual ones. Reviewed
+# by the agronomist with the other values; the AWC range spans Table 19 of the FAO-56 text (50-200 mm/m by texture).
+input_limits:
+  soil_moisture_vwc: [0.0, 1.0]      # m3/m3, volumetric water content of the sensor
+  soil_awc_mm_m: [20, 300]           # mm of available water per metre of soil
+  irrigation_efficiency: [0.0, 1.0]  # share; greater than 0 and at most 1
+  root_depth_m: [0.05, 3.0]          # m, effective root depth of the balance
+  precipitation_mm: [0.0, 1000.0]    # mm in the 3- or 7-day window
+  et0_mm: [0.0, 100.0]               # mm of reference evapotranspiration over 7 days
+  yield_target_t_ha: [0.0, 40.0]     # t/ha
+  fertilizer_rate_kg_ha: [0.0, 2000.0]   # kg of product (or of N) per hectare in one record
 soil:
   awc_by_texture_mm_m: {sand: 80, sandy_loam: 120, loam: 160, clay_loam: 180, clay: 200}
   efficiency_by_system: {sprinkler: 0.75, drip: 0.90, furrow: 0.60}

@@ -41,6 +41,35 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
   (`enabled: false`): recorded in the provenance, no effect on any decision.
 - `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
 
+### Fixed (input validation and rung symmetry)
+- A free question of a model (V0-V3) or of VC with no matching prepared reply is answered "Ne znam." and the conversation
+  goes on, like the structured question of V4/V5 (hard cap `MAX_TURNS`, 3); the question goes to `Context.declined_free`
+  and the V0-V3 fact sheet says the user did not know the answer.
+- The irrigation quantity gate (`rules.irrigation.quantity_validated`) also withholds net/gross depth, volume and
+  application time from the answer and fact sheet of V0-V3, and from the fact sheet of V4/V5 (their card keeps the
+  calculation steps beside the withheld quantity).
+- q: an input without a date is at most low ("date unknown"), a measured one without a time is missing, an input dated
+  after the decision moment is missing; `Context.from_dict` rejects such dates and malformed ones by field name. New key
+  `thresholds.inputs.ndvi_trend.missing_after_days: 30`.
+- Implausible inputs (percentage for a fraction, metres for mm/m, negative rain, NaN, strings) are low ("implausible
+  value") and unknown to the decision cores and tools; the tools refuse them. New section `rules.input_limits`
+  (development values; registry entries, administrator only).
+- A dose of a fertiliser whose nitrogen content is unknown is not 0 kg N (history unknown unless the known part is
+  already "full"); product names are normalised (`KAN 27%` -> `kan`); malformed records are low, not exceptions.
+- Heavy forecast rain postpones fertilising, top-dressing and every field operation: new key
+  `rules.field_ops.heavy_rain_postpone_mm: 25.0` (development value, awaiting agronomist review); new decision class
+  `postpone_heavy_rain`; `fertilization_timing` now reads the 7-day forecast it requires.
+- A planned or unreadable sowing date gives no stage estimate (it was BBCH 5 or an exception); the dates of a profile are
+  the parcel's local dates, whatever the zone of the server.
+- Reply parsing and question classification: word boundaries, negation, targeted number patterns, one nitrogen table
+  (`rules.optional_inputs.n_content`; AN is 0.344 as configured), more out-of-scope words. The interactive research API
+  confirms what it understood before it writes an input and asks again when it cannot read a reply; the evaluation runner
+  uses the same parser and never waits.
+
+### Added (tests and CI)
+- Boundary tests for every step of the Kc, BBCH, grade and root-depth tables; ordering tests (q never rises with age or
+  falls with coverage, net >= 0, gross >= net); a coverage threshold for `core/` (`make coverage-core`, CI step; at least 90 % branch coverage, measured 96 %; `core/conflicts.py` is the weak spot at 48 %).
+
 ### Changed
 - V0–V3 are an LLM with the data their rung allows (decision D11): the language model of a variant without the
   sufficiency layer no longer receives the decision core's act, action, timing or any other conclusion (D_t); it

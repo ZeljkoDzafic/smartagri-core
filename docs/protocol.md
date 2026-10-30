@@ -27,7 +27,7 @@ unreliable-input or conflicting-source scenarios per group) are answered by ever
 | VC | language model with the same data, reliability labels and passages, no decision model | E5 = V5 − VC |
 
 Below V4 no input carries a reliability grade ("ungraded"); V0-V3 may ask one free question per turn when a language
-model is used, and the prepared reply is given exactly as for VC. Every variant uses the same model, corpus, tools,
+model is used, and the prepared reply is given exactly as for VC. A question with no prepared reply is answered "Ne znam." by the simulated user in **every** variant (structured question of V4/V5, free question of V0-V3 and VC) and the conversation continues; three turns at most. Every variant uses the same model, corpus, tools,
 passage budget and output limit (`backend/config/evaluation.yaml`).
 
 ### 1.1 What a rung receives, and who chooses the act
@@ -36,7 +36,8 @@ V0-V3 are a language model with the data the rung allows. The model receives the
 profile P, A, Q, ungraded; from V3 also the weather summary W and the NDVI series S); the passages the rung retrieves
 (none for V0; every passage counts as applicable for V1; pi over the question for V2 and over the parcel from V3); and
 the results of the calculation tools that the rung's inputs allow (ETc, net and gross irrigation: numbers come from
-code, never from the model; they appear when their inputs do, so from V3 on for irrigation). It chooses the act itself
+code, never from the model; they appear when their inputs do, so from V3 on for irrigation; net and gross depth,
+volume and application time only while `rules.irrigation.quantity_validated` is true, as for V4/V5). It chooses the act itself
 (recommend, conditional, ask or abstain) and phrases the answer. It receives **no** act, action, timing or other
 conclusion of the decision core (`core/rules.py`, the action core D_t); its prompt does not mention a core
 (`pipeline/generate.py`, `SYSTEM_PROMPT_FREE`, `fact_sheet`).

@@ -42,8 +42,10 @@ def test_parse_reply(name, text, expected):
 
 
 def test_fertilizer_reply_converts_product_to_nitrogen():
-    kind, value = parse_reply("previous_fertilization", "200 kg uree")
+    kind, value = parse_reply("previous_fertilization", "200 kg/ha uree")
     assert kind == "value" and value[0]["n_kg_ha"] == 92.0
+    # without the per-hectare cue the unit is unclear (per parcel or per hectare): not read, asked again
+    assert parse_reply("previous_fertilization", "200 kg uree") == ("unparsed", None)
 
 
 def test_apply_reply_stamps_the_report_date():

@@ -1,5 +1,5 @@
 # SmartAgri core. Python 3.9+; no Docker needed.
-.PHONY: venv test api eval-dev eval-guard eval-lock report
+.PHONY: coverage-core venv test api eval-dev eval-guard eval-lock report
 
 venv:
 	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip setuptools && pip install -c constraints-py39.txt -e ".[dev,api]"
@@ -20,3 +20,6 @@ eval-lock:
 	cd backend && . .venv/bin/activate && python -m smartagri.evalkit lock --set test --cache-snapshot $(SNAPSHOT)
 report:
 	cd backend && . .venv/bin/activate && python -m smartagri.evalkit report --set $(or $(SET),dev)
+# Branch coverage of the decision core (core/); fails below the threshold. CI runs the same two commands.
+coverage-core:
+	cd backend && . .venv/bin/activate && pip install -q "coverage>=7" && coverage run --branch --source=src/smartagri/core -m pytest -q && coverage report --include='src/smartagri/core/*' --fail-under=90
