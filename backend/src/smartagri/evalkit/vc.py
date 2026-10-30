@@ -185,7 +185,8 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
         message = turn["user_reply"]
         query = ctx.Q.text + " " + message
     first_budget = records[0]["provenance"]["passages"]
-    return {"scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
+    kept = {"retrospective": sc["retrospective"], "outcome": sc.get("outcome")} if sc.get("retrospective") else {}
+    return {**kept, "scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
             "expect": (sc.get("expect") or {}).get(variant_name), "reference": sc.get("reference"),
             "answer_format": ANSWER_FORMAT, "first_act": None, "final_act": None, "n_turns": len(turns),
             "first_question_input": matched[0] if matched else None,
@@ -195,18 +196,20 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
 
 
 def run_batch(store: Store, set_name: str, variant_name: str = "VC", repeats: int = 1, folder=None,
-              provider: Optional[Provider] = None) -> Dict[str, Any]:
+              provider: Optional[Provider] = None, lock_info: Optional[Dict[str, Any]] = None,
+              decision_hour_utc: Optional[int] = None) -> Dict[str, Any]:
     """Run every scenario of a set under VC. Raises Unavailable without a configured model."""
     provider = provider or provider_or_refuse()
     corpus = load_corpus()
     retriever = make_retriever(corpus, store)
     batch_id = new_id()
     n, failed, usd, started = 0, 0, 0.0, time.time()
-    for sc in load_scenarios(set_name, folder):
+    for sc in load_scenarios(set_name, folder, decision_hour_utc):
         for repeat in range(1, repeats + 1):
             base = dict(id=new_id(), batch_id=batch_id, scenario_id=sc["id"], variant=variant_name, repeat=repeat,
-                        set=set_name, created_at=now_iso(), generator=provider.name, model=provider.model,
-                        prompt_hash=ai_chat.PROMPT_HASH)
+                        repeats=repeats, decision_hour_utc=decision_hour_utc, set=set_name, created_at=now_iso(), generator=provider.name,
+                        model=provider.model, prompt_hash=ai_chat.PROMPT_HASH,
+                        **(lock_info or {"lock_sha256": None, "lock_combined_sha256": None, "lock_tag": None}))
             try:
                 result = run_scenario(sc, provider, corpus, retriever, variant_name)
             except LLMError as exc:

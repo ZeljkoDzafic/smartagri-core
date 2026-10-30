@@ -43,10 +43,24 @@ def context_text(ctx: Context) -> List[str]:
     return lines
 
 
-def scenario_view(sc: Dict[str, Any], ctx: Context) -> Dict[str, Any]:
-    """What the rater sees of the scenario; the same for every variant."""
+# Fields of an input row that state a fact; the others (reliability, its label, the basis of the grade, the detail the
+# grade was lowered by) are the output of the q layer.
+RAW_ROW_FIELDS = ("input", "label", "value_text", "origin", "origin_label", "age_days", "coverage")
+
+
+def raw_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The input rows without the grades of the q layer."""
+    return [{k: r[k] for k in RAW_ROW_FIELDS if k in r} for r in rows]
+
+
+def scenario_view(sc: Dict[str, Any], ctx: Context, rater_view: Optional[str] = None) -> Dict[str, Any]:
+    """What the rater sees of the scenario; the same for every variant. `rater_view` (default: config/evaluation.yaml):
+    `raw` shows the input facts without reliability grades, `graded` the quality table as the q layer graded it."""
+    from . import settings as st
+    view = rater_view or st.rater_view()
+    rows = quality_rows(ctx)
     return {"id": sc["id"], "question": ctx.Q.text, "advice_type_label": labels.ADVICE_TYPES[ctx.Q.advice_type.value],
-            "context_text": context_text(ctx), "quality": quality_rows(ctx)}
+            "context_text": context_text(ctx), "quality": raw_rows(rows) if view == "raw" else rows, "rater_view": view}
 
 
 def cluster_of(sc: Dict[str, Any]) -> str:
@@ -120,6 +134,8 @@ def run_scenario(sc: Dict[str, Any], variant_name: str, corpus, retriever, gener
     first = turns[0]["answer"]
     baseline = baseline_record(turns)
     extra = {"baseline": baseline} if baseline else {}      # only variants whose act the model chooses carry it
+    if sc.get("retrospective"):             # kept with the item for the outcome analysis; never shown to the system or the rater
+        extra = dict(extra, retrospective=sc["retrospective"], outcome=sc.get("outcome"))
     return {**extra, "scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
             "expect": (sc.get("expect") or {}).get(variant_name), "reference": sc.get("reference"), "first_act": first["act"],
             "final_act": turns[-1]["answer"]["act"], "n_turns": len(turns),
@@ -137,7 +153,11 @@ def models_used(records: List[Dict[str, Any]]) -> Dict[str, Any]:
             "request_ids": [c.get("request_id") for c in calls if c.get("request_id")]}
 
 
-def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, folder=None) -> Dict[str, Any]:
+NO_LOCK = {"lock_sha256": None, "lock_combined_sha256": None, "lock_tag": None}
+
+
+def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, folder=None,
+              lock_info: Optional[Dict[str, Any]] = None, decision_hour_utc: Optional[int] = None) -> Dict[str, Any]:
     """Run every scenario of a set (or of `folder`). Protected sets are refused by the CLI before this is called.
     External baselines (VC) run through their own runner in evalkit.vc, never through core.decide.
 
@@ -147,7 +167,8 @@ def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, 
     from . import settings as st
     from . import vc
     if variant_name in vc.EXTERNAL_VARIANTS:
-        return vc.run_batch(store, set_name, variant_name, repeats, folder)
+        return vc.run_batch(store, set_name, variant_name, repeats, folder, lock_info=lock_info,
+                            decision_hour_utc=decision_hour_utc)
     from ..llm.base import LLMError
     cfg = st.load()
     corpus = load_corpus()
@@ -155,10 +176,11 @@ def run_batch(store: Store, set_name: str, variant_name: str, repeats: int = 1, 
     generation = st.summary(cfg, generator.name)
     batch_id = new_id()
     items, failed = [], 0
-    for sc in load_scenarios(set_name, folder):
+    for sc in load_scenarios(set_name, folder, decision_hour_utc):
         for repeat in range(1, repeats + 1):
             base = dict(id=new_id(), batch_id=batch_id, scenario_id=sc["id"], variant=variant_name, repeat=repeat,
-                        set=set_name, created_at=now_iso(), generator=generator.name, generation=generation)
+                        repeats=repeats, decision_hour_utc=decision_hour_utc, set=set_name, created_at=now_iso(), generator=generator.name,
+                        generation=generation, **(lock_info or NO_LOCK))
             try:
                 result = run_scenario(sc, variant_name, corpus, retriever, generator)
             except LLMError as exc:

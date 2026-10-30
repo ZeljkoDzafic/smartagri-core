@@ -34,7 +34,7 @@ template to check the pipeline. The full rung-to-layer map and the analysis plan
 Comparisons reported by `evalkit report`:
 
 - **E1** V4 vs V3 (primary comparison: the effect of the sufficiency-and-asking model together with the change of who
-  chooses the act; primary outcome: the critical-error rate);
+  chooses the act; primary outcome: the share of scenarios with a K4 or K5 error);
 - **E2** V3 vs V2 (parcel conditions and dynamic context), **E3** V5 vs V4 (δ, γ);
 - **E4** context ablations (V5-weather, V5-satellite against V5);
 - **E5** V5 vs VC (critical-error rate at a rubric score that is not worse: a non-inferiority test whose margin is
@@ -47,7 +47,14 @@ selective-answering behaviour, retrieval recall and citation coverage. Paired di
 (10 000 resamples, cluster bootstrap by parcel where applicable). The negative control (V4 vs V3 on scenarios with
 complete inputs) is an equivalence test (TOST); secondary comparisons carry Holm-adjusted p-values. Rater agreement
 uses weighted Cohen's κ (Cohen, 1968) with a bootstrap interval. A report covers one scenario set and the named
-batches (`report --set test --batch ...`); raters get their items through `evalkit assign`, in a seeded order.
+batches (`report --set test --batch ...`); raters get their items through `evalkit assign`, in a seeded order that is
+recorded in the assignment file together with the seed, the lock, the repetition rule and the subset. `assign` can rate one
+repetition per scenario (`--repeat K`, or `--pick-repeat`: seeded) and a balanced subset (`--per-stratum N`: seeded, the
+same scenarios for every rater). The blind rater sees the input facts without the reliability grades of the q layer
+(`rater_view: raw` in `config/evaluation.yaml`; `graded` shows the quality table). The primary outcome is the rate of
+scenarios with a K4 or K5 error; a cluster bootstrap over fewer than `min_clusters` parcels is reported as not estimable,
+and a test whose margin is not set is reported as not evaluated. E5 (V5 against VC) is outside the first lock
+(`scope.include_e5`). See [protocol.md](protocol.md).
 
 ## Reproducibility
 

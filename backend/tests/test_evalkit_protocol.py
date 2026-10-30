@@ -56,7 +56,7 @@ def test_lock_binds_the_plan_the_prompts_the_code_and_the_environment(env, capsy
     if not out.exists():                         # a checkout with uncommitted guarded paths refuses to lock
         pytest.skip("guarded paths are dirty in this checkout; the dirty refusal is tested below")
     data = json.loads(out.read_text())
-    assert data["format"] == "smartagri-protocol-lock/2"
+    assert data["format"] == "smartagri-protocol-lock/3"
     for key in ("analysis_plan/protocol.md", "prompt/judge", "prompt/vc_ai_chat", "config/evaluation.yaml",
                 "config/analysis.yaml", "rater_guide/RATER_GUIDE.md", "cache_snapshot/snap.tar"):
         assert key in data["files"], key
@@ -196,14 +196,15 @@ def test_kappa_interval_and_holm():
 
 def test_tables_state_an_unset_margin_instead_of_a_verdict(env):
     from smartagri.store import make_store
-    md = tables.render(make_store(), [], None, None)
+    on = dict(report.analysis_settings(), scope={"variants": ["V3", "V4", "VC"], "include_e5": True})
+    md = tables.render(make_store(), [], None, None, settings=on)
     assert "granica nije zadata" in md and "Negativna kontrola" in md
 
 
 def test_the_analysis_plan_names_one_primary_outcome_and_undecided_margins():
     plan = (lock.default_analysis_plan()).read_text(encoding="utf-8")
-    assert "One primary outcome: the critical-error rate" in plan
+    assert "One primary outcome: the rate of scenarios with a K4 or K5 error" in plan
     assert plan.count("TO BE DECIDED BY THE PROTOCOL OWNER") == 2 and "simulation estimate" in plan
     cfg = report.analysis_settings()
     assert cfg["noninferiority"]["margin"] is None and cfg["equivalence"]["margin"] is None
-    assert cfg["primary"]["comparison"] == ["V4", "V3"] and cfg["primary"]["measure"] == "critical"
+    assert cfg["primary"]["comparison"] == ["V4", "V3"] and cfg["primary"]["measure"] == "k4_or_k5"

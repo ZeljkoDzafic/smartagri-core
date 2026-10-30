@@ -66,6 +66,34 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
   confirms what it understood before it writes an input and asks again when it cannot read a reply; the evaluation runner
   uses the same parser and never waits.
 
+### Fixed (evaluation harness and protocol)
+- Lock binding (E1): `run --locked` accepts only the repository's lock, or another file together with `--lock-sha256`
+  that matches it. Every item stores `lock_sha256`, `lock_combined_sha256`, `lock_tag` and `repeats`; `report`, `export`,
+  `assign` and the rating queue refuse items of different locks (or of a lock and an unlocked run). Lock format 3 adds a
+  `run` section (repeats, variants, decision hour) to the fingerprint, and `run --locked` must match it.
+- Cluster bootstrap (E2): with fewer than `min_clusters` clusters (`config/analysis.yaml`, default 5, never fewer than 2)
+  the interval is "not estimable": paired results carry `ci_status` and `ci_note`, the tables print the reason, and the
+  non-inferiority and equivalence tests return `status: not_estimable` without a verdict. Before, two clusters gave an
+  interval of zero width.
+- `evalkit assign`: `--repeat K` or `--pick-repeat` (one repetition per scenario, seeded, the same for every variant and
+  rater), `--per-stratum N` (a balanced subset, seeded, the same for every rater; only scenarios present in every
+  variant). The assignment file (format 2) records the order rule, the repeat rule, the subset, the seed and the lock.
+  The queue and `assign` refuse two batches of one variant that repeat a scenario and repetition.
+- Plan and code agree: `primary.measure` is `k4_or_k5` (a scenario with at least one K4 or K5 error; K1 cannot occur while
+  `quantity_validated` is false); the any-class rate K1-K5 stays a secondary outcome. The Holm family of the first lock is
+  `holm.family` in `config/analysis.yaml` (the key secondary outcomes of E1); the former text named {E2, E3, E4, E5} and the
+  code {E2, E3}. `scope.include_e5: false` leaves E5 out of the report. A test whose margin is null is not evaluated and
+  the report says why; a margin that is not a positive number is an error. The report states the E1 reading.
+- The blind rater sees the input facts (value, origin, age, coverage) without the reliability grades of the q layer:
+  `rater_view: raw | graded` in `config/evaluation.yaml`, default `raw`. The rating screen and its texts are unchanged;
+  `docs/RATER_GUIDE.md` says so.
+
+### Added (retrospective set)
+- `evalkit.retrospective`: loader for retrospective pairs (JSON, outside the repository; sets `retrospective-dev` for
+  season 2024 and `retrospective-test` for 2025, protected like `test`) with the lock, fail-loud and leakage rules; the pure
+  function `rain_wait_outcome` (no defaults for the protocol parameters, nothing fetched); `--decision-hour-utc` (default
+  unset) to fix the decision hour of scenarios and pairs. Format: `docs/retrospective-set.md`.
+
 ### Added (tests and CI)
 - Boundary tests for every step of the Kc, BBCH, grade and root-depth tables; ordering tests (q never rises with age or
   falls with coverage, net >= 0, gross >= net); a coverage threshold for `core/` (`make coverage-core`, CI step; at least 90 % branch coverage, measured 96 %; `core/conflicts.py` is the weak spot at 48 %).

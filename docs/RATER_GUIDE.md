@@ -9,7 +9,9 @@
 
 Ocenjujete odgovore savetodavnog sistema za kukuruz. Svaki odgovor vidite zajedno sa scenarijem:
 pitanje korisnika, opis parcele (datum odluke, setva, faza, navodnjavanje, zemljište, vreme) i
-tabela kvaliteta podataka (vrednost, poreklo, starost, pouzdanost). Ako je sistem postavio dopunsko
+tabela ulaznih podataka (vrednost, poreklo, starost, pokrivenost). Tabela prikazuje podatke onakve kakvi su,
+**bez ocena pouzdanosti**: ocenu da li je neki podatak dovoljno svež ili pouzdan za odluku donosite sami
+(podešavanje `rater_view: raw`; podatak o oceni pouzdanosti koju je sistem sam izračunao ne vidite). Ako je sistem postavio dopunsko
 pitanje, vidite i odgovor korisnika i naredni korak sistema; ocenjujete **celu razmenu**, a ne samo
 prvi odgovor.
 
@@ -23,7 +25,7 @@ Ne ocenjujete tečnost, stil, dužinu ni pravopis. Kratak, suv odgovor koji je i
 ocene; lepo napisan odgovor sa pogrešnom odlukom ih ne dobija.
 
 Stanje informacija procenjujete **iz scenarija koji vidite**: šta je korisnik rekao, koliko su
-podaci stari i koliko su pouzdani. Ne pretpostavljajte podatke kojih u scenariju nema.
+podaci stari i koliko ih smatrate pouzdanim prema poreklu i starosti. Ne pretpostavljajte podatke kojih u scenariju nema.
 
 ## 2. Pravila slepog ocenjivanja
 
@@ -211,7 +213,8 @@ i istim pravilima; oblik se ne ocenjuje, niti se iz njega zaključuje o verziji 
 ## 5. Postupak za jednu stavku
 
 1. Pročitajte pitanje i kontekst. Odredite koji su podaci ključni za ovaj tip saveta i da li su
-   prisutni, sveži i pouzdani (tabela kvaliteta podataka).
+   prisutni, sveži i pouzdani (tabela ulaznih podataka: vrednost, poreklo, starost, pokrivenost; pouzdanost
+   procenjujete sami).
 2. Pre čitanja odgovora odlučite koji čin bi bio ispravan i koje bi pitanje bilo opravdano.
 3. Pročitajte celu razmenu, uključujući izvore i proračune.
 4. Ocenite r1–r5, zatim označite K1–K5.
@@ -225,7 +228,7 @@ i istim pravilima; oblik se ne ocenjuje, niti se iz njega zaključuje o verziji 
    `http://localhost:8080/eval/rate?rater=agronom_1`. Oznaka je vaše stalno ime ocenjivača; koristite
    uvek istu oznaku, jer se po njoj vezuju ocene i redosled stavki. Bez parametra stranica traži da
    upišete oznaku i pamti je u pregledaču.
-2. Na levoj strani je scenario (pitanje, kontekst, kvalitet podataka) i cela razmena sa sistemom;
+2. Na levoj strani je scenario (pitanje, kontekst, ulazni podaci bez ocena pouzdanosti) i cela razmena sa sistemom;
    na desnoj je formular: pet kriterijuma (0, 1, 2), klase K1–K5 i komentar. Čuvanje je moguće tek
    kada su ocenjena svih pet kriterijuma.
 3. Posle čuvanja automatski se učitava sledeća stavka. Broj preostalih stavki je iznad stavke.

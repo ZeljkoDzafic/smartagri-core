@@ -76,21 +76,28 @@ python -m smartagri.evalkit export --out dev-run.json  # items (and ratings, if 
 ## 5. What the protocol lock records
 
 `python -m smartagri.evalkit lock --set <set>` writes `backend/eval/protocol-lock.json` (format
-`smartagri-protocol-lock/2`, `evalkit/lock.py`; format 1 locks are still read and are reported as lacking an
-environment). For the protected test set `--cache-snapshot` is mandatory, and the lock is refused while source,
+`smartagri-protocol-lock/3`, `evalkit/lock.py`; format 1 and 2 locks are still read and are reported as lacking an
+environment or a run section: re-lock with this version). For the protected test set `--cache-snapshot` is mandatory, and the lock is refused while source,
 config, corpus, rater guide or analysis plan have uncommitted changes. It records:
 
 | Field | Content |
 |---|---|
 | `files` | sha256 of every scenario file of the set, every corpus file, every `config/*.yaml` file (including `evaluation.yaml`, the pinned model settings, and `analysis.yaml`, the parameters of the analysis plan), the rater guide (`docs/RATER_GUIDE.md`), the analysis plan (`docs/protocol.md`), the VC and judge prompts and the external-cache snapshot |
 | `prompt_hash` | sha256 of the generator's system prompt and answer schema |
-| `protocol_sha256` | fingerprint of `files` and `prompt_hash` |
+| `run` | how the protocol is executed: `repeats` per scenario and variant, the `variants` of the lock (null = not restricted) and `decision_hour_utc` (null = decision moments as written in the files). Part of the fingerprint; `run --locked` must use the same values |
+| `protocol_sha256` | fingerprint of `files`, `prompt_hash` and `run` |
 | `environment` | git commit and uncommitted guarded paths, `src_sha256` (one hash over the source tree `backend/src/smartagri`), sha256 of `requirements.lock`, the Python version, the model settings of `config/evaluation.yaml`, the generator the environment selects, and `ADVICE_GENERATOR`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_EFFORT`, `EMBEDDINGS_PROVIDER`, `EMBEDDINGS_MODEL`, `GROUNDING_JUDGE`, `JUDGE_MODEL`, `SMARTAGRI_LOCALE` |
 | `combined_sha256` | one fingerprint over all of the above |
 | `set`, `tag`, `created_at`, `cache_snapshot` | the scenario set, the protocol tag (default `protocol-v1`), the time of locking and the snapshot path |
 
 `lock --check` recomputes everything and lists every difference; `run --set test --locked` refuses to run when
-anything differs except the commit itself (committing the lock file moves HEAD; `src_sha256` binds the code). A run
+anything differs except the commit itself (committing the lock file moves HEAD; `src_sha256` binds the code). The lock
+a locked run uses is the repository's own (`backend/eval/protocol-lock.json`); any other file is accepted only together
+with `--lock-sha256`, the sha256 of that file as recorded outside the run (a registration, a release note), and must
+match it. Every item stores `lock_sha256` (the sha256 of the lock file), `lock_combined_sha256`, `lock_tag`, `repeats` and
+`decision_hour_utc`; `report`, `export`, `assign` and the rating queue refuse to mix items of different locks, or of a
+lock and an unlocked run (name the batches of one lock). Retrospective sets (`retrospective-dev`, `retrospective-test`;
+[retrospective-set.md](retrospective-set.md)) are locked and run the same way, from a folder outside the repository. A run
 whose `--scenarios-dir` holds protected scenarios (the set's own folder or a copy of any of its files) is refused
 unless it is that protected set under the lock. Every run additionally stores the config hashes, the corpus hash and
 the prompt hash it used, and every item records how it was generated (generator, model, effort) and which model
@@ -112,7 +119,7 @@ from this repository yet. The intended procedure for a results release is:
 2. Verify the protocol: `python -m smartagri.evalkit lock --check --set test` must report no differences.
 3. Import the locked external-cache snapshot with `python -m smartagri.cache import` and set
    `SMARTAGRI_OFFLINE=1`, so that every weather and satellite input is the one that was locked.
-4. Re-run the locked set: `python -m smartagri.evalkit run --set test --locked`. Template-generator variants are
+4. Re-run the locked set with the locked repeats: `python -m smartagri.evalkit run --set test --locked --repeats <N>`. Template-generator variants are
    deterministic; runs that use a language model are not, and their published outputs are the reference.
 5. Rebuild the tables: `python -m smartagri.evalkit report --set test --batch <id> ... --format md`, with
    `--rater`, `--compare` and `--agreement` as listed in [protocol.md](protocol.md).

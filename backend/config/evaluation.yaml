@@ -11,6 +11,10 @@
 #     is an error item, never a rated answer;
 #   - a failed call (API error, refusal, max_tokens, unparseable output, missing package or key) is an error item
 #     and makes the run exit non-zero; nothing falls back to the deterministic template.
+# What the blind rater sees of the input table of a scenario (docs/RATER_GUIDE.md): `raw` = the facts (value, origin,
+# age, coverage) without the reliability grades of the q layer, so the rating does not repeat the rule it tests;
+# `graded` = the quality table with the grades. Part of the lock like every config file.
+rater_view: raw
 llm:
   provider: anthropic
   model: claude-opus-5-5

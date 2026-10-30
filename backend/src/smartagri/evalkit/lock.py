@@ -27,8 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-FORMAT = "smartagri-protocol-lock/2"
-FORMATS_READ = ("smartagri-protocol-lock/1", FORMAT)
+FORMAT = "smartagri-protocol-lock/3"
+FORMATS_READ = ("smartagri-protocol-lock/1", "smartagri-protocol-lock/2", FORMAT)
 BACKEND = Path(__file__).resolve().parents[3]
 REPO = BACKEND.parent
 SRC = Path(__file__).resolve().parents[1]                 # backend/src/smartagri
@@ -79,7 +79,7 @@ def collect(scenarios_dir: Path, corpus_dir: Path, config_dir: Path, rater_guide
     if not rater_guide.is_file():
         raise FileNotFoundError("rater guide not found: %s" % rater_guide)
     files = _tree("scenarios", scenarios_dir)
-    if not any(k.endswith(".yaml") for k in files):
+    if not any(k.endswith((".yaml", ".json")) for k in files):          # scenario files; retrospective pairs are JSON
         raise FileNotFoundError("no scenario files in %s" % scenarios_dir)
     files.update(_tree("corpus", corpus_dir))
     files.update({"config/" + p.name: sha256_file(p) for p in sorted(config_dir.glob("*.yaml"))})
@@ -95,10 +95,14 @@ def collect(scenarios_dir: Path, corpus_dir: Path, config_dir: Path, rater_guide
     return files
 
 
-def combined(files: Dict[str, str], prompt_hash: str, environment: Optional[Dict[str, Any]] = None) -> str:
+def combined(files: Dict[str, str], prompt_hash: str, environment: Optional[Dict[str, Any]] = None,
+             run: Optional[Dict[str, Any]] = None) -> str:
     """One hash over all parts, as a short protocol fingerprint. Without `environment` it is the protocol
-    fingerprint pinned in the tests (files and prompt only)."""
+    fingerprint (files and prompt only). `run` (format 3) is how the protocol is executed: the number of repeats and,
+    when given, the variants; it is part of the fingerprint, so a run with other repeats is another protocol."""
     lines = ["%s %s" % (k, files[k]) for k in sorted(files)] + ["prompt %s" % prompt_hash]
+    if run is not None:
+        lines.append("run %s" % json.dumps(run, sort_keys=True, ensure_ascii=False))
     if environment is not None:
         lines.append("environment %s" % json.dumps(comparable(environment), sort_keys=True, ensure_ascii=False))
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
@@ -153,15 +157,61 @@ def comparable(env: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def run_section(repeats: int = 1, variants: Optional[List[str]] = None,
+                decision_hour_utc: Optional[int] = None) -> Dict[str, Any]:
+    """How the locked protocol is executed: repeats per scenario and variant, the variants of the first lock (None = not
+    restricted) and the fixed decision hour in UTC (None = the decision moments as written in the scenario files)."""
+    if int(repeats) < 1:
+        raise ValueError("repeats must be at least 1")
+    return {"repeats": int(repeats), "variants": sorted(set(variants)) if variants else None,
+            "decision_hour_utc": decision_hour_utc}
+
+
 def make_lock(set_name: str, files: Dict[str, str], prompt_hash: str, cache_snapshot: Optional[Path] = None,
-              tag: str = "protocol-v1", env: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+              tag: str = "protocol-v1", env: Optional[Dict[str, Any]] = None,
+              run: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    run = run if run is not None else run_section()
     out = {"format": FORMAT, "tag": tag, "set": set_name, "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
            "prompt_hash": prompt_hash, "cache_snapshot": str(cache_snapshot) if cache_snapshot else None,
-           "files": files, "protocol_sha256": combined(files, prompt_hash)}
+           "run": run, "files": files, "protocol_sha256": combined(files, prompt_hash, run=run)}
     if env is not None:
         out["environment"] = env
-    out["combined_sha256"] = combined(files, prompt_hash, env)
+    out["combined_sha256"] = combined(files, prompt_hash, env, run)
     return out
+
+
+def lock_sha256(path: Path) -> str:
+    """sha256 of the lock file itself (its bytes): the identity of one lock, stored in every item of a locked run."""
+    return sha256_file(path)
+
+
+def run_differences(lock: Dict[str, Any], repeats: int, variants: List[str],
+                    decision_hour_utc: Optional[int] = None) -> List[str]:
+    """Differences between the locked run section and the requested run (repeats, variants, decision hour)."""
+    run = lock.get("run")
+    if run is None:
+        return ["lock has no run section (format %s): re-lock with this version" % lock.get("format")]
+    out = []
+    if int(run.get("repeats", 1)) != int(repeats):
+        out.append("changed: repeats (locked %s, requested %s)" % (run.get("repeats"), repeats))
+    if run.get("decision_hour_utc") != decision_hour_utc:
+        out.append("changed: decision_hour_utc (locked %s, requested %s)" % (run.get("decision_hour_utc"), decision_hour_utc))
+    allowed = run.get("variants")
+    if allowed:
+        extra = sorted(set(variants) - set(allowed))
+        if extra:
+            out.append("not in lock: variant %s (locked: %s)" % (", ".join(extra), ", ".join(allowed)))
+    return out
+
+
+def single_lock(items: List[Dict[str, Any]]) -> Optional[str]:
+    """The one lock (file sha256, or None for an unlocked run) every item comes from. ValueError when the items come
+    from different locks, or from a lock and from unlocked runs: such items are never reported or rated together."""
+    seen = sorted({str(i.get("lock_sha256")) if i.get("lock_sha256") else "unlocked" for i in items})
+    if len(seen) > 1:
+        raise ValueError("the items come from different protocol locks (%s); choose the batches of one lock"
+                         % ", ".join(x[:12] for x in seen))
+    return None if not seen or seen[0] == "unlocked" else seen[0]
 
 
 def write(lock: Dict[str, Any], path: Path) -> None:

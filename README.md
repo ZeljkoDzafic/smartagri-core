@@ -33,7 +33,7 @@ and tests.
 | `backend/src/smartagri/core/` | decision model π, q, σ, α, δ, FAO-56 tools, grounding |
 | `backend/src/smartagri/retrieval/` | corpus loading, BM25 retrieval (fused with a dense ranking when `EMBEDDINGS_PROVIDER=fastembed`), corpus ingest and coverage |
 | `backend/src/smartagri/pipeline/`, `providers/`, `llm/` | answer generation and judge, weather and satellite adapters, LLM providers |
-| `backend/src/smartagri/evalkit/` | `python -m smartagri.evalkit run / report / export / guard / sweep / lock` |
+| `backend/src/smartagri/evalkit/` | `python -m smartagri.evalkit run / report / export / guard / sweep / lock / assign` |
 | `backend/src/smartagri/research_api/` | minimal HTTP API and the web app (map drawing, profile, weather and NDVI, water balance, advice, provenance, evaluation overview, blind rating) |
 | `backend/config/` | rules, thresholds, variants, question bank, Kc table (locked with the evaluation protocol) |
 | `backend/corpus/` | corpus manifest (licence per document) and passages |
@@ -194,6 +194,11 @@ rater agreement, a leakage guard and a protocol lock that binds the code and the
 ```bash
 python -m smartagri.evalkit run --set dev && python -m smartagri.evalkit report
 ```
+
+Commands: `run` (`--variant`, `--repeats`, `--locked [--lock-file F --lock-sha256 H]`, `--decision-hour-utc H`), `report`
+(`--set`, `--batch`, `--rater`, `--compare`, `--agreement`, `--format md`), `export`, `guard`, `sweep`, `lock`
+(`--repeats`, `--variant`, `--decision-hour-utc`, `--check`), and `assign` (`--rater`, `--seed`, `--repeat` or
+`--pick-repeat`, `--per-stratum N`, `--dry-run`). Retrospective pairs: [`docs/retrospective-set.md`](docs/retrospective-set.md).
 
 The development scenarios are a regression check of the installation, not an experiment; see
 [limitations](docs/limitations.md#evaluation).
