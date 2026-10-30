@@ -551,6 +551,27 @@ INDEXES += [
 ]
 
 
+# Web settings of the research core (web_settings/): three layers over the YAML file defaults (global set by an
+# administrator, one row per user, one row per parcel), the administrator's limits, and two append-only tables: every
+# change creates a version (the full set of that layer after the change) and one audit row per parameter changed.
+# Additive tables created by migration 0015; no back-fill. settings_versions and settings_audit refuse UPDATE and DELETE
+# (triggers, as for the plant-protection audit tables).
+TABLES.update({
+    "settings_global": [],
+    "settings_limits": [],
+    "settings_user": ["user_id"],
+    "settings_parcel": ["parcel_id"],
+    "settings_versions": ["scope", "scope_id"],
+    "settings_audit": ["scope", "scope_id", "actor", "param"],
+})
+INDEXES += [
+    "CREATE INDEX IF NOT EXISTS settings_versions_scope_idx ON settings_versions (scope, scope_id)",
+    "CREATE INDEX IF NOT EXISTS settings_audit_scope_idx ON settings_audit (scope, scope_id)",
+    "CREATE INDEX IF NOT EXISTS settings_audit_param_idx ON settings_audit (param)",
+    "CREATE INDEX IF NOT EXISTS settings_audit_actor_idx ON settings_audit (actor)",
+]
+
+
 def _typed_schema(backend: str) -> List[str]:
     """Typed time-series tables of spec 035 (weather_hourly, station_observations; monthly partitions on PostgreSQL),
     part of the idempotent schema so the repeatable schema sync and migration 0005 create the same thing."""
@@ -840,6 +861,7 @@ class Store:
             self._exec(self._q("DELETE FROM media WHERE parcel_id = ?"), (id_,))           # spec 023 (files: Media)
             self._exec(self._q("DELETE FROM field_crops WHERE parcel_id = ?"), (id_,))     # spec 027 (events stay: audit)
             self._exec(self._q("DELETE FROM field_access WHERE parcel_id = ?"), (id_,))    # spec 027 grants
+            self._exec(self._q("DELETE FROM settings_parcel WHERE id = ?"), (id_,))        # web settings of the parcel
             self._exec(self._q("DELETE FROM parcels WHERE id = ?"), (id_,))
 
     # ------------------------------------------------------------ activity log (spec 013)

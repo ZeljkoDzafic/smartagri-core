@@ -345,6 +345,7 @@ def provenance(store: Store, run: Dict[str, Any]) -> Dict[str, Any]:
                    "prompt": prov.get("prompt_hash"), "judge_prompt": prov.get("judge_prompt_hash"),
                    "code_version": {"package_version_at_export": __version__, "recorded_with_run": False}},
         "decisions": run.get("decisions"),
+        "settings_used": prov.get("settings"),
         "sources": answer.get("sources") or answer.get("citations") or [],
         "inputs": answer.get("data_used") or [],
         "profile": profile_view,

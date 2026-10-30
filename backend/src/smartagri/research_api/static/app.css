@@ -635,3 +635,78 @@ dialog[open] { animation: pop 0.45s var(--spring); }
 .eval-banner { margin: 0 0 16px; }
 code.hash { overflow-wrap: anywhere; word-break: break-all; }
 .eval-set pre { max-height: 520px; }
+
+/* ---------------------------------------------------------------- settings (settings.js) */
+.tabs.wrap { flex-wrap: wrap; border-radius: var(--radius); margin-bottom: 16px; }
+.set-pane { min-width: 0; }
+.set-tools { display: grid; gap: 10px; margin: 6px 0 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 650; border-color: transparent; box-shadow: none; }
+.set-group { margin: 0 0 22px; }
+.set-group > h2 { margin: 10px 0 10px; }
+.set-param { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 14px 16px; margin: 0 0 12px; min-width: 0; border-left: 4px solid transparent; }
+.set-param.is-dirty { border-left-color: var(--orange); }
+.set-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 12px; }
+.set-head h3 { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere; }
+.set-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.set-key { margin: 2px 0 8px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.set-edit { margin: 6px 0 8px; min-width: 0; }
+.set-edit input[type="number"], .set-edit input[type="text"], .set-edit select { max-width: 360px; }
+.set-default, .set-note { overflow-wrap: anywhere; }
+.set-note { margin-top: 2px; }
+.set-source { font-size: 13px; margin: 6px 0 2px; color: var(--text-2); overflow-wrap: anywhere; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.set-flash { min-height: 1.4em; color: var(--text-2); font-size: 14px; margin: 8px 0; }
+.warning { color: var(--orange); font-size: 13px; margin: 4px 0; font-weight: 550; }
+.badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 650; padding: 1px 9px; border-radius: 999px; white-space: nowrap; background: var(--fill); color: var(--text-2); }
+.badge.st-verified { color: var(--accent-strong); background: var(--accent-soft); }
+.badge.st-partly { color: var(--blue); background: color-mix(in srgb, var(--blue) 13%, transparent); }
+.badge.st-disputed { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+.badge.st-no_source { color: var(--gray); background: var(--fill); }
+.badge.st-development { color: var(--purple); background: color-mix(in srgb, var(--purple) 13%, transparent); }
+.badge.ly-default { color: var(--text-2); }
+.badge.ly-global { color: var(--blue); background: color-mix(in srgb, var(--blue) 13%, transparent); }
+.badge.ly-user { color: var(--accent-strong); background: var(--accent-soft); }
+.badge.ly-parcel { color: var(--purple); background: color-mix(in srgb, var(--purple) 13%, transparent); }
+.badge.changed { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); }
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
+.switch input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.pair { display: inline-flex; align-items: center; gap: 8px; }
+.pair input { width: 8.5em; }
+.map-ed, .limit-grid { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.map-cell { display: grid; gap: 2px; font-size: 12px; color: var(--text-3); }
+.map-cell input { width: 7.5em; }
+.list-ed { display: grid; gap: 4px; }
+.tbl-scroll { overflow-x: auto; max-width: 100%; }
+.set-table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.set-table th { text-align: left; font-weight: 650; color: var(--text-2); padding: 6px 8px; white-space: nowrap; }
+.set-table td { padding: 4px 6px; border-top: 0.5px solid var(--separator); vertical-align: top; }
+.set-table td input[type="number"], .set-table td input[type="text"], .set-table td select { min-width: 6em; padding: 6px 8px; font-size: 14px; }
+.set-table td:last-child { white-space: nowrap; }
+.group-ed { border: 0.5px solid var(--hairline-strong); border-radius: var(--radius); padding: 8px 10px; margin: 0 0 8px; }
+.set-savebar { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; margin: 12px 0; }
+@media (min-width: 900px) { .set-savebar { bottom: 12px; } }
+.set-savebar .set-reason { flex: 1 1 200px; width: auto; }
+.set-savebar .set-count { font-size: 14px; font-weight: 600; margin-right: auto; }
+.set-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+.set-filters input, .set-filters select { width: auto; max-width: 100%; flex: 1 1 140px; }
+.set-version { background: var(--surface); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 8px; box-shadow: var(--shadow); }
+.set-version summary { cursor: pointer; font-size: 14px; overflow-wrap: anywhere; }
+.set-changed { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.set-changed li { overflow-wrap: anywhere; font-size: 13px; }
+.set-proto { margin: 0 0 10px; }
+.set-proto pre { max-height: 360px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.set-used { margin: 6px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
+.parcel-settings { margin: 16px 0; }
+.parcel-settings summary { cursor: pointer; font-weight: 650; }
+.set-pane details.card > summary, .parcel-settings > summary { cursor: pointer; }
+.set-pane .button, .set-param .button, .set-version .button, .parcel-settings .button { white-space: normal; max-width: 100%; text-align: center; height: auto; }
+.set-version summary { padding: 2px 0; }
+.set-savebar.is-static { position: static; }
+.set-savebar { background: var(--glass-strong); }
+
+/* "Custom settings applied" on an answer computed with values that differ from the files */
+.custom-settings { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 0; padding: 9px 14px; border-radius: var(--radius); font-size: 13.5px; color: var(--text);
+  background: color-mix(in srgb, var(--orange) 10%, transparent); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--orange) 30%, transparent); }
+.custom-settings svg { width: 18px; height: 18px; flex: none; margin-top: 1px; fill: none; stroke: var(--orange); stroke-width: 1.7; stroke-linecap: round; }
+.warn-inline { color: var(--orange); font-size: 12.5px; font-weight: 600; }

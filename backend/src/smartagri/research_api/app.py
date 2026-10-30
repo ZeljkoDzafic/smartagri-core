@@ -15,9 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import i18n
-from . import auth
+from .. import config, i18n
+from . import auth, guards, proxy
 from . import locale as answer_locale
+from . import settings_routes
 from .service import BadRequest, NotFound, ResearchService, Unavailable
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -34,6 +35,19 @@ def _set_meta(page: str, prefix: str, value: str) -> str:
     start += len(prefix)
     end = page.find('"', start)
     return page[:start] + html.escape(value, quote=True) + page[end:]
+
+
+def tile_url() -> str:
+    """The tile URL template this server's page uses (environment, else the default of static/index.html)."""
+    url = os.environ.get("SMARTAGRI_TILE_URL")
+    if url is not None:
+        return url.strip()
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    start = page.find(TILE_URL_META)
+    if start < 0:
+        return ""
+    start += len(TILE_URL_META)
+    return html.unescape(page[start:page.find('"', start)])
 
 
 def index_html() -> str:
@@ -138,6 +152,16 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
             conv = svc.store.get_conversation(conversation_id) if conversation_id else None
             if conv is None or not accounts.owns(owner(request), conv.get("parcel_id")):
                 raise HTTPException(404, _message(NotFound("Razgovor nije pronađen.")))
+
+    # Web settings (settings_routes.py): the effective configuration of an answer is the files plus the caller's layers,
+    # set for the duration of one request that computes something. The blind rating and evaluation endpoints never use it.
+    settings = settings_routes.register(api, svc, accounts, owner)
+
+    def scoped(request: Request, parcel_id: Optional[str], fn, *args):
+        actor = settings_routes.actor_of(request, accounts)
+        pid = parcel_id if actor.user_id and (accounts is None or accounts.owns(owner(request), parcel_id)) else None
+        with config.use_overlay(settings.overlay_for(actor.user_id, pid)):
+            return call(fn, *args)
 
     if accounts:
         def cookie(response, request: Request, name: str, value: Optional[str], days: Optional[float],
@@ -268,9 +292,9 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
         return svc.health()
 
     @api.get("/meta")
-    def meta():
-        return dict(svc.meta(), accounts={"enabled": accounts is not None,
-                                          "email": bool(accounts and accounts.email_enabled)})
+    def meta(request: Request):
+        return dict(scoped(request, None, svc.meta), accounts={"enabled": accounts is not None,
+                                                               "email": bool(accounts and accounts.email_enabled)})
 
     @api.post("/parcels", status_code=201)
     def create_parcel(request: Request, body: Dict[str, Any] = Body(...)):
@@ -291,22 +315,22 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
     @api.post("/parcels/{parcel_id}/profile/refresh")
     def refresh_profile(request: Request, parcel_id: str):
         guard_parcel(request, parcel_id)
-        return call(svc.refresh_profile, parcel_id)
+        return scoped(request, parcel_id, svc.refresh_profile, parcel_id)
 
     @api.get("/parcels/{parcel_id}/profile")
     def get_profile(request: Request, parcel_id: str):
         guard_parcel(request, parcel_id)
-        return call(svc.get_profile, parcel_id)
+        return scoped(request, parcel_id, svc.get_profile, parcel_id)
 
     @api.post("/parcels/{parcel_id}/chat")
     def chat(request: Request, parcel_id: str, body: Dict[str, Any] = Body(...)):
         guard_parcel(request, parcel_id)
-        return call(svc.chat, parcel_id, body)
+        return scoped(request, parcel_id, svc.chat, parcel_id, body)
 
     @api.post("/parcels/{parcel_id}/ai-chat")
     def ai_chat(request: Request, parcel_id: str, body: Dict[str, Any] = Body(...)):
         guard_parcel(request, parcel_id)
-        return call(svc.ai_chat, parcel_id, body)
+        return scoped(request, parcel_id, svc.ai_chat, parcel_id, body)
 
     @api.get("/conversations/{conversation_id}")
     def conversation(request: Request, conversation_id: str):
@@ -332,12 +356,12 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
     @api.get("/parcels/{parcel_id}/series")
     def parcel_series(request: Request, parcel_id: str):
         guard_parcel(request, parcel_id)
-        return call(svc.parcel_series, parcel_id)
+        return scoped(request, parcel_id, svc.parcel_series, parcel_id)
 
     @api.get("/parcels/{parcel_id}/water-balance")
     def parcel_water_balance(request: Request, parcel_id: str):
         guard_parcel(request, parcel_id)
-        return call(svc.parcel_water_balance, parcel_id)
+        return scoped(request, parcel_id, svc.parcel_water_balance, parcel_id)
 
     @api.get("/evaluation/overview")
     def evaluation_overview():
@@ -366,6 +390,11 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
         return call(svc.rating_save, body.model_dump())
 
     app.include_router(api)
+    # Outermost guards, last added = outermost: security headers on every response (also the refusals below), the real
+    # client address behind a trusted proxy (SMARTAGRI_TRUSTED_PROXIES), then the limits on the request body.
+    app.add_middleware(guards.RequestGuardMiddleware)
+    app.add_middleware(proxy.TrustedProxyMiddleware)
+    app.add_middleware(guards.SecurityHeadersMiddleware, tile_url=tile_url())
     # Client assets (CSS, JS, icon, vendored Leaflet with its licence); no build step, no CDN.
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 

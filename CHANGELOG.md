@@ -12,6 +12,19 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 ## [Unreleased]
 
 ### Added
+- Web settings: every agronomic parameter of `rules.yaml`, `kc_maize.yaml`, `thresholds.yaml`, `asking.yaml`,
+  `requirements.yaml` and `parcel_features.yaml` can be set through the web app at three levels (global by an
+  administrator, user, parcel) over the file defaults, with a registry that describes each parameter (label in English
+  and Serbian, unit, type, range, recommended values, source and status), an editing form generated from it, table
+  editors, per-parameter and whole-set reset, versions with restore, an append-only audit log, administrator limits
+  (user-editable switch, allowed range, shape) and the locked protocol files shown read only. Storage: migration
+  `0015` (additive tables; append-only triggers on versions and audit log). API under `/api/settings`. Administrators:
+  `SMARTAGRI_ADMINS` with `SMARTAGRI_ACCOUNTS=optional`; the local user with `off`. See `docs/settings.md`.
+- A "settings used" block in the provenance of every web answer (version, hash, overrides with their level), in the
+  "Why?" panel and in the JSON export.
+- `config.use_overlay` / `config.load_file`: a per-request, context-variable overlay of settings over the file data.
+  Without an overlay `config.load()` returns the cached file data, `evalkit` and the protocol lock read the files only,
+  and the file hashes are unchanged.
 - Parcel features: the `parcel_features` data contract (schema version 1, JSON Schema in `docs/parcel-features.md` and in
   `core/parcel_features.py`), a validator, a geometry hash and the producer's hashes, a generic provider interface that
   reads precomputed files (`providers/parcel_features.py`, `SMARTAGRI_PARCEL_FEATURES_DIR`), loading from scenario files
@@ -29,6 +42,9 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 - `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
 
 ### Changed
+- The research API computes profile, advice, free conversation, series and water balance with the caller's effective
+  settings. With no overrides the decisions are byte-identical to the previous version (checked on every development
+  scenario and variant); the blind rating endpoints and evaluation are unchanged.
 - `config/parcel_features.yaml` is a new configuration file: it is hashed in `config.config_hashes()` (a seventh key) and
   bound by the protocol lock, so the lock fingerprint and every run's `config_hashes` differ from 0.2.0. No act of the
   development scenarios changes; the dev-set decisions are identical apart from the new hash.
@@ -36,6 +52,40 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
   `SatelliteSummary` an optional `parcel_features`, `Decision` an `input_conflicts` list; all default to empty.
 - π reads the crop check through the input `crop_identity` when it exists (only when the crop plausibility check is
   switched on); otherwise the crop check is unchanged.
+- Web settings: every numeric parameter has a default limit (what is accepted until an administrator sets a limit) and a
+  recommended range, both inside the physical bounds, which were the only bounds before. A range of a cited source is
+  used where the source gives one (largest net depth per irrigation, water capacity per texture, Kc, nitrogen share of
+  four fertilisers); everywhere else the range is a development band around the file default and says so. The client
+  warns while typing and after saving when a value leaves the recommended range, and every answer computed with a
+  non-default setting shows "Custom settings applied" on the card and in the "Why?" panel (`provenance.settings` gains
+  `outside_recommended`). The API of `GET /api/settings` adds `default_limit`, `range_basis` and per-slot `bounds`.
+- The decision regression of the settings code compares the development scenarios against stored digests
+  (`backend/tests/golden_dev/`, rewritten only by `python tests/golden_dev/update.py`), and a test runs two requests
+  with different settings at the same moment.
+
+### Security
+- **Administrator bootstrap.** With accounts on and SMTP off, registering an address listed in `SMARTAGRI_ADMINS` no longer
+  makes the account an administrator (it did: the first sign-up with the owner's address got the role and locked the
+  owner out). An administrator is now an account the operator promoted on the server with
+  `python -m smartagri.research_api --make-admin EMAIL` (also `--revoke-admin`, `--reset-password`; recorded in the audit
+  log), or an account whose listed address was confirmed through its mailbox. A listed address cannot be registered over
+  HTTP without SMTP; with SMTP the mail to a listed address sets the password instead of confirming a password chosen at
+  sign-up. An account taken by someone else is taken over by the operator command.
+- **Client address behind a proxy.** `FORWARDED_ALLOW_IPS=*` (advised by the deployment guide) made uvicorn take the leftmost
+  `X-Forwarded-For` entry, which the client chooses, so the per-address limits of sign-in, sign-up, reset and settings
+  writes could be walked around. The app now reads the header itself, only from the proxies in the new
+  `SMARTAGRI_TRUSTED_PROXIES` (default: none), from the right; uvicorn's own proxy handling is off. The guide, the nginx
+  example (`X-Forwarded-For $remote_addr`) and the image are changed accordingly.
+- **Request limits.** A body over `SMARTAGRI_MAX_BODY_BYTES` (default 256 KiB) is refused with 413, JSON nested deeper than
+  32 levels or with `NaN`/`Infinity` with 400, a polygon has at most 500 positions, and malformed input is answered 400
+  (a wrong type, an impossible date, a growth stage outside 0-99, a name over 120 characters) instead of 500 or a stored
+  parcel that fails on every later call.
+- **Security headers.** `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and a restrictive
+  `Content-Security-Policy` (own files and the map tile host only, `frame-ancestors 'none'`) on every response.
+- **Settings limits.** The web settings accept only values inside default limits narrower than the physical bounds (a wind
+  limit for spraying of 40 m/s or a rain wait of 0 mm used to be accepted); see Added.
+- Not changed, listed as open items in `docs/deployment.md`: limits on outbound provider calls and on language-model
+  spending, and on the number of parcels per owner.
 
 ## [0.2.0] - 2026-10-26
 

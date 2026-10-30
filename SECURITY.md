@@ -40,12 +40,24 @@ In scope:
 - the research web app and API (`backend/src/smartagri/research_api/`): accounts, passwords, sessions, cookies, CSRF
   and Origin checks, rate limits, separation of one user's or one anonymous session's parcels from another's,
   email links for confirmation and password reset, purging of anonymous data, account deletion;
+- the web settings (`backend/src/smartagri/web_settings/`, `research_api/settings_routes.py`): the separation of one
+  user's settings and parcel settings from another's, the administrator role (the operator command `--make-admin` and
+  `SMARTAGRI_ADMINS`, including any way to obtain the role by registering an address first) and the endpoints that need it,
+  the validation of every value against the registry, its default limits and the administrator's limits, the CSRF and
+  rate limits of the write endpoints, and the append-only history;
+- the client address behind a reverse proxy (`SMARTAGRI_TRUSTED_PROXIES`, `research_api/proxy.py`): any way to make the app
+  count a request under an address that the proxy did not see;
+- the request guards (`research_api/guards.py`): the body size and JSON limits, the security headers and the
+  Content-Security-Policy;
 - the container image (`Dockerfile`) and the configuration it documents;
 - storage (`backend/src/smartagri/store.py`) and the external-cache handling (`backend/src/smartagri/cache.py`);
 - pinned dependencies with a known vulnerability that affects this code (`backend/requirements.lock`);
 - disclosure of secrets (API keys, SMTP credentials) through logs, responses or the provenance export.
 
 Out of scope:
+
+- a web setting that makes the advice agronomically worse inside the range an administrator allowed: the ranges are
+  validation bounds and the recommended values come from cited sources, but no setting is an agronomic approval;
 
 - the blind rating endpoints (`/api/eval/`), which by design are outside accounts and the CSRF checks; the deployment
   guide states that blind rating is run locally and not on a public server;
@@ -61,3 +73,19 @@ Out of scope:
 
 Whoever runs a public server is responsible for TLS, the reverse proxy, backups, keeping the image up to date and the
 privacy notice; see [docs/deployment.md](docs/deployment.md) and the Privacy section of [README.md](README.md).
+The administrators of the web settings are the accounts that the operator promoted on the server
+(`python -m smartagri.research_api --make-admin EMAIL`) and, with SMTP configured, the accounts whose listed address
+(`SMARTAGRI_ADMINS`) was confirmed through its mailbox. Without SMTP an address cannot be proven, so listing it grants
+nothing: promote the owner with the command before announcing the server, and keep the list short (see
+[docs/settings.md](docs/settings.md) and the first-run steps in [docs/deployment.md](docs/deployment.md)). Set
+`SMARTAGRI_TRUSTED_PROXIES` to your proxy's address, never to `*`.
+
+## Known gaps
+
+Written down so that nobody assumes otherwise; each is listed in [docs/deployment.md](docs/deployment.md), section 8:
+
+- no limit on outbound provider calls (weather, Sentinel-2) or on language-model spending per visitor;
+- no limit on the number of parcels per owner;
+- the blind rating endpoints are reachable on a public server (run blind rating locally);
+- the web client accepts a tile address set in the browser, but the Content-Security-Policy only lets it load tiles from the
+  host the operator configured.
