@@ -21,6 +21,11 @@ from ..retrieval.corpus import Corpus
 from ..llm.base import ModelCallError
 from .judge import make_judge
 
+ACT_VALUES = ("recommend", "conditional", "ask", "abstain")
+# Marks an answer of a variant whose act belongs to the language model (V0-V3) that the template produced: such an
+# answer is not a result of that rung and must never be presented as one.
+TEMPLATE_LABEL = "template, not a baseline"
+
 # Tools whose inputs or outputs reveal an irrigation amount; shown only when the policy allows a quantity.
 QUANTITY_TOOLS = ("net_irrigation_need", "gross_irrigation", "application_time")
 
@@ -119,7 +124,10 @@ def graded(d: Decision, name: str) -> bool:
     return d.quality[name].reliability != Reliability.UNGRADED
 
 
-def rationale(ctx: Context, d: Decision) -> List[str]:
+def rationale(ctx: Context, d: Decision, conclusions: bool = True) -> List[str]:
+    """The data statements of an answer. `conclusions=False` leaves out the statements that restate a conclusion of the
+    decision core (today: the dose band lowered by a nitrogen credit), so a variant whose act the language model chooses
+    can be given the facts without the core's reading of them."""
     v, t, out = values(ctx), d.advice_type, []
     def rel(name):
         return L().RELIABILITY[d.quality[name].reliability.value]
@@ -158,7 +166,7 @@ def rationale(ctx: Context, d: Decision) -> List[str]:
             out.append(T("Prognoza padavina za narednih sedam dana: %s mm.") % L().num(v["precip_forecast_7d"]))
         if v.get("previous_fertilization") is not None:
             out.append(T("Dosadašnje đubrenje: %s.") % L().value_text("previous_fertilization", v["previous_fertilization"]))
-        if t == AdviceType.FERTILIZATION_PLAN and "|dose:" in (d.core_action or "") \
+        if conclusions and t == AdviceType.FERTILIZATION_PLAN and "|dose:" in (d.core_action or "") \
                 and not d.core_action.endswith("dose:?") and n_credit(v):
             legume = v.get("previous_crop") in config.load("rules")["optional_inputs"]["legumes"]
             source = T("preduseva i stajnjaka") if legume and v.get("manure") else (T("preduseva") if legume else T("stajnjaka"))
@@ -194,7 +202,7 @@ def recent_referral_events(ctx: Context) -> List[str]:
 def limitations(ctx: Context, d: Decision, used: List[Dict[str, Any]]) -> List[str]:
     out = []
     if recent_referral_events(ctx):
-        out.append(L().PLANT_PROTECTION_REFERRAL)            # never a product (spec 009 FR-004)
+        out.append(L().PLANT_PROTECTION_REFERRAL)            # never a product
     analysis = values(ctx).get("soil_analysis")
     if d.advice_type in (AdviceType.FERTILIZATION_PLAN, AdviceType.FERTILIZATION_TIMING) and isinstance(analysis, dict) \
             and analysis.get("ph") is not None:
@@ -231,7 +239,7 @@ def next_question(d: Decision) -> Optional[Dict[str, Any]]:
         return None
     options = list(L().OPTIONS.get(q.input, [])) + [L().DECLINE_OPTION]
     text, how = q.text, q.how_to_obtain
-    localized = getattr(L(), "QUESTIONS", {}).get(q.input)     # spec 017: the question of asking.yaml in English
+    localized = getattr(L(), "QUESTIONS", {}).get(q.input)     # the question of asking.yaml in English
     if localized:
         text, how = localized
     return {"input": q.input, "text": text, "how_to_obtain": how, "options": options}
@@ -245,7 +253,7 @@ def _required_groups(t: AdviceType) -> List[List[str]]:
 
 
 def basis(ctx: Context, d: Decision) -> Dict[str, Any]:
-    """The "Na osnovu čega" line (spec 010): which inputs of R_t decided, with their reliability, and which are missing.
+    """The "Na osnovu čega" line: which inputs of R_t decided, with their reliability, and which are missing.
 
     Deciding = the required and one_of inputs of R_t that are present (any reliability except missing).
     Missing = the sufficiency layer's missing inputs, without those already listed as deciding (an input that is
@@ -284,13 +292,23 @@ def basis(ctx: Context, d: Decision) -> Dict[str, Any]:
     return {"deciding": deciding, "missing": missing, "text": "; ".join(parts) + "."}
 
 
-def template_answer(ctx: Context, d: Decision, corpus: Corpus) -> Dict[str, Any]:
+def is_free_act(d: Decision, act_free: Optional[bool] = None) -> bool:
+    """Does a language model choose the act of this turn (V0-V3: no sufficiency layer)?
+
+    `act_free` comes from the variant (`not variant.sufficiency`, see pipeline.run.advise); None = decide from the
+    decision alone (no act chosen by the core). A core variant (V4) whose decision has no act, an out-of-scope question
+    without the policy layer, passes False and keeps its own, earlier behaviour."""
+    return d.policy.act is None and act_free is not False
+
+
+def template_answer(ctx: Context, d: Decision, corpus: Corpus, act_free: Optional[bool] = None) -> Dict[str, Any]:
     """Deterministic answer. Used as is without a language model, and as the fact sheet for one."""
     act = d.policy.act.value if d.policy.act else None
     used = data_used(ctx, d)
     core = _phrase(d.core_action)
     action, summary, referral, extra = None, "", None, []
     generic = L().GENERIC_ADVICE.get(d.advice_type.value, "")
+    delegated = is_free_act(d, act_free)        # the act of this variant belongs to a language model, not to the core
 
     if act == "recommend":
         if core:
@@ -355,11 +373,16 @@ def template_answer(ctx: Context, d: Decision, corpus: Corpus) -> Dict[str, Any]
 
     if referral is None and recent_referral_events(ctx):
         referral = L().PLANT_PROTECTION_REFERRAL
-    return {"act": act, "act_label": L().ACTS[act], "summary": summary.strip(), "action": action,
-            "rationale": rationale(ctx, d) + extra, "data_used": used, "sources": sources(d, corpus),
-            "calculations": calculations(d), "next_question": next_question(d),
-            "limitations": limitations(ctx, d, used), "referral": referral, "basis": basis(ctx, d),
-            "generator": "template"}
+    out = {"act": act, "act_label": L().ACTS[act], "summary": summary.strip(), "action": action,
+           "rationale": rationale(ctx, d) + extra, "data_used": used, "sources": sources(d, corpus),
+           "calculations": calculations(d), "next_question": next_question(d),
+           "limitations": limitations(ctx, d, used), "referral": referral, "basis": basis(ctx, d),
+           "generator": "template"}
+    if delegated:
+        # Without a language model nobody chose this act: the template always recommends what the core would do. It
+        # keeps the dev-set check and the offline use working and is never a baseline result (see docs/protocol.md).
+        out["baseline_label"] = TEMPLATE_LABEL
+    return out
 
 
 # ------------------------------------------------------------------ language-model phrasing
@@ -401,17 +424,103 @@ PROMPT_HASH = hashlib.sha256((SYSTEM_PROMPT + json.dumps(ANSWER_SCHEMA, sort_key
 LANGUAGE_LINE = "Write in Serbian, Latin script, ekavian, in plain language a farmer would use."
 LANGUAGE_LINE_EN = "Write in English, in plain language a farmer would use."
 
+# Variants whose act the language model chooses (V0-V3: no sufficiency layer). The fact sheet of such a variant holds
+# only what the rung may see (parcel data, retrieved passages, results of the calculation tools); it carries no act, no
+# action, no timing and no other conclusion of the decision core, and this prompt does not mention a core.
+SYSTEM_PROMPT_FREE = """You are an agronomic adviser for maize growers in Bosnia and Herzegovina and answer one question
+about one parcel. You receive a fact sheet in JSON: the question, the parcel data, the source passages retrieved for it
+and the results of calculation tools. Any of these parts may be empty or absent: use what is there and nothing else.
+No other system has decided anything for you: you choose what to answer.
 
-def system_prompt() -> str:
-    """SYSTEM_PROMPT for the active locale (spec 017): English output for `en`; the local language (Latin script)
-    otherwise, since Cyrillic is produced by deterministic transliteration after every check."""
-    return SYSTEM_PROMPT.replace(LANGUAGE_LINE, LANGUAGE_LINE_EN) if current() == "en" else SYSTEM_PROMPT
+Write in Serbian, Latin script, ekavian, in plain language a farmer would use.
+
+What you must do:
+- Choose the act yourself and state it in the required field "act", exactly one of these four words: recommend (give
+  the advice), conditional (give the advice and state the condition or the information that is missing), ask (ask one
+  question before advising), abstain (give no advice and say why). An answer without one of these four words is invalid.
+- Put exactly one short question in "question_to_user" when the act is ask or conditional and the answer would change
+  the advice; otherwise leave it empty.
+- Rely only on the fact sheet. State no number that does not appear in it. Do not compute.
+- Never give an irrigation amount or a fertiliser dose unless a calculation result in the fact sheet holds one.
+- Never name a cause for a vegetation difference seen in satellite data, and never name a plant
+  protection product or dose.
+- When a datum is missing or uncertain, say so in one short clause where it matters.
+
+Return a short summary (one or two sentences) and a rationale of two to four short sentences that
+tie the advice to the parcel's own data and to the sources."""
+
+ANSWER_SCHEMA_FREE = {
+    "type": "object",
+    "properties": {
+        "act": {"type": "string", "enum": list(ACT_VALUES),
+                "description": "The act the model chose: recommend, conditional, ask or abstain."},
+        "summary": {"type": "string"},
+        "rationale": {"type": "array", "items": {"type": "string"}},
+        "question_to_user": {"type": "string"},
+    },
+    "required": ["act", "summary", "rationale", "question_to_user"],
+    "additionalProperties": False,
+}
+FREE_PROMPT_HASH = hashlib.sha256((SYSTEM_PROMPT_FREE + json.dumps(ANSWER_SCHEMA_FREE, sort_keys=True)).encode("utf-8")).hexdigest()
 
 
-def prompt_hash() -> str:
+def system_prompt(free: bool = False) -> str:
+    """SYSTEM_PROMPT (or SYSTEM_PROMPT_FREE for a variant whose act the model chooses) for the active locale:
+    English output for `en`; the local language (Latin script) otherwise, since Cyrillic is produced by deterministic
+    transliteration after every check."""
+    base = SYSTEM_PROMPT_FREE if free else SYSTEM_PROMPT
+    return base.replace(LANGUAGE_LINE, LANGUAGE_LINE_EN) if current() == "en" else base
+
+
+def answer_schema(free: bool = False) -> Dict[str, Any]:
+    return ANSWER_SCHEMA_FREE if free else ANSWER_SCHEMA
+
+
+def prompt_hash(free: bool = False) -> str:
     if current() != "en":
-        return PROMPT_HASH
-    return hashlib.sha256((system_prompt() + json.dumps(ANSWER_SCHEMA, sort_keys=True)).encode("utf-8")).hexdigest()
+        return FREE_PROMPT_HASH if free else PROMPT_HASH
+    return hashlib.sha256((system_prompt(free) + json.dumps(answer_schema(free), sort_keys=True)).encode("utf-8")).hexdigest()
+
+
+def fact_sheet(ctx: Context, d: Decision, answer: Dict[str, Any], free: Optional[bool] = None) -> Dict[str, Any]:
+    """The JSON payload a language model receives for one turn.
+
+    Act decided by the core (V4, V5): the act, the action, the facts and the next question of the core's answer, exactly
+    as before. Act chosen by the model (V0-V3, `free`): the question, the parcel data (ungraded below
+    the q layer), the data statements without the core's conclusions, the limitations, the source passages with their
+    applicability as the rung computes it, and the results of the calculation tools. Never the act, the action, the
+    timing or any other conclusion of the decision core."""
+    sources_ = [{"title": s["title"], "applicability": s["applicability_label"],
+                 "conditions": s["conditions"], "text": s["excerpt"]} for s in answer["sources"]]
+    if not (is_free_act(d) if free is None else free):
+        return {"question": ctx.Q.text, "advice_type": L().ADVICE_TYPES[d.advice_type.value],
+                "act": answer["act"], "act_is_free": d.policy.act is None, "action": answer["action"],
+                "facts": answer["rationale"], "data": [_fact_row(r) for r in answer["data_used"]],
+                "limitations": answer["limitations"],
+                "next_question": (answer["next_question"] or {}).get("text"),
+                "sources": sources_,
+                "calculations": [c for c in answer["calculations"] if c["output"]]}
+    return {"question": ctx.Q.text, "advice_type": L().ADVICE_TYPES[d.advice_type.value],
+            "facts": rationale(ctx, d, conclusions=False), "data": [_fact_row(r) for r in answer["data_used"]],
+            "limitations": answer["limitations"], "sources": sources_,
+            "calculations": [c for c in answer["calculations"] if c["output"]]}
+
+
+def act_failure(out: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Why the output of a model that chooses the act has no usable act (None when it has one). No default is applied."""
+    if not isinstance(out, dict) or out.get("act") not in ACT_VALUES:
+        return "template_after_invalid_act"
+    if not isinstance(out.get("summary"), str) or not out["summary"].strip() or \
+            not isinstance(out.get("rationale"), list) or not all(isinstance(x, str) for x in out["rationale"]):
+        return "template_after_unparseable_output"
+    return None
+
+
+def _apply_free_act(answer: Dict[str, Any], out: Dict[str, Any]) -> None:
+    """The model's own act, in the answer: the core's action is not part of this answer, and the answer says who chose."""
+    answer.update(act=out["act"], act_label=L().ACTS[out["act"]], action=None, act_origin="model")
+    answer.pop("baseline_label", None)
+    _free_question(answer, out)
 
 
 def _free_question(answer: Dict[str, Any], out: Dict[str, Any]) -> None:
@@ -435,9 +544,9 @@ def _fact_row(row: Dict[str, Any]) -> Dict[str, Any]:
 class TemplateGenerator:
     name, model = "template", "none"
 
-    def generate(self, ctx: Context, d: Decision, corpus: Corpus,
-                 grounding_check: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, int]]:
-        return template_answer(ctx, d, corpus), {"unsupported_numbers": [], "action": "none"}, \
+    def generate(self, ctx: Context, d: Decision, corpus: Corpus, grounding_check: bool = True,
+                 act_free: Optional[bool] = None) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, int]]:
+        return template_answer(ctx, d, corpus, act_free), {"unsupported_numbers": [], "action": "none"}, \
             {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
 
 
@@ -457,7 +566,7 @@ class AnthropicGenerator:
         self.client = anthropic.Anthropic()
         self.model = model or os.environ.get("LLM_MODEL", "claude-opus-5-5")
         self.strict, self.server_fallback, self.effort, self.max_tokens = strict, server_fallback, effort, max_tokens
-        # GROUNDING_JUDGE=llm plugs the Claude entailment judge into the support check (spec 004 T021)
+        # GROUNDING_JUDGE=llm plugs the Claude entailment judge into the support check
         self.judge = judge if judge is not None else make_judge(strict=strict, server_fallback=server_fallback)
 
     @property
@@ -465,30 +574,29 @@ class AnthropicGenerator:
         judge = getattr(self, "judge", None)
         return getattr(judge, "prompt_hash", None) if judge is not None else None
 
-    def generate(self, ctx: Context, d: Decision, corpus: Corpus,
-                 grounding_check: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, int]]:
-        answer = template_answer(ctx, d, corpus)
+    def generate(self, ctx: Context, d: Decision, corpus: Corpus, grounding_check: bool = True,
+                 act_free: Optional[bool] = None) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, int]]:
+        free = is_free_act(d, act_free)             # V0-V3: the model chooses the act and receives no conclusion of the core
+        answer = template_answer(ctx, d, corpus, act_free)
         self.last_call = None
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         grounding = {"unsupported_numbers": [], "action": "none"}
-        facts = {"question": ctx.Q.text, "advice_type": L().ADVICE_TYPES[d.advice_type.value],
-                 "act": answer["act"], "act_is_free": d.policy.act is None, "action": answer["action"],
-                 "facts": answer["rationale"], "data": [_fact_row(r) for r in answer["data_used"]],
-                 "limitations": answer["limitations"],
-                 "next_question": (answer["next_question"] or {}).get("text"),
-                 "sources": [{"title": s["title"], "applicability": s["applicability_label"],
-                              "conditions": s["conditions"], "text": s["excerpt"]} for s in answer["sources"]],
-                 "calculations": [c for c in answer["calculations"] if c["output"]]}
-        out, usage, failure = self._request(facts)
+        facts = fact_sheet(ctx, d, answer, free)
+        out, usage, failure = self._request(facts, free)
+        if not failure and free:
+            failure = act_failure(out)              # no valid act is a failure, never a default
         if failure:
             if getattr(self, "strict", False):
                 raise ModelCallError("%s: %s" % (self.name, failure))
             grounding["action"] = failure
             return answer, grounding, usage
 
-        if not grounding_check:                     # variants below the gamma layer get the model's text as is
+        if not grounding_check or free:             # variants below the gamma layer get the model's text as is
+            # (gamma falls back to the core's text; a variant whose act the model chooses has no such text to fall back to)
             answer.update(summary=out["summary"], rationale=out["rationale"], generator="anthropic")
-            if d.policy.act is None:
+            if free:
+                _apply_free_act(answer, out)
+            elif d.policy.act is None:              # a core variant without an act (out of scope, no policy): as before
                 answer.update(act=out["act"], act_label=L().ACTS[out["act"]])
                 _free_question(answer, out)
             grounding["action"] = "not_checked"
@@ -542,12 +650,12 @@ def record_call(generator, provider: str, model: Optional[str], request_id: Opti
 class _AnthropicRequest:
     """The Anthropic SDK call used by AnthropicGenerator."""
 
-    def _request(self, facts: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Dict[str, int], Optional[str]]:
+    def _request(self, facts: Dict[str, Any], free: bool = False) -> Tuple[Optional[Dict[str, Any]], Dict[str, int], Optional[str]]:
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         kwargs: Dict[str, Any] = dict(
-            model=self.model, max_tokens=getattr(self, "max_tokens", 16000), system=system_prompt(),
+            model=self.model, max_tokens=getattr(self, "max_tokens", 16000), system=system_prompt(free),
             output_config={"effort": getattr(self, "effort", "low"),
-                           "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
+                           "format": {"type": "json_schema", "schema": answer_schema(free)}},
             messages=[{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}])
         if getattr(self, "server_fallback", True):
             # Interactive use: a server-side fallback re-runs the request on another model if a safety classifier
@@ -582,12 +690,12 @@ class ProviderGenerator(AnthropicGenerator):
         self.judge = judge
         self.strict, self.max_tokens = strict, max_tokens
 
-    def _request(self, facts):
+    def _request(self, facts, free: bool = False):
         from ..llm import LLMError, parse_json_object
         usage = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0}
         try:
-            r = self.provider.complete(system_prompt(), [{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}],
-                                       json_schema=ANSWER_SCHEMA, max_tokens=self.max_tokens)
+            r = self.provider.complete(system_prompt(free), [{"role": "user", "content": json.dumps(facts, ensure_ascii=False)}],
+                                       json_schema=answer_schema(free), max_tokens=self.max_tokens)
         except LLMError as exc:
             return None, usage, "template_after_error:" + str(exc)[:80]
         usage = {"llm_calls": 1, "input_tokens": r.input_tokens, "output_tokens": r.output_tokens}

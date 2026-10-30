@@ -30,16 +30,42 @@ Below V4 no input carries a reliability grade ("ungraded"); V0-V3 may ask one fr
 model is used, and the prepared reply is given exactly as for VC. Every variant uses the same model, corpus, tools,
 passage budget and output limit (`backend/config/evaluation.yaml`).
 
+### 1.1 What a rung receives, and who chooses the act
+
+V0-V3 are a language model with the data the rung allows. The model receives the question; the parcel data (static
+profile P, A, Q, ungraded; from V3 also the weather summary W and the NDVI series S); the passages the rung retrieves
+(none for V0; every passage counts as applicable for V1; pi over the question for V2 and over the parcel from V3); and
+the results of the calculation tools that the rung's inputs allow (ETc, net and gross irrigation: numbers come from
+code, never from the model; they appear when their inputs do, so from V3 on for irrigation). It chooses the act itself
+(recommend, conditional, ask or abstain) and phrases the answer. It receives **no** act, action, timing or other
+conclusion of the decision core (`core/rules.py`, the action core D_t); its prompt does not mention a core
+(`pipeline/generate.py`, `SYSTEM_PROMPT_FREE`, `fact_sheet`).
+
+The model states its act in the required field `act` of its output (one of the four words, exactly). An output without a
+valid act is an error item (stored, never rated, never replaced by a default or by template text, the run exits non-zero),
+like any other failed model call (section 10).
+
+V4 and V5 differ in who decides: the layers (q, sigma, alpha, and delta from V5) choose the act, and the language model
+only phrases the answer from the core's act and action. E1 = V4 − V3 therefore measures the package (q, sigma and alpha
+together) **and** the change of the decision-maker from the language model to the rules; this is reported as such. E2 =
+V3 − V2 measures the dynamic parcel context together with the tool results that depend on W.
+
+The template generator has no language model. For V0-V3 it is only a deterministic fallback that always recommends and
+shows the action of the decision core; every such answer carries the label **"template, not a baseline"** in the run
+record (`baseline`), in `evalkit report` (JSON and tables) and in the web evaluation view, and is never a result of the
+rung. The development set runs with the template to check the pipeline; a locked test-set run uses a language model for
+every variant.
+
 ## 2. Primary outcome (E1)
 
 **One primary outcome: the critical-error rate** — the share of a scenario's answers (repeats averaged first) in which
 the independent agronomist marks at least one critical error K1-K5 (K4, premature recommendation, included) — compared
 as the paired difference V4 − V3 over the 40 test scenarios.
 
-Note on the choice: the study design names three measures for E1 (the rate of contextually wrong and premature
+Note on the choice: three measures are candidates for E1 (the rate of contextually wrong and premature
 recommendations, the rubric score for applicability and the correctness of the act). The plan takes the first one as
-the single primary outcome, as instructed for this plan; this choice is flagged for confirmation by the protocol owner
-before the lock. The other two are key secondary outcomes (section 3).
+the single primary outcome; this choice is flagged for confirmation by the protocol owner before the lock. The other
+two are key secondary outcomes (section 3).
 
 Estimate: mean paired difference with a 95 % percentile bootstrap interval (10,000 resamples, seed 7). E1 is supported
 when the whole interval lies below zero.
@@ -111,8 +137,8 @@ The rubric total of V5 is non-inferior to VC when the lower limit of the two-sid
 one-sided test at alpha/2 = 0.025) lies above −margin.
 
 **Non-inferiority margin: TO BE DECIDED BY THE PROTOCOL OWNER** (`noninferiority.margin` in
-`backend/config/analysis.yaml`, currently null). The study design requires a margin locked before measurement but
-does not justify a value; none is assumed here. The justification (for example a minimal important difference agreed
+`backend/config/analysis.yaml`, currently null). A margin must be locked before measurement; no value is
+justified or assumed here. The justification (for example a minimal important difference agreed
 with the agronomist) is written in this section when the margin is set.
 
 ## 8. Negative control: equivalence on the complete stratum
@@ -138,8 +164,9 @@ minimum acceptable agreement and the action if it is not reached are **TO BE DEC
 
 ## 10. Exclusions and failed runs
 
-- An item whose model call failed, or was answered by a model other than the pinned one, is an error item: it is
-  stored, never rated, never replaced by template text, and makes the run exit non-zero. The affected scenario and
+- An item whose model call failed, was answered by a model other than the pinned one, or (V0-V3) has no valid `act` in
+  the model's output is an error item: it is stored, never rated, never replaced by template text, and makes the run
+  exit non-zero. The affected scenario and
   variant are run again; the count of error items per variant is reported.
 - No scenario is excluded after the lock. Rating is restricted to the items of the assignment; a report covers one
   scenario set and the named batches only (`evalkit report --set test --batch ...`).
@@ -147,8 +174,8 @@ minimum acceptable agreement and the action if it is not reached are **TO BE DEC
 ## 11. What the lock binds
 
 Protocol files (scenarios, corpus, `backend/config/*.yaml` including `evaluation.yaml` and `analysis.yaml`, the rater
-guide, this plan, the generator, VC and judge prompts, the external-cache snapshot, which is mandatory for the test
-set) and the environment (git commit, sha256 of the source tree, `requirements.lock`, Python version, model ids and
+guide, this plan, the generator prompt (V4, V5), the prompt of the variants whose act the model chooses (V0-V3), the
+VC and judge prompts, the external-cache snapshot, which is mandatory for the test set) and the environment (git commit, sha256 of the source tree, `requirements.lock`, Python version, model ids and
 generation settings, the generator the environment selects, embedding settings, grounding judge). See
 `docs/reproducibility.md`.
 

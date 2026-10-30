@@ -34,7 +34,7 @@ service.
 | **σ** sufficiency | whether the inputs suffice for the advice type, or for a degraded one | `core/sufficiency.py` (`sufficiency`, `missing_inputs`) | `requirements.yaml` | `test_sufficiency.py` | `sufficiency` |
 | **α** asking | the one question whose answer can change the decision, ranked by decision sensitivity, then cost | `core/asking.py` (`choose_question`) | `asking.yaml` | `test_asking.py` | `asking` |
 | **δ** policy | the act, the reason code, whether a quantity may be shown | `core/policy.py` (`decide`); `core/decide.py` (`decide`: orchestration, downgrade to `conditional` on a source conflict) | `requirements.yaml` (`quantity`, `risk` per advice type) | `test_policy.py`, `test_dev_scenarios.py`, `test_variants.py` | `policy` |
-| decision cores D_t | the action class per advice type (irrigate now / wait, top-dress window, spraying window, scouting priority) | `core/rules.py` (`decide_action_core`) | `rules.yaml` | `test_dev_scenarios.py`, `test_optional_inputs.py` | — (always on for in-scope questions) |
+| decision cores D_t | the action class per advice type (irrigate now / wait, top-dress window, spraying window, scouting priority); its conclusion reaches the text generator of V4 and V5 only, never that of V0–V3 | `core/rules.py` (`decide_action_core`) | `rules.yaml` | `test_dev_scenarios.py`, `test_optional_inputs.py`, `test_free_act_baselines.py` | — (always on for in-scope questions) |
 | **γ** grounding | numbers in a generated text must come from a tool or the context; sentences must be supported by a passage | `core/grounding.py` (`unsupported_numbers`, `support_check`, `split_sentences`); `pipeline/generate.py` (LLM path: an unsupported number replaces the text by the template answer, unsupported sentences are removed); `pipeline/judge.py` (optional entailment judge) | — (the lexical support threshold is a default argument of `support_check`, not a configuration value) | `test_tools.py`, `test_judge.py`, `test_generate.py` | `grounding` |
 
 ### Web settings and the configuration column
@@ -48,6 +48,17 @@ settings it used in `provenance.settings`; the file hashes in `config_hashes` do
 
 The template generator (`pipeline/generate.py`, `TemplateGenerator`, `template_answer`) builds its text from the
 decision and the tool outputs, so γ has nothing to reject on that path; γ acts on text written by a language model.
+
+**Who chooses the act.** For V4 and V5 the layers do: the language model receives the core's act and action and only
+phrases them. For V0–V3 (no sufficiency layer, `act_free` in `pipeline/run.py`) the model chooses the act itself: its
+fact sheet (`pipeline/generate.py`, `fact_sheet`) holds the question, the parcel data (ungraded), the data statements
+without the core's conclusions, the limitations, the passages the rung retrieves with the applicability it computes, and
+the tool results the rung's inputs allow, and **no** act, action, timing or other conclusion of the decision core D_t.
+The prompt (`SYSTEM_PROMPT_FREE`, hash `FREE_PROMPT_HASH`, part of the protocol lock) does not mention a core and requires
+the field `act` (`recommend`, `conditional`, `ask`, `abstain`); an output without a valid act is an error item in an
+evaluation and a labelled template fallback in interactive use. The template for these variants is a fallback that always
+recommends; its answers carry `baseline_label` = "template, not a baseline" (run record: `baseline`). Tests:
+`test_free_act_baselines.py`.
 
 ## Inputs of q
 

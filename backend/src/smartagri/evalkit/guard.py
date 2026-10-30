@@ -102,7 +102,7 @@ def load_passages(corpus_dir: Path, extra: Optional[Sequence[Path]] = None) -> L
 
 def scenario_passages(scenarios: Sequence[Dict[str, Any]], prefix: str = "dev") -> List[Dict[str, Any]]:
     """Free-text fields of (development) scenarios as pseudo-passages, so test scenarios are compared
-    with development material the same way as with the corpus (spec 007 T020a)."""
+    with development material the same way as with the corpus."""
     return [{"id": "%s:%s:%s" % (prefix, sc.get("id"), path), "text": text}
             for sc in scenarios for path, text in scenario_fields(sc)]
 
@@ -165,7 +165,7 @@ def _build_index(corpus_dir: Path) -> None:
 
 
 def isolation_checks(repo_root: Path, corpus_dir: Path, retrieval_src: Path, trace_index: bool = False) -> Dict[str, Any]:
-    """Checks that the test set cannot reach the index (spec 007 T021).
+    """Checks that the test set cannot reach the index.
 
     - `.gitignore` at the repository root ignores backend/eval/scenarios/test/ (when the file is
       absent, e.g. inside a container image, the check is reported as not verifiable);

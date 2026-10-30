@@ -18,7 +18,7 @@ from .base import LLMError, LLMResponse, Provider
 
 class BridgeProvider(Provider):
     name = "bridge"
-    # Spec 023: the bridge protocol (/complete) carries text messages only; photo descriptions are not available.
+    # The bridge protocol (/complete) carries text messages only; photo descriptions are not available.
     supports_images = False
 
     def __init__(self, url: Optional[str] = None, token: Optional[str] = None, transport=None):

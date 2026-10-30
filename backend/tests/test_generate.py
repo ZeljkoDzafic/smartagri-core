@@ -1,4 +1,4 @@
-"""Answer generation (spec 004): quantity gate, mandatory notes, fallbacks of the model path,
+"""Answer generation: quantity gate, mandatory notes, fallbacks of the model path,
 model-chosen act, summary replacement and template timing. No network: the Anthropic client is faked."""
 import copy
 import statistics

@@ -1,4 +1,4 @@
-# Minimal lint rule set (spec 008 T011): syntax errors, undefined names, unused imports and
+# Minimal lint rule set: syntax errors, undefined names, unused imports and
 # variables, and pycodestyle errors that are not about layout. Line length is not checked.
 # The core stays Python 3.9 compatible (project rule), so the target is py39.
 target-version = "py39"

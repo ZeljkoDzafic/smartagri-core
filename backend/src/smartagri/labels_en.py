@@ -1,4 +1,4 @@
-"""English catalogue of user-facing strings (spec 017).
+"""English catalogue of user-facing strings.
 
 Mirrors every table and formatting function of `labels` (same names, same keys) so that code reading them
 through `i18n.L()` produces English with identical numbers and logic. `MESSAGES` maps literal sentences of the
@@ -304,7 +304,7 @@ def basis_phrase(name: str, value: Any) -> str:
     return "%s: %s" % (lower_first(INPUTS.get(name, name)), value_text(name, value))
 
 
-# ---------------------------------------------------------------- spec 013: activity log and traceability
+# ---------------------------------------------------------------- activity log and traceability
 ACTIVITY_KINDS = [{"value": "sowing", "label": "Sowing"}, {"value": "fertilizing", "label": "Fertilising"},
                   {"value": "spraying", "label": "Spraying (plant protection)"},
                   {"value": "irrigation", "label": "Irrigation"}, {"value": "cultivation", "label": "Tillage"},
@@ -346,7 +346,7 @@ ACTIVITY_FIELD_LABELS = {
 }
 UNITS = {"biljaka/ha": "plants/ha", "dana": "days"}
 
-# ---------------------------------------------------------------- spec 014: EUDR documentation
+# ---------------------------------------------------------------- EUDR documentation
 EUDR_DISCLAIMER = ("This document helps to prepare the data for a due diligence statement under Regulation (EU) 2023/1115; "
                    "it is neither legal advice nor a submitted statement. The operator is responsible for the accuracy of the "
                    "data and for submitting the statement to the EU information system (TRACES).")
@@ -380,7 +380,7 @@ STATEMENT_STATUS = {"draft": "draft"}
 OPTIONS.update({"activity_kind": ACTIVITY_KINDS, "activity_status": ACTIVITY_STATUSES, "spray_dose_unit": SPRAY_DOSE_UNITS,
                 "irrigation_method": IRRIGATION_METHODS, "severity": SEVERITIES, "eudr_commodity": EUDR_COMMODITIES})
 
-# ---------------------------------------------------------------- spec 011: roles
+# ---------------------------------------------------------------- roles
 ROLE_LABELS = {"owner": "owner", "agronomist": "agronomist", "worker": "worker", "inspector": "inspector"}
 
 # ---------------------------------------------------------------- questions of config/asking.yaml (question_sr, how_to_obtain_sr)
@@ -404,31 +404,31 @@ QUESTIONS = {
     "operation": ("Which work are you planning: spraying, top-dressing, inter-row cultivation or sowing?", ""),
 }
 
-# ---------------------------------------------------------------- e-mails (spec 011)
+# ---------------------------------------------------------------- e-mails
 EMAIL = {
     "hello_name": "Hello %s,",
     "hello": "Hello,",
-    "verify_body": "thank you for creating an Open Crop Manager account. Confirm your e-mail address by opening the link below. "
+    "verify_body": "thank you for creating a SmartAgri account. Confirm your e-mail address by opening the link below. "
                    "The link is valid for 48 hours.",
     "verify_ignore": "If you did not create the account, ignore this message.",
-    "verify_subject": "Open Crop Manager: confirm your e-mail address",
+    "verify_subject": "SmartAgri: confirm your e-mail address",
     "verify_button": "Confirm e-mail address",
-    "reset_body": "we received a request for a new password for your Open Crop Manager account. Set the new password using the link "
+    "reset_body": "we received a request for a new password for your SmartAgri account. Set the new password using the link "
                   "below. The link is valid for 1 hour and can be used only once.",
     "reset_ignore": "If you did not ask for a new password, ignore this message; your old password still works.",
-    "reset_subject": "Open Crop Manager: new password",
+    "reset_subject": "SmartAgri: new password",
     "reset_button": "Set a new password",
-    "invite_body": "%s invites you to join the organisation “%s” on Open Crop Manager, with the role: %s. "
+    "invite_body": "%s invites you to join the organisation “%s” on SmartAgri, with the role: %s. "
                    "Accept the invitation using the link below. The link is valid for 7 days.",
     "invite_owner": "The owner",
     "invite_ignore": "If you are not expecting this invitation, ignore this message.",
-    "invite_subject": "Open Crop Manager: invitation to the organisation %s",
+    "invite_subject": "SmartAgri: invitation to the organisation %s",
     "invite_button": "Accept invitation",
     "button_fallback": "If the button does not work, open this link:",
-    "footer": "Open Crop Manager · maize advisor",
+    "footer": "SmartAgri · maize advisor",
 }
 
-# ---------------------------------------------------------------- English questions (spec 017): local query for retrieval
+# ---------------------------------------------------------------- English questions: local query for retrieval
 # The corpus is in the local language. An English question is mapped to its advice type (pipeline/intent_en.py) and
 # retrieval searches with this canonical local question; the user's own text is kept as the shown question.
 LOCAL_QUERIES = {          # no crop word: stated conditions (pipeline/run.py) are read from the user's text only
@@ -625,7 +625,7 @@ MESSAGES: Dict[str, str] = {
         "I did not understand the answer. Choose one of the options offered or write “I don't know”.",
     "Nema otvorenog pitanja na koje se ovaj odgovor odnosi.": "There is no open question this answer refers to.",
     "Nepoznata vrsta saveta.": "Unknown type of advice.",
-    # spec 037: owner correction of the parcel jurisdiction
+    # owner correction of the parcel jurisdiction
     "Nepoznata oznaka države.": "Unknown country code.",
     "Nepoznata oznaka entiteta ili oblasti.": "Unknown entity or region code.",
     "Nepoznata vremenska zona.": "Unknown time zone.",
@@ -654,8 +654,8 @@ MESSAGES: Dict[str, str] = {
         "The e-mail address is not confirmed yet. Check your mail or ask for a new confirmation link.",
     "Veza nije važeća ili je istekla. Zatražite novu.": "The link is not valid or has expired. Ask for a new one.",
     "Previše pokušaja. Pokušajte ponovo kasnije.": "Too many attempts. Try again later.",
-    "Najviše 500 parcela u jednom zahtevu.": "At most 500 parcels per request.",               # spec 056
-    "Vrsta naloga mora biti farm ili advisor.": "The account type must be farm or advisor.",   # spec 056
+    "Najviše 500 parcela u jednom zahtevu.": "At most 500 parcels per request.",
+    "Vrsta naloga mora biti farm ili advisor.": "The account type must be farm or advisor.",
     "Unesite ispravnu e-adresu.": "Enter a valid e-mail address.",
     "Ime je obavezno (najviše 100 znakova).": "The name is required (at most 100 characters).",
     "Naziv organizacije je obavezan (najviše 100 znakova).": "The organisation name is required (at most 100 characters).",
@@ -821,10 +821,10 @@ MESSAGES: Dict[str, str] = {
     "nedostaje": "missing",
     "nije upisano": "not recorded",
     "Upozorenja": "Warnings",
-    "Provera krčenja šuma prema spoljnim skupovima podataka nije automatizovana u sistemu Open Crop Manager; izjave o korišćenju zemljišta su navodi korisnika. GeoJSON za informacioni sistem EU: /api/eudr/statements/%s.geojson.":
-        "The deforestation check against external data sets is not automated in Open Crop Manager; statements on land use are the "
+    "Provera krčenja šuma prema spoljnim skupovima podataka nije automatizovana u sistemu SmartAgri; izjave o korišćenju zemljišta su navodi korisnika. GeoJSON za informacioni sistem EU: /api/eudr/statements/%s.geojson.":
+        "The deforestation check against external data sets is not automated in SmartAgri; statements on land use are the "
         "user's declarations. GeoJSON for the EU information system: /api/eudr/statements/%s.geojson.",
-    "Open Crop Manager · %s · nacrt, nije podneta izjava · strana %d": "Open Crop Manager · %s · draft, not a submitted statement · page %d",
+    "SmartAgri · %s · nacrt, nije podneta izjava · strana %d": "SmartAgri · %s · draft, not a submitted statement · page %d",
     # ---- pipeline/ai_chat.py
     "Deo odgovora je uklonjen jer nije potkrepljen podacima parcele ni izvorima.":
         "Part of the answer was removed because it is not supported by the parcel data or the sources.",
@@ -839,7 +839,7 @@ MESSAGES: Dict[str, str] = {
         "AI chat is not configured. Set LLM_PROVIDER (claude-cli, anthropic, openai, deepseek, kimi, mistral, ollama, lmstudio or openai-compatible).",
 }
 
-# ---------------------------------------------------------------- spec 018: alerts and notifications
+# ---------------------------------------------------------------- alerts and notifications
 ALERT_KINDS = [{"value": "frost", "label": "Frost in the forecast"}, {"value": "heavy_rain", "label": "Heavy rain in the forecast"},
                {"value": "spray_window", "label": "Spraying window"}, {"value": "stale_data", "label": "Outdated data"},
                {"value": "eudr_missing", "label": "EUDR: incomplete record"}]
@@ -862,24 +862,24 @@ ALERT_TEXTS = {
     "eudr_missing.title": "EUDR record incomplete: {parcel}",
     "eudr_missing.body": "The EUDR record of the plot {parcel} is missing: {items}.",
     "test.title": "Test notification",
-    "test.body": "This is an Open Crop Manager test notification. Alerts for your account arrive through this channel.",
+    "test.body": "This is a SmartAgri test notification. Alerts for your account arrive through this channel.",
     "status.updated": "Updated from a newer forecast.",
     "status.withdrawn": "Withdrawn: a newer forecast no longer shows this.",
     "status.expired": "Expired.",
     "issued": "{date} at {time}",
     "unknown": "unknown",
     "age_days": "{days} old",
-    "email.subject": "Open Crop Manager: {title}",
+    "email.subject": "SmartAgri: {title}",
     "email.hello": "Hello {name},",
     "email.button": "Open the plot",
-    "email.button_test": "Open Open Crop Manager",
+    "email.button_test": "Open SmartAgri",
     "email.note": ("The alert states data the system already holds and is not advice. The limits are development values "
                    "still being reviewed by the agronomist."),
     "email.prefs": "Alert settings: {url}",
     "email.unsubscribe": "You receive this message because e-mail alerts are switched on for your account in the organisation {org}.",
     "email.unsubscribe_link": "Unsubscribe from all e-mail alerts",
-    "email.footer": "Open Crop Manager · alerts",
-    "digest.subject": "Open Crop Manager: alert summary ({count})",
+    "email.footer": "SmartAgri · alerts",
+    "digest.subject": "SmartAgri: alert summary ({count})",
     "digest.intro": "Alert summary for the organisation {org}:",
     "digest.button": "Open the alerts",
     "digest.withdrawn": "{title} (withdrawn)",
@@ -887,7 +887,7 @@ ALERT_TEXTS = {
     "digest.other": "Other",
 }
 MESSAGES.update({
-    # ---- spec 018: alerts, organisation settings, LLM bridge status
+    # ---- alerts, organisation settings, LLM bridge status
     "Upozorenje nije pronađeno.": "Alert not found.",
     "Nepoznato podešavanje: %s.": "Unknown setting: %s.",
     "Nepoznata vrsta upozorenja: %s.": "Unknown alert kind: %s.",
@@ -907,7 +907,7 @@ MESSAGES.update({
         "AI chat is not available right now: the connection to the AI bridge could not be made.",
 })
 
-# ---- Costs, revenue and gross margin (spec 022): label tables (same keys as economics.SR) and messages.
+# ---- Costs, revenue and gross margin: label tables (same keys as economics.SR) and messages.
 ECONOMICS: Dict[str, Any] = {
     "cost_kinds": {"input": "Inputs (materials)", "labour": "Labour", "machinery": "Machinery", "service": "Services",
                    "other": "Other", "overhead": "Overheads", "correction": "Correction"},
@@ -1011,7 +1011,7 @@ for _sr, _en in {
     "Ispravka mora imati napomenu.": "A correction needs a note.",
     "Naziv: polje je obavezno.": "Name: the field is required.",
     "Troškovi i bruto marža, sezona %s": "Costs and gross margin, season %s",
-    "Open Crop Manager · troškovi %s · strana %d": "Open Crop Manager · costs %s · page %d",
+    "SmartAgri · troškovi %s · strana %d": "SmartAgri · costs %s · page %d",
     "Parcele, kulture i gazdinstvo": "Parcels, crops and farm",
     "Bruto marža = prihod − varijabilni troškovi. Vrednost koja nije poznata prikazana je kao „nije uneto”, nikad kao "
     "nula; parcela sa nepotpunim podacima ima precenjenu maržu.":
@@ -1027,7 +1027,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# ---- Sensors and soil analyses (spec 020): label tables (same values as labels.py) and messages.
+# ---- Sensors and soil analyses: label tables (same values as labels.py) and messages.
 TEXTURE_CLASSES = [{"value": "sand", "label": "Sand (sandy)"}, {"value": "sandy_loam", "label": "Sandy loam"},
                    {"value": "loam", "label": "Loam"}, {"value": "clay_loam", "label": "Clay loam"},
                    {"value": "clay", "label": "Clay (clayey)"}, {"value": "loamy_sand", "label": "Loamy sand"},
@@ -1144,7 +1144,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# ---- Photo observations and the symptom description (spec 023): messages, labels and the privacy notice.
+# ---- Photo observations and the symptom description: messages, labels and the privacy notice.
 for _sr, _en in {
     "AI opis, nije dijagnoza": "AI description, not a diagnosis",
     "Obratite se lokalnoj prognozno-izveštajnoj ili savetodavnoj službi za zaštitu bilja.":
@@ -1228,7 +1228,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# ---- Daily soil water balance (spec 019): sentences of smartagri/water/texts.py and the route error.
+# ---- Daily soil water balance: sentences of smartagri/water/texts.py and the route error.
 for _sr, _en in {
     "Bilans vode u zemljištu nije moguće izračunati.": "The soil water balance cannot be calculated.",
     "Nedostaje vodni kapacitet zemljišta: unesite teksturu zemljišta ili PVK (mm/m).":
@@ -1297,7 +1297,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# ---- Water balance alert (spec 019, a spec 018 kind).
+# ---- Water balance alert.
 ALERT_KINDS.append({"value": "water_balance_due", "label": "Irrigation due soon (model estimate)"})
 ALERT_TEXTS.update({
     "water_balance_due.title": "Irrigation due soon (model estimate): {parcel}",
@@ -1306,7 +1306,7 @@ ALERT_TEXTS.update({
                                "a model estimate, not a soil moisture measurement."),
 })
 
-# ---- spec 026: record reminders (spec 018 kinds)
+# ---- record reminders
 ALERT_KINDS.extend([{"value": "record_sowing_missing", "label": "Reminder: sowing not recorded"},
                     {"value": "record_density_missing", "label": "Reminder: plant density not recorded"},
                     {"value": "record_harvest_missing", "label": "Reminder: harvest not recorded"}])
@@ -1322,7 +1322,7 @@ ALERT_TEXTS.update({
                                    "done, enter it in the activity log (yield, moisture, lot).",
 })
 
-# ---- Offline field notes and sync (spec 025): scouting location label and the 409/422 messages of api/offline_support.
+# ---- Offline field notes and sync: scouting location label and the 409/422 messages of api/offline_support.
 ACTIVITY_FIELD_LABELS["scouting"]["location"] = "Place of the observation"
 for _sr, _en in {
     "%s: očekuje se mesto {lat, lon, accuracy_m, fixed_at}.": "%s: a place {lat, lon, accuracy_m, fixed_at} is expected.",
@@ -1343,7 +1343,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# ---- Advisor workspace (spec 024): messages, review labels, audit actions and CSV headers (smartagri/advisor.py).
+# ---- Advisor workspace: messages, review labels, audit actions and CSV headers (smartagri/advisor.py).
 for _sr, _en in {
     "Nepoznato ovlašćenje: %s.": "Unknown permission: %s.",
     "Ovlašćenje mora biti da ili ne (true/false).": "A permission must be yes or no (true/false).",
@@ -1414,7 +1414,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# Spec 030 (atlas and symptom key): API messages of atlas/texts.MSG.
+# API messages of atlas/texts.MSG.
 for _sr, _en in {
     "Unos atlasa nije pronađen.": "Atlas entry not found.",
     "Slika nije pronađena.": "Image not found.",
@@ -1441,7 +1441,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# Spec 027: farms, field crops and per-field access (messages raised as finished default-locale text).
+# Farms, field crops and per-field access (messages raised as finished default-locale text).
 MESSAGES.update({
     "Za ovu parcelu imate samo pravo čitanja.": "You have read-only access to this parcel.",
     "Vlasnik i agronom imaju pristup svim parcelama.": "Owners and agronomists have access to all parcels.",
@@ -1491,7 +1491,7 @@ MESSAGES.update({
     "Opis polja, osobine semena": "Field description, seed traits",
 })
 
-# Spec 028: structured scouting surveys (messages raised or shown as finished default-locale text).
+# Structured scouting surveys (messages raised or shown as finished default-locale text).
 MESSAGES.update({
     "Pregled useva nije pronađen.": "Scouting survey not found.",
     "Radnik može menjati samo svoje preglede useva dok ih agronom ne pregleda.": "A worker can change only their own scouting surveys until the agronomist has reviewed them.",
@@ -1561,7 +1561,7 @@ MESSAGES.update({
     "Pregled useva nije pronađen na ovoj parceli.": "Scouting survey not found on this parcel.",
 })
 
-# Spec 029: season survey reminder and messages raised as finished default-locale text.
+# Season survey reminder and messages raised as finished default-locale text.
 ALERT_KINDS.append({"value": "record_season_survey_missing", "label": "Reminder: season survey not submitted"})
 ALERT_TEXTS.update({
     "record_season_survey_missing.title": "Season survey not submitted: {parcel}",
@@ -1609,7 +1609,7 @@ MESSAGES.update({
     "Izabrana setva ne postoji u listi setvi.": "The selected sowing is not in the list of sowings.",
 })
 
-# Spec 032 (agronomy analyses and reference datasets): API messages of analyses/texts.MSG and the service.
+# API messages of analyses/texts.MSG and the service.
 MESSAGES.update({
     "Analiza nije pronađena.": "Analysis not found.",
     "Vrsta analize nije ispravna (profit ili alternatives).": "The analysis kind is not valid (profit or alternatives).",
@@ -1652,7 +1652,7 @@ MESSAGES.update({
     "Prinos t/ha": "Yield t/ha",
 })
 
-# ---------------------------------------------------------------- specs 034/035: risk models and weather stations
+# ---------------------------------------------------------------- risk models and weather stations
 ALERT_KINDS.extend([{"value": "pest_disease_risk", "label": "Disease risk according to a model"},
                     {"value": "pest_phenology", "label": "Pest development according to a model (estimate)"},
                     {"value": "station_stale", "label": "Weather station without data"}])
@@ -1674,7 +1674,7 @@ ALERT_TEXTS.update({
     "class.high": "high", "class.extreme": "extreme", "class.marginal": "marginal",
 })
 
-# Specs 034/035: messages of weather stations, the weather ingest and the risk models (finished default-locale text).
+# Messages of weather stations, the weather ingest and the risk models (finished default-locale text).
 for _sr, _en in {
     "Čuvanje pristupnih podataka nije podešeno na serveru.": "Storing access credentials is not configured on this server.",
     "Dodela stanice nije pronađena.": "Station assignment not found.",
@@ -1726,7 +1726,7 @@ for _sr, _en in {
     MESSAGES.setdefault(_sr, _en)
 del _sr, _en
 
-# Spec 059 (any crop): custom crops ("Druga kultura").
+# Custom crops ("Druga kultura").
 MESSAGES.update({
     "Kultura nije pronađena.": "Crop not found.",
     "Arhivirana kultura se ne menja.": "An archived crop cannot be changed.",
@@ -1748,7 +1748,7 @@ MESSAGES.update({
     "Nepoznat tip razvoja kulture.": "Unknown development type of the crop.",
 })
 
-# ---------------------------------------------------------------- specs 044/045: tasks and inventory (spec 018 kinds)
+# ---------------------------------------------------------------- tasks and inventory
 ALERT_KINDS.extend([{"value": "task_assigned", "label": "Task assigned"},
                     {"value": "task_done", "label": "Task completed"},
                     {"value": "stock_low", "label": "Stock below threshold"},
@@ -1764,7 +1764,7 @@ ALERT_TEXTS.update({
     "stock_expiring.body": "Lot {lot} of {product} ({quantity} {unit} in stock) expires on {date}. Information from the inventory records.",
 })
 
-# Specs 042/044/045: messages of crop rotation, tasks and inventory (finished default-locale text -> English).
+# Messages of crop rotation, tasks and inventory (finished default-locale text -> English).
 for _sr, _en in {
     "%s: najviše 6 decimala.": "%s: at most 6 decimals.",
     "Cene unose vlasnik i agronom.": "Prices are entered by the owner and the agronomist.",
@@ -1830,7 +1830,7 @@ for _sr, _en in {
 }.items():
     MESSAGES.setdefault(_sr, _en)
 
-# Spec 051 (plant-protection guidance from the registry): API messages of the consent, guidance and registry routes.
+# API messages of the consent, guidance and registry routes.
 for _sr, _en in {
     "Aktivacija traži dve različite osobe (kurator i verifikator).": "Activation needs two different people (curator and verifier).",
     "Aktiviran uvoz se ne menja; ispravka je novi uvoz.": "An activated import is never changed; a correction is a new import.",

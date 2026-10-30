@@ -22,7 +22,7 @@ field_ops:
   spraying_max_wind_ms: 5.0
   rain_block_mm_3d: 2.0
   frost_tmin_c: 0.0
-  # DEVELOPMENT VALUES (spec 010, 72 h field-operations window card). Not used by the decision cores.
+  # DEVELOPMENT VALUES (72 h field-operations window card). Not used by the decision cores.
   # The agronomist reviews them before the protocol is locked.
   window:
     caution_wind_share: 0.7        # spraying: wind above 70 % of spraying_max_wind_ms -> "oprez" (drift)
@@ -58,7 +58,7 @@ soil:
   awc_by_texture_mm_m: {sand: 80, sandy_loam: 120, loam: 160, clay_loam: 180, clay: 200}
   efficiency_by_system: {sprinkler: 0.75, drip: 0.90, furrow: 0.60}
 
-# ---------------------------------------------------------------- optional inputs (spec 009)
+# ---------------------------------------------------------------- optional inputs
 # Development values; review with the agronomist before locking.
 optional_inputs:
   recent_irrigation_days: 3          # an irrigation this recent ...

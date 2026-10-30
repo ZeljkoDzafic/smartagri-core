@@ -1,4 +1,4 @@
-"""Spec 053 (U12): tokens that must stay Latin in Cyrillic text, and EU -> ЕУ."""
+"""Tokens that must stay Latin in Cyrillic text, and EU -> ЕУ."""
 from smartagri.translit import to_cyrillic
 
 

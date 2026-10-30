@@ -1,4 +1,4 @@
-"""python -m smartagri.migrate up|status  (spec 052). Uses DATABASE_URL (else the SQLite file of SMARTAGRI_DB)."""
+"""python -m smartagri.migrate up|status. Uses DATABASE_URL (else the SQLite file of SMARTAGRI_DB)."""
 from __future__ import annotations
 
 import argparse

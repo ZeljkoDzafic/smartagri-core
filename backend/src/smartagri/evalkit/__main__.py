@@ -80,7 +80,7 @@ def _lock_inputs(set_name: str, scenarios_dir=None, corpus=None, rater_guide=Non
     """Current hashes and prompt hash for the protocol lock (the protocol part; see lock.environment for the rest)."""
     from ..config import config_dir
     from ..pipeline.ai_chat import PROMPT_HASH as VC_PROMPT_HASH
-    from ..pipeline.generate import PROMPT_HASH
+    from ..pipeline.generate import FREE_PROMPT_HASH, PROMPT_HASH
     from ..pipeline.judge import JUDGE_PROMPT_HASH
     from ..retrieval.corpus import corpus_dir
     from . import lock
@@ -91,6 +91,7 @@ def _lock_inputs(set_name: str, scenarios_dir=None, corpus=None, rater_guide=Non
                          Path(cache_snapshot) if cache_snapshot else None,
                          Path(analysis_plan) if analysis_plan else None)
     files["prompt/vc_ai_chat"] = VC_PROMPT_HASH     # the LLM baseline VC (E5) is locked with its own prompt
+    files["prompt/generator_free_act"] = FREE_PROMPT_HASH   # V0-V3: the generator prompt of the variants whose act the model chooses
     files["prompt/judge"] = JUDGE_PROMPT_HASH        # the entailment judge of gamma (used with GROUNDING_JUDGE=llm)
     return files, PROMPT_HASH
 
@@ -305,6 +306,9 @@ def main(argv=None) -> int:
                 return 2
             failed += int(res.get("failed") or 0)
             print(json.dumps(res, ensure_ascii=False))
+            if res.get("label"):
+                print("run: variant %s was produced by the template generator (%s): a fallback that always recommends, "
+                      "not a result of that rung; reports show it under this label" % (name, res["label"]), file=sys.stderr)
         if failed:
             # Error items are stored and excluded from every measure; the run as a whole is not usable as is.
             print("run: %d item(s) failed (stored as errors, not rateable); the run exits non-zero" % failed, file=sys.stderr)

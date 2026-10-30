@@ -1,4 +1,4 @@
-"""Locales of user-facing text (spec 017).
+"""Locales of user-facing text.
 
 Three locales: `sr-Latn` (default; the local language in Latin script), `sr-Cyrl` (the same text in Cyrillic
 script) and `en` (English). Codes are BCP 47 tags; user-facing labels never name a nation ("Lokalni (latinica)",
@@ -17,8 +17,8 @@ How text becomes localised:
 The active locale lives in a context variable holding a small mutable state, set per request by the API
 middleware; outside a request (evaluation runs, CLI, tests) it is the default.
 
-Spec 036 (more languages): the registry `product_config/locales.yaml` adds locales as data (`i18n_catalogue`). The
-state keeps two codes: `locale`, the spec 017 locale whose code paths run (`current()`: sr-Latn, sr-Cyrl or en), and
+The registry `product_config/locales.yaml` adds locales as data (`i18n_catalogue`). The
+state keeps two codes: `locale`, the base locale whose code paths run (`current()`: sr-Latn, sr-Cyrl or en), and
 `requested`, the locale the user asked for (`active()`). For a new locale (e.g. `de`) `current()` is `en`, so every
 module that still branches on English writes English (the fallback language of every new catalogue), while `L()`,
 `T()` and `translate_message()` render the requested locale's JSON catalogue with English fallback per key. For the
@@ -55,8 +55,7 @@ NEUTRAL = {
 # ---------------------------------------------------------------- resolution
 
 def _catalogue():
-    """The spec 036 registry module (`i18n_catalogue`), or None where it is not shipped (the research repository of
-    spec 057 has only sr-Latn, sr-Cyrl and en): every other locale then falls back to the default, as before 036."""
+    """The registry module (`i18n_catalogue`), or None where it is not shipped (the open core has only sr-Latn, sr-Cyrl and en): every other locale then falls back to the default, as before 036."""
     try:
         from . import i18n_catalogue
     except ImportError:
@@ -68,7 +67,7 @@ def normalize(tag: Any) -> Optional[str]:
     """A locale code for a language tag, or None when the tag names no supported locale.
 
     sr, bs, hr, cnr, sh (any region) -> sr-Latn; any of them with -Cyrl -> sr-Cyrl; en (any region) -> en (an enabled
-    pseudo-locale en-XA by its exact code); spec 036: any other tag -> the selectable registry locale with the same
+    pseudo-locale en-XA by its exact code); any other tag -> the selectable registry locale with the same
     code or language subtag (mk and sl are separate languages and never map to the local language).
     """
     if not isinstance(tag, str):
@@ -156,7 +155,7 @@ def state() -> Optional[Dict[str, Any]]:
 
 
 def known(code: Any) -> bool:
-    """A code of the three spec 017 locales or of a selectable registry locale (spec 036)."""
+    """A code of the three base locales or of a selectable registry locale."""
     if code in CODES:
         return True
     cat = _catalogue()
@@ -164,7 +163,7 @@ def known(code: Any) -> bool:
 
 
 def set_locale(st: Optional[Dict[str, Any]], code: Optional[str]) -> None:
-    """Switch a request state to `code` (both the spec 017 locale and the requested one)."""
+    """Switch a request state to `code` (both the base locale and the requested one)."""
     if st is None:
         return
     new = _state_for(code if known(code) else DEFAULT_LOCALE, st.get("explicit", False))
@@ -180,13 +179,13 @@ def apply_user_preference(user_locale: Any) -> None:
 
 
 def current() -> str:
-    """The spec 017 locale whose code paths run: sr-Latn, sr-Cyrl or en (en for every new locale)."""
+    """The base locale whose code paths run: sr-Latn, sr-Cyrl or en (en for every new locale)."""
     st = _STATE.get()
     return st["locale"] if st else DEFAULT_LOCALE
 
 
 def active() -> str:
-    """The locale the request asked for (equal to current() for the three spec 017 locales)."""
+    """The locale the request asked for (equal to current() for the three base locales)."""
     st = _STATE.get()
     return st.get("requested", st["locale"]) if st else DEFAULT_LOCALE
 
@@ -219,7 +218,7 @@ def _en_module() -> bool:
 
 def L():
     """The label catalogue of the active locale: module `labels` (sr-Latn, sr-Cyrl), otherwise the JSON catalogue of
-    the requested locale (English, and every new locale with English fallback; spec 036)."""
+    the requested locale (English, and every new locale with English fallback)."""
     if current() == "en":
         code = active()
         if code == "en" and _en_module():
@@ -366,7 +365,7 @@ def _legacy_translate_message(text: Any, depth: int = 0) -> Any:
     return text
 
 
-# ---------------------------------------------------------------- stored and raised messages (any locale, spec 036)
+# ---------------------------------------------------------------- stored and raised messages (any locale)
 
 _GENERIC: Dict[str, Any] = {}
 
@@ -475,12 +474,12 @@ def translate_message(text: Any, depth: int = 0) -> Any:
     provider messages) in the requested locale: an exact entry (a message or a mirrored label), or a format entry
     (%-formats of the messages, {name} formats of ACTIVITY_WARNINGS) whose arguments are translated in turn. Text
     without an entry is returned unchanged (user data stays as entered). English and every new locale use the JSON
-    catalogues (spec 036 D6); SMARTAGRI_EN_CATALOGUE=module restores the labels_en path for English."""
+    catalogues; SMARTAGRI_EN_CATALOGUE=module restores the labels_en path for English."""
     code = active()
     if code == "en" and _en_module():
         return _legacy_translate_message(text, depth)
     if code in (DEFAULT_LOCALE, "sr-Cyrl"):
-        code = "en"                       # spec 017 behaviour: translate_message always produced English
+        code = "en"                       # default behaviour: translate_message always produced English
     return _generic_translate(code, text, depth)
 
 

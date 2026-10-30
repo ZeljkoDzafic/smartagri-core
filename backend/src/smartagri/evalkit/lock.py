@@ -1,4 +1,4 @@
-"""Protocol lock (spec 007 FR-011, US7): sha256 of everything a test-set run depends on.
+"""Protocol lock: sha256 of everything a test-set run depends on.
 
 The lock file (default `backend/eval/protocol-lock.json`) has two parts:
 

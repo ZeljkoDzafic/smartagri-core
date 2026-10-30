@@ -1,4 +1,4 @@
-"""Spec 004 T021: LLM entailment judge plugged into the support check. No network, no key:
+"""LLM entailment judge plugged into the support check. No network, no key:
 the Anthropic client is faked and ClaudeJudge is built without importing the SDK."""
 import json
 

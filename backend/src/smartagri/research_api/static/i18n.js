@@ -606,7 +606,9 @@
  "{n} unsaved changes": "nesačuvanih izmena: {n}",
  "{n} unsupported numbers": "nepotkrepljenih brojeva: {n}",
  "{n} values differ from the files": "vrednosti koje se razlikuju od datoteka: {n}",
- "{pct} % boundary (mixed) pixels": "{pct} % graničnih (mešanih) piksela"
+ "{pct} % boundary (mixed) pixels": "{pct} % graničnih (mešanih) piksela",
+ "template, not a baseline": "šablon, nije osnovna vrednost (baseline)",
+ "Variants {list} were produced by the template generator, which always recommends. They are a fallback for checking the development set, not a baseline result of those rungs.": "Varijante {list} proizveo je generator po šablonu, koji uvek preporučuje. To je rezervno rešenje za proveru razvojnog skupa, a ne osnovna (baseline) vrednost tih stepenica."
 }/*END*/;
   const LOCALES = {"en": "en-GB", "sr-Latn": "sr-Latn-RS"};
   let lang = "en";

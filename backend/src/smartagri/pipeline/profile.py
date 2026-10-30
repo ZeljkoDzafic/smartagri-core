@@ -50,7 +50,7 @@ def _stored_features(profile: Dict[str, Any]) -> Optional[ParcelFeatures]:
 
 
 def quality_rows(ctx: Context, log_sources: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
-    """Every tracked input with its value and quality, labelled for the user. With `log_sources` (spec 013:
+    """Every tracked input with its value and quality, labelled for the user. With `log_sources` (
     agronomic field -> activity ids) the rows whose value came from the activity log say so in origin_label."""
     obs, q = observe_all(ctx), annotate_quality(ctx)
     rows = []
@@ -86,7 +86,7 @@ def build_profile(store: Store, parcel: Dict[str, Any], as_of: Optional[datetime
                          "summary": None, "daily": [], "request_hash": None, "endpoint": None,
                          "retrospective_constructed": False}
     try:
-        # Spec 037 FR-013: the parcel's zone; home-area parcels make exactly the call they always made.
+        # The parcel's zone; home-area parcels make exactly the call they always made.
         tz = weather.request_timezone(parcel.get("time_zone"))
         got = weather.fetch(store, lat, lon, as_of, refresh) if tz == weather.DEFAULT_TIMEZONE else \
             weather.fetch(store, lat, lon, as_of, refresh, time_zone=tz)

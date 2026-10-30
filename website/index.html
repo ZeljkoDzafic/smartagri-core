@@ -128,8 +128,8 @@
     <section class="how section" id="how" aria-labelledby="how-title">
       <div class="section-head reveal">
         <p class="eyebrow">How it works</p>
-        <h2 id="how-title">Seven layers<br>you can read and test.</h2>
-        <p>Each layer is plain code with its own tests and configuration file. Every answer keeps each layer’s decision, so “Why?” has a concrete answer.</p>
+        <h2 id="how-title">Six layers<br>you can read and test.</h2>
+        <p>The parcel context (C) feeds six layers. Each layer is plain code with its own tests and configuration file. Every answer keeps each layer’s decision, so “Why?” has a concrete answer.</p>
       </div>
       <ol class="flow">
         <li class="reveal"><span class="sym">C</span><div><h3>Context</h3><p>The parcel, its agronomic inputs, Open-Meteo weather and Sentinel-2 L2A NDVI, each with its date.</p></div></li>
@@ -240,7 +240,7 @@ python -m smartagri.evalkit guard --set dev</code></pre>
         <div role="listitem"><b>V5</b><span>+ δ and γ</span></div>
       </div>
       <div class="feature-grid">
-        <article class="reveal"><h3>Ablation ladder</h3><p>Each rung adds one layer to the one before (V4 adds the sufficiency-and-asking model, V5 the policy and grounding check), so a paired comparison such as V4 against V3 isolates that layer. A free LLM conversation with the same data and passages (VC) is a baseline outside the ladder.</p></article>
+        <article class="reveal"><h3>Ablation ladder</h3><p>Each rung adds one element to the one before (V4 adds q, σ and α as one package, V5 the policy and grounding check), so a paired comparison such as V4 against V3 measures that package, not a single layer. A free LLM conversation with the same data and passages (VC) is a baseline outside the ladder.</p></article>
         <article class="reveal"><h3>Blind rating</h3><p>Raters score items on a five-criterion rubric with critical-error classes. They never see the variant, generator or model, and each rater gets the items of one scenario set in a seeded, recorded order.</p></article>
         <article class="reveal"><h3>Protocol lock</h3><p>Before measurement, a lock file records the sha256 of the scenarios, corpus, configuration, prompts, rater guide and analysis plan, and binds the code, dependencies and model settings. Held-out test scenarios are published only after the lock.</p></article>
       </div>

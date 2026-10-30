@@ -18,6 +18,10 @@ sufficiency σ, asking α and policy δ (`backend/src/smartagri/core/`, orchestr
 reads its parameters from a YAML file in `backend/config/`. The text generator receives the finished decision and
 may only phrase it; γ checks the generated text afterwards.
 
+The ablation rungs without the sufficiency layer (V0–V3) are the exception by design: they stand for a language model
+with the data of their rung, so the generator chooses the act itself and receives no conclusion of the decision core
+(`pipeline/generate.py`, `fact_sheet`). The decision of the core is still computed and recorded for them.
+
 Variants switch layers on and off through flags in `config/variants.yaml`; the core never branches on a variant
 name.
 

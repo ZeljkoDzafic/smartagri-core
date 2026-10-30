@@ -42,6 +42,22 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
 - `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
 
 ### Changed
+- V0–V3 are an LLM with the data their rung allows (decision D11): the language model of a variant without the
+  sufficiency layer no longer receives the decision core's act, action, timing or any other conclusion (D_t); it
+  chooses the act itself and states it in the required field `act`. Its fact sheet holds the question, the parcel data
+  (ungraded below V4), data statements without the core's conclusions, the limitations, the retrieved passages and the
+  results of the calculation tools the rung's inputs allow (numbers from code stay available). A new prompt
+  (`SYSTEM_PROMPT_FREE`, `FREE_PROMPT_HASH`) and schema (`ANSWER_SCHEMA_FREE`) serve these variants and join the protocol
+  lock as `prompt/generator_free_act`; the V4/V5 prompt (`PROMPT_HASH`) and every decision of the core are unchanged.
+  An output without a valid act is an error item in an evaluation (never a default). Files: `pipeline/generate.py`,
+  `pipeline/run.py`, `evalkit/__main__.py`, `docs/protocol.md` (section 1.1).
+- The template answer of V0–V3 is labelled "template, not a baseline" (answer field `baseline_label`, run record field
+  `baseline`, `evalkit report` JSON and tables, `evalkit run` notice, web evaluation view). It always recommends and is a
+  fallback for checking the development set, not a result of the rung. The dev-run digests of V0–V3 changed by that
+  label only; V4, V5 and the ablations are byte-identical.
+- E1 (V4 vs V3) is documented as measuring the package (q, σ, α) together with the change of who chooses the act.
+- The open core no longer carries the name or environment prefix of other products or numbered references to internal
+  specifications; the website says "six layers" and that V4 adds q, σ and α as one package.
 - The research API computes profile, advice, free conversation, series and water balance with the caller's effective
   settings. With no overrides the decisions are byte-identical to the previous version (checked on every development
   scenario and variant); the blind rating endpoints and evaluation are unchanged.

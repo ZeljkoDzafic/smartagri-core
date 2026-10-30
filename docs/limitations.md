@@ -124,6 +124,11 @@ any result produced with this version; results should be read together with it.
   decision layers; they say nothing about the wording, errors or variability of a language model. With a language
   model, γ checks numbers and sentence support (`core/grounding.py`), but the sentence check is lexical unless the
   optional judge is configured (`pipeline/judge.py`), and repeated runs can differ.
+- **The template is not a baseline for V0–V3.** The act of V0–V3 belongs to the language model. The template has no
+  model: for these variants it always recommends and shows the decision core's action, so it says nothing about what a
+  language model with that rung's data would do. Its answers carry the label "template, not a baseline" (run record,
+  `evalkit report`, web evaluation view); an experiment run uses a language model for every variant, and a template run
+  of V0–V3 on the development set only checks that the pipeline works.
 - **CI covers only the template path.** All tests and the CI example run with `LLM_PROVIDER=template`
   (`.github/workflows/ci.yml`); language-model providers are tested with fakes.
 
@@ -137,6 +142,9 @@ any result produced with this version; results should be read together with it.
   (weighted Cohen's κ, `evalkit/report.py`) is therefore between two people, one of whom built the system. The
   rater guide (`../docs/RATER_GUIDE.md`) is in Serbian and is a draft until it has been calibrated and locked.
   The design of the rating is fixed in [protocol.md](protocol.md).
+- **E1 changes two things at once.** V4 vs V3 differs by the package (q, σ, α) and by who chooses the act (the rules
+  instead of the language model); the result is not attributed to either alone. A V3 with the core's act would be a
+  separate, additional rung that this version does not define.
 - **Limits of blinding.** Answers differ in form between variants: the free-text baseline VC is shown as text
   (`evalkit/rating.py`, `blind_answer`), V0 has no sources, and variants without α do not ask a structured
   question. A rater may recognise the family of a variant from the form of the answer.
