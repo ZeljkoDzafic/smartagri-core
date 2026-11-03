@@ -25,7 +25,7 @@ class ClaudeCliProvider(Provider):
     Runs with no tools, no session persistence and its own system prompt, so a call is a plain completion.
     """
     name = "claude-cli"
-    # Spec 023: `claude -p` takes the prompt as text on stdin and runs here with no tools, so it cannot read an image;
+    # `claude -p` takes the prompt as text on stdin and runs here with no tools, so it cannot read an image;
     # photo descriptions report "not available" for this provider (graceful degradation, no 500).
     supports_images = False
 

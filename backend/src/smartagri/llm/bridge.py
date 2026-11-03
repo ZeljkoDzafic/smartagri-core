@@ -1,10 +1,11 @@
 """HTTP bridge: lets the API container use a provider that only exists on the host (the Claude CLI).
 
-Host:       python -m smartagri.llm.bridge            (reads LLM_BRIDGE_TOKEN; provider from BRIDGE_PROVIDER, default claude-cli)
+Host:       python -m smartagri.llm.bridge            (listens on 127.0.0.1 unless LLM_BRIDGE_HOST says otherwise; reads LLM_BRIDGE_TOKEN; provider from BRIDGE_PROVIDER, default claude-cli)
 Container:  LLM_PROVIDER=bridge  LLM_BRIDGE_URL=http://host.docker.internal:8765  LLM_BRIDGE_TOKEN=<same token>
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import sys
@@ -15,10 +16,12 @@ import httpx
 
 from .base import LLMError, LLMResponse, Provider
 
+MAX_BODY_BYTES = 1024 * 1024
+
 
 class BridgeProvider(Provider):
     name = "bridge"
-    # Spec 023: the bridge protocol (/complete) carries text messages only; photo descriptions are not available.
+    # The bridge protocol (/complete) carries text messages only; photo descriptions are not available.
     supports_images = False
 
     def __init__(self, url: Optional[str] = None, token: Optional[str] = None, transport=None):
@@ -65,7 +68,8 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
             self.wfile.write(data)
 
         def _authorised(self) -> bool:
-            return self.headers.get("Authorization") == "Bearer " + token
+            given = self.headers.get("Authorization") or ""
+            return hmac.compare_digest(given.encode("utf-8"), ("Bearer " + token).encode("utf-8"))
 
         def do_GET(self):
             if self.path != "/health" or not self._authorised():
@@ -75,9 +79,19 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
         def do_POST(self):
             if self.path != "/complete" or not self._authorised():
                 return self._send(404, {"error": "not found"})
-            req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
             try:
-                r = provider.complete(req["system"], req["messages"], req.get("json_schema"), req.get("max_tokens", 4000))
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send(400, {"error": "bad request"})
+            if length < 0 or length > MAX_BODY_BYTES:
+                return self._send(413, {"error": "request too large"})
+            try:
+                req = json.loads(self.rfile.read(length) or b"{}")
+                system, messages = req["system"], req["messages"]
+            except (ValueError, KeyError, TypeError):
+                return self._send(400, {"error": "bad request"})
+            try:
+                r = provider.complete(system, messages, req.get("json_schema"), req.get("max_tokens", 4000))
             except LLMError as exc:
                 return self._send(502, {"error": str(exc)})
             self._send(200, {"text": r.text, "provider": r.provider, "model": r.model, "input_tokens": r.input_tokens,
@@ -92,4 +106,4 @@ def serve(host: str = "0.0.0.0", port: int = 8765) -> None:
 
 
 if __name__ == "__main__":
-    serve(os.environ.get("LLM_BRIDGE_HOST", "0.0.0.0"), int(os.environ.get("LLM_BRIDGE_PORT", "8765")))
+    serve(os.environ.get("LLM_BRIDGE_HOST", "127.0.0.1"), int(os.environ.get("LLM_BRIDGE_PORT", "8765")))

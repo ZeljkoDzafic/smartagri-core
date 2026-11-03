@@ -1,4 +1,4 @@
-"""Retrieval baseline: Recall@k of labelled applicable sources and query latency (spec 003 T022, T023).
+"""Retrieval baseline: Recall@k of labelled applicable sources and query latency.
 
     python -m smartagri.retrieval.bench [--set dev] [--repeats 20] [--json]
 

@@ -16,7 +16,7 @@ def estimate_bbch(gdd_since_sowing: Optional[float] = None, days_since_sowing: O
     """
     rules = config.load("rules")["phenology"]
     inputs = {"gdd_since_sowing": gdd_since_sowing, "days_since_sowing": days_since_sowing, "hybrid_fao": hybrid_fao}
-    # Later maturity groups need more thermal time for the same stage (spec 009, US3).
+    # Later maturity groups need more thermal time for the same stage.
     scale = 1.0
     if hybrid_fao is not None:
         opt = config.load("rules")["optional_inputs"]

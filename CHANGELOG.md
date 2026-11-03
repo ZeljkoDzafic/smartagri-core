@@ -41,7 +41,80 @@ The release workflow (`.github/workflows/release.yml`) publishes the section of 
   (`enabled: false`): recorded in the provenance, no effect on any decision.
 - `docs/parcel-features.md`; a section in `docs/layers.md` and `docs/limitations.md`.
 
+### Fixed (input validation and rung symmetry)
+- A free question of a model (V0-V3) or of VC with no matching prepared reply is answered "Ne znam." and the conversation
+  goes on, like the structured question of V4/V5 (hard cap `MAX_TURNS`, 3); the question goes to `Context.declined_free`
+  and the V0-V3 fact sheet says the user did not know the answer.
+- The irrigation quantity gate (`rules.irrigation.quantity_validated`) also withholds net/gross depth, volume and
+  application time from the answer and fact sheet of V0-V3, and from the fact sheet of V4/V5 (their card keeps the
+  calculation steps beside the withheld quantity).
+- q: an input without a date is at most low ("date unknown"), a measured one without a time is missing, an input dated
+  after the decision moment is missing; `Context.from_dict` rejects such dates and malformed ones by field name. New key
+  `thresholds.inputs.ndvi_trend.missing_after_days: 30`.
+- Implausible inputs (percentage for a fraction, metres for mm/m, negative rain, NaN, strings) are low ("implausible
+  value") and unknown to the decision cores and tools; the tools refuse them. New section `rules.input_limits`
+  (development values; registry entries, administrator only).
+- A dose of a fertiliser whose nitrogen content is unknown is not 0 kg N (history unknown unless the known part is
+  already "full"); product names are normalised (`KAN 27%` -> `kan`); malformed records are low, not exceptions.
+- Heavy forecast rain postpones fertilising, top-dressing and every field operation: new key
+  `rules.field_ops.heavy_rain_postpone_mm: 25.0` (development value, awaiting agronomist review); new decision class
+  `postpone_heavy_rain`; `fertilization_timing` now reads the 7-day forecast it requires.
+- A planned or unreadable sowing date gives no stage estimate (it was BBCH 5 or an exception); the dates of a profile are
+  the parcel's local dates, whatever the zone of the server.
+- Reply parsing and question classification: word boundaries, negation, targeted number patterns, one nitrogen table
+  (`rules.optional_inputs.n_content`; AN is 0.344 as configured), more out-of-scope words. The interactive research API
+  confirms what it understood before it writes an input and asks again when it cannot read a reply; the evaluation runner
+  uses the same parser and never waits.
+
+### Fixed (evaluation harness and protocol)
+- Lock binding (E1): `run --locked` accepts only the repository's lock, or another file together with `--lock-sha256`
+  that matches it. Every item stores `lock_sha256`, `lock_combined_sha256`, `lock_tag` and `repeats`; `report`, `export`,
+  `assign` and the rating queue refuse items of different locks (or of a lock and an unlocked run). Lock format 3 adds a
+  `run` section (repeats, variants, decision hour) to the fingerprint, and `run --locked` must match it.
+- Cluster bootstrap (E2): with fewer than `min_clusters` clusters (`config/analysis.yaml`, default 5, never fewer than 2)
+  the interval is "not estimable": paired results carry `ci_status` and `ci_note`, the tables print the reason, and the
+  non-inferiority and equivalence tests return `status: not_estimable` without a verdict. Before, two clusters gave an
+  interval of zero width.
+- `evalkit assign`: `--repeat K` or `--pick-repeat` (one repetition per scenario, seeded, the same for every variant and
+  rater), `--per-stratum N` (a balanced subset, seeded, the same for every rater; only scenarios present in every
+  variant). The assignment file (format 2) records the order rule, the repeat rule, the subset, the seed and the lock.
+  The queue and `assign` refuse two batches of one variant that repeat a scenario and repetition.
+- Plan and code agree: `primary.measure` is `k4_or_k5` (a scenario with at least one K4 or K5 error; K1 cannot occur while
+  `quantity_validated` is false); the any-class rate K1-K5 stays a secondary outcome. The Holm family of the first lock is
+  `holm.family` in `config/analysis.yaml` (the key secondary outcomes of E1); the former text named {E2, E3, E4, E5} and the
+  code {E2, E3}. `scope.include_e5: false` leaves E5 out of the report. A test whose margin is null is not evaluated and
+  the report says why; a margin that is not a positive number is an error. The report states the E1 reading.
+- The blind rater sees the input facts (value, origin, age, coverage) without the reliability grades of the q layer:
+  `rater_view: raw | graded` in `config/evaluation.yaml`, default `raw`. The rating screen and its texts are unchanged;
+  `docs/RATER_GUIDE.md` says so.
+
+### Added (retrospective set)
+- `evalkit.retrospective`: loader for retrospective pairs (JSON, outside the repository; sets `retrospective-dev` for
+  season 2024 and `retrospective-test` for 2025, protected like `test`) with the lock, fail-loud and leakage rules; the pure
+  function `rain_wait_outcome` (no defaults for the protocol parameters, nothing fetched); `--decision-hour-utc` (default
+  unset) to fix the decision hour of scenarios and pairs. Format: `docs/retrospective-set.md`.
+
+### Added (tests and CI)
+- Boundary tests for every step of the Kc, BBCH, grade and root-depth tables; ordering tests (q never rises with age or
+  falls with coverage, net >= 0, gross >= net); a coverage threshold for `core/` (`make coverage-core`, CI step; at least 90 % branch coverage, measured 96 %; `core/conflicts.py` is the weak spot at 48 %).
+
 ### Changed
+- V0–V3 are an LLM with the data their rung allows (decision D11): the language model of a variant without the
+  sufficiency layer no longer receives the decision core's act, action, timing or any other conclusion (D_t); it
+  chooses the act itself and states it in the required field `act`. Its fact sheet holds the question, the parcel data
+  (ungraded below V4), data statements without the core's conclusions, the limitations, the retrieved passages and the
+  results of the calculation tools the rung's inputs allow (numbers from code stay available). A new prompt
+  (`SYSTEM_PROMPT_FREE`, `FREE_PROMPT_HASH`) and schema (`ANSWER_SCHEMA_FREE`) serve these variants and join the protocol
+  lock as `prompt/generator_free_act`; the V4/V5 prompt (`PROMPT_HASH`) and every decision of the core are unchanged.
+  An output without a valid act is an error item in an evaluation (never a default). Files: `pipeline/generate.py`,
+  `pipeline/run.py`, `evalkit/__main__.py`, `docs/protocol.md` (section 1.1).
+- The template answer of V0–V3 is labelled "template, not a baseline" (answer field `baseline_label`, run record field
+  `baseline`, `evalkit report` JSON and tables, `evalkit run` notice, web evaluation view). It always recommends and is a
+  fallback for checking the development set, not a result of the rung. The dev-run digests of V0–V3 changed by that
+  label only; V4, V5 and the ablations are byte-identical.
+- E1 (V4 vs V3) is documented as measuring the package (q, σ, α) together with the change of who chooses the act.
+- The open core no longer carries the name or environment prefix of other products or numbered references to internal
+  specifications; the website says "six layers" and that V4 adds q, σ and α as one package.
 - The research API computes profile, advice, free conversation, series and water balance with the caller's effective
   settings. With no overrides the decisions are byte-identical to the previous version (checked on every development
   scenario and variant); the blind rating endpoints and evaluation are unchanged.

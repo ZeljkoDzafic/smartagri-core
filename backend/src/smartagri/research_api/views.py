@@ -310,6 +310,9 @@ def eval_overview(store: Store) -> Dict[str, Any]:
             "n_items": len(group), "n_rated_items": len(group_ids & rated_ids),
             "batches": rating.batches(store, set_name if set_name != "unknown" else None),
             "ladder": list(tables.LADDER), "variants": variants, "automatic": {v: auto[v] for v in variants},
+            # variants (V0-V3) whose act the model chooses but whose items the template produced: a fallback, not a baseline
+            "template_variants": [v for v in variants if auto[v].get("baseline_label")],
+            "template_label": next((auto[v]["baseline_label"] for v in variants if auto[v].get("baseline_label")), None),
             "steps": steps, "raters": per_rater, "agreement": agreement,
             # exactly what `python -m smartagri.evalkit report --format md` prints for these items
             "report_md": tables.render(store, group, raters[0] if raters else None,

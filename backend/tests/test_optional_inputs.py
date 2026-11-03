@@ -1,4 +1,4 @@
-"""Spec 009: optional inputs change decisions only where a rule says so, and nothing when absent."""
+"""Optional inputs change decisions only where a rule says so, and nothing when absent."""
 from conftest import make_context
 from smartagri.config import load_variants
 from smartagri.core.decide import decide

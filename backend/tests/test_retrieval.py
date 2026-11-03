@@ -1,4 +1,4 @@
-"""Spec 003 US2: folding, tokenisation, BM25, RRF (T011), in-memory dense path (T012), FastEmbedder smoke (T013)."""
+"""Folding, tokenisation, BM25, RRF (T011), in-memory dense path (T012), FastEmbedder smoke (T013)."""
 import os
 
 import pytest

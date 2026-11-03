@@ -27,13 +27,29 @@ SMARTAGRI_ANON_TTL_HOURS=24
 SMARTAGRI_TRUSTED_PROXIES=127.0.0.1
 # Largest request body in bytes (default 262144). A request over it gets 413 before it is read.
 SMARTAGRI_MAX_BODY_BYTES=262144
+# Host names the app answers to, besides localhost and the host of SMARTAGRI_PUBLIC_URL (comma-separated; "*" = any host, for
+# a private network). Another Host header gets 400, so a page on a foreign name that resolves to this machine (DNS rebinding)
+# cannot read it.
+SMARTAGRI_ALLOWED_HOSTS=
+# The blind-rating routes (/api/eval/...) have no accounts. Unset, they are served on a private installation and are off
+# (404) when SMARTAGRI_PUBLIC_URL is set; 1 / 0 decides explicitly.
+SMARTAGRI_EVAL_API=
+# Quotas of the calls that spend the operator's provider quota or model budget (integers; 0 switches one off). Over a quota a
+# request gets 429 with Retry-After. Keyed by the account or browser owner, else by the client address.
+SMARTAGRI_QUOTA_REFRESH_PER_HOUR=30
+SMARTAGRI_QUOTA_REFRESH_MIN_SECONDS=10
+SMARTAGRI_QUOTA_AI_CHAT_PER_DAY=200
+SMARTAGRI_QUOTA_PARCELS_PER_DAY=100
+# scrypt cost of new password hashes, as log2(N): 17 (default, the OWASP minimum for scrypt, 128 MiB per hash) to 20. Older
+# hashes keep working and are made again at the next sign-in. Lower values only for tests.
+SMARTAGRI_SCRYPT_LOG_N=17
 # Optional: email confirmation and password reset (all three of host, sender and public URL are needed).
 SMARTAGRI_SMTP_HOST=smtp.example.org
 SMARTAGRI_SMTP_PORT=587
 SMARTAGRI_SMTP_TLS=starttls
 SMARTAGRI_SMTP_USER=
 SMARTAGRI_SMTP_PASSWORD=
-SMARTAGRI_SMTP_FROM=SmartAgri <no-reply@smartagri.rs.ba>
+SMARTAGRI_SMTP_FROM=SmartAgri <no-reply@example.org>
 # Optional services (see .env.example): LLM_PROVIDER, CDSE_CLIENT_ID / CDSE_CLIENT_SECRET, DATABASE_URL, ...
 ```
 

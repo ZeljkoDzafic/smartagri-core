@@ -1,4 +1,4 @@
-"""FastAPI app of the research API (spec 057). Local research use by default: no accounts; bind to 127.0.0.1.
+"""FastAPI app of the research API. Local research use by default: no accounts; bind to 127.0.0.1.
 
 SMARTAGRI_ACCOUNTS=optional turns on optional accounts and per-browser isolation for a public deployment (auth.py)."""
 from __future__ import annotations
@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .. import config, i18n
-from . import auth, guards, proxy
+from . import auth, guards, proxy, quota
 from . import locale as answer_locale
 from . import settings_routes
 from .service import BadRequest, NotFound, ResearchService, Unavailable
@@ -262,6 +262,16 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
             request.state.cookies[auth.BROWSER_COOKIE] = secrets.token_urlsafe(32)   # a fresh, empty browser
             return {"user": None, "email": accounts.email_enabled}
 
+        @api.post("/auth/signout-all")
+        def auth_signout_all(request: Request):
+            user = request.state.user
+            if user is None:
+                raise HTTPException(401, "Sign in first.")
+            accounts.signout_everywhere(user)
+            request.state.cookies[auth.SESSION_COOKIE] = None
+            request.state.cookies[auth.BROWSER_COOKIE] = secrets.token_urlsafe(32)
+            return {"user": None, "email": accounts.email_enabled}
+
         @api.post("/auth/verify")
         def auth_verify(request: Request, body: TokenIn):
             return {"user": auth_call(accounts.verify, body.token, ip(request)), "verified": True}
@@ -298,6 +308,7 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
 
     @api.post("/parcels", status_code=201)
     def create_parcel(request: Request, body: Dict[str, Any] = Body(...)):
+        quota.charge(svc.store, "parcels_day", quota.client_key(request, owner(request)))
         parcel = call(svc.create_parcel, body)
         if accounts:
             accounts.own(parcel["id"], owner(request))
@@ -315,6 +326,9 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
     @api.post("/parcels/{parcel_id}/profile/refresh")
     def refresh_profile(request: Request, parcel_id: str):
         guard_parcel(request, parcel_id)
+        who = quota.client_key(request, owner(request))
+        quota.charge(svc.store, "refresh_hour", who)
+        quota.charge(svc.store, "refresh_gap", who, parcel_id)
         return scoped(request, parcel_id, svc.refresh_profile, parcel_id)
 
     @api.get("/parcels/{parcel_id}/profile")
@@ -330,6 +344,7 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
     @api.post("/parcels/{parcel_id}/ai-chat")
     def ai_chat(request: Request, parcel_id: str, body: Dict[str, Any] = Body(...)):
         guard_parcel(request, parcel_id)
+        quota.charge(svc.store, "ai_chat_day", quota.client_key(request, owner(request)))
         return scoped(request, parcel_id, svc.ai_chat, parcel_id, body)
 
     @api.get("/conversations/{conversation_id}")
@@ -393,6 +408,7 @@ def create_app(service: Optional[ResearchService] = None, accounts: Optional[aut
     # Outermost guards, last added = outermost: security headers on every response (also the refusals below), the real
     # client address behind a trusted proxy (SMARTAGRI_TRUSTED_PROXIES), then the limits on the request body.
     app.add_middleware(guards.RequestGuardMiddleware)
+    app.add_middleware(guards.HostGuardMiddleware)
     app.add_middleware(proxy.TrustedProxyMiddleware)
     app.add_middleware(guards.SecurityHeadersMiddleware, tile_url=tile_url())
     # Client assets (CSS, JS, icon, vendored Leaflet with its licence); no build step, no CDN.

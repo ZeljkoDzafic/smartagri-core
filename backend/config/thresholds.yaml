@@ -26,6 +26,7 @@ inputs:
       - {reliability: medium, max_age_days: 10, min_coverage: 0.60}
     default: low
   ndvi_trend:
+    missing_after_days: 30           # as ndvi_latest: a trend of observations this old is not used (development value)
     grades:
       - {reliability: high, min_count: 3}
       - {reliability: medium, min_count: 2}
@@ -42,20 +43,20 @@ inputs:
     default: low
   precip_forecast_3d:
     grades:
-      - {reliability: high, max_age_days: 1}
-      - {reliability: medium, max_age_days: 2}
+      - {reliability: high, max_age_hours: 24}
+      - {reliability: medium, max_age_hours: 48}
     default: low
   precip_forecast_7d:
     grades:
-      - {reliability: medium, max_age_days: 1}
+      - {reliability: medium, max_age_hours: 24}
     default: low
   temp_forecast:
     grades:
-      - {reliability: medium, max_age_days: 1}
+      - {reliability: medium, max_age_hours: 24}
     default: low
   wind_forecast:
     grades:
-      - {reliability: medium, max_age_days: 1}
+      - {reliability: medium, max_age_hours: 24}
     default: low
   soil_water_status:
     grades:

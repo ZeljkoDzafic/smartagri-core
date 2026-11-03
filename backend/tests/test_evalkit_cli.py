@@ -98,7 +98,8 @@ def test_lock_then_locked_run_then_tamper(env, capsys):
     assert cli(["lock", "--check", "--scenarios-dir", str(folder), "--out", str(lock_file)]) == 0
     assert json.loads(capsys.readouterr().out)["differences"] == []
 
-    args = ["run", "--set", "test", "--locked", "--lock-file", str(lock_file), "--scenarios-dir", str(folder), "--variant", "V5"]
+    args = ["run", "--set", "test", "--locked", "--lock-file", str(lock_file), "--lock-sha256", lock.lock_sha256(lock_file),
+            "--scenarios-dir", str(folder), "--variant", "V5"]
     assert cli(args) == 0
     assert _lines(capsys.readouterr().out)[0]["n"] == 2
 

@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..store import Store
+from . import lock
 from . import sources as src
 
 CRITERIA = ("r1", "r2", "r3", "r4", "r5")
@@ -38,7 +39,7 @@ def retrieval_measures(group: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def support_measures(group: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Passage-support part of gamma per variant (spec 004 US4, spec 007 T025).
+    """Passage-support part of gamma per variant.
 
     support_rate = 1 - unsupported / checked over every turn whose model text went through the
     support check (`decisions.grounding.checked_sentences`); unit = rationale sentence or summary
@@ -80,14 +81,77 @@ def mean(xs: Sequence[float]) -> Optional[float]:
     return sum(xs) / float(len(xs)) if xs else None
 
 
+DEFAULT_MIN_CLUSTERS = 5
+
+
+def min_clusters(settings: Optional[Dict[str, Any]] = None) -> int:
+    """Smallest number of clusters for which a cluster bootstrap is reported (config/analysis.yaml `min_clusters`)."""
+    cfg = settings if settings is not None else analysis_settings()
+    return int(cfg.get("min_clusters", DEFAULT_MIN_CLUSTERS))
+
+
+def min_kappa(settings: Optional[Dict[str, Any]] = None) -> Optional[float]:
+    """Minimum acceptable inter-rater agreement (config/analysis.yaml `agreement.min_kappa`); None when it is not set."""
+    cfg = settings if settings is not None else analysis_settings()
+    value = (cfg.get("agreement") or {}).get("min_kappa")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 1:
+        raise ValueError("agreement.min_kappa must be a number in (0, 1]")
+    return float(value)
+
+
+def kappa_status(kappa: Optional[float], minimum: Optional[float]) -> str:
+    """Whether a kappa reaches the minimum: \"reached\", \"not reached\", \"no minimum set\" or \"not estimable\"."""
+    if minimum is None:
+        return "no minimum set"
+    if kappa is None:
+        return "not estimable"
+    return "reached" if kappa >= minimum else "not reached"
+
+
+def origin_summary(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Origin of the weather and satellite inputs per scenario (one count per scenario, however many variants ran it):
+    counts by (weather, satellite), the degradation texts, and the scenarios that carry no record."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    for i in items:
+        seen.setdefault(i["scenario_id"], i.get("input_origin"))
+    counts: Dict[str, int] = {}
+    degradations: Dict[str, str] = {}
+    missing: List[str] = []
+    for sid, rec in sorted(seen.items()):
+        if not isinstance(rec, dict):
+            missing.append(sid)
+            continue
+        key = "%s / %s" % (rec.get("weather") or "?", rec.get("satellite") or "?")
+        counts[key] = counts.get(key, 0) + 1
+        if rec.get("degradation"):
+            degradations[sid] = str(rec["degradation"])
+    return {"n_scenarios": len(seen), "counts": counts, "degradations": degradations, "missing": missing}
+
+
+def not_estimable_reason(clusters: Optional[Sequence[str]], minimum: int) -> Optional[str]:
+    """Why a cluster bootstrap is not estimable (fewer clusters than the minimum); None when it is or when there are
+    no clusters (scenarios are then the units)."""
+    if clusters is None:
+        return None
+    n, minimum = len(set(clusters)), max(int(minimum), 2)          # one cluster never gives an interval
+    return None if n >= minimum else "%d clusters, fewer than the minimum of %d" % (n, minimum)
+
+
 def bootstrap_ci(diffs: Sequence[float], n: int = 10000, seed: int = 7,
-                 clusters: Optional[Sequence[str]] = None, level: float = 0.95) -> Optional[Tuple[float, float]]:
+                 clusters: Optional[Sequence[str]] = None, level: float = 0.95,
+                 min_clusters: int = DEFAULT_MIN_CLUSTERS) -> Optional[Tuple[float, float]]:
     """Percentile interval (default 95 %) for the mean paired difference.
 
     Without clusters, scenarios are resampled. With clusters (e.g. scenarios sharing a parcel),
-    whole clusters are resampled with replacement, which respects the dependence between them.
+    whole clusters are resampled with replacement, which respects the dependence between them. With fewer than
+    `min_clusters` clusters the interval is not estimable and None is returned (a bootstrap over two or three clusters
+    gives a zero-width or meaningless interval).
     """
     if len(diffs) < 2:
+        return None
+    if not_estimable_reason(clusters, min_clusters):
         return None
     rng = random.Random(seed)
     if clusters is None:
@@ -97,8 +161,6 @@ def bootstrap_ci(diffs: Sequence[float], n: int = 10000, seed: int = 7,
         for d, c in zip(diffs, clusters):
             by[c].append(d)
         groups = [by[c] for c in sorted(by)]
-        if len(groups) < 2:
-            return None
     means = []
     for _ in range(n):
         sample = [x for _g in groups for x in rng.choice(groups)]
@@ -108,30 +170,65 @@ def bootstrap_ci(diffs: Sequence[float], n: int = 10000, seed: int = 7,
     return means[int(round(tail * n))], means[int(round((1.0 - tail) * n)) - 1]
 
 
+MARGIN_UNSET = ("the margin is not set (null in config/analysis.yaml): it is decided by the protocol owner before the lock; "
+                "no value is assumed, so the test is not evaluated")
+
+
+def check_margin(margin: Any) -> Optional[float]:
+    """None for an undecided margin; the positive number otherwise. A margin that is not a positive number is an error
+    (a sign or a zero would silently turn the test into something else)."""
+    if margin is None:
+        return None
+    try:
+        m = float(margin)
+    except (TypeError, ValueError):
+        raise ValueError("the margin must be a positive number or null, not %r" % (margin,))
+    if not m > 0:
+        raise ValueError("the margin must be positive, not %r" % (margin,))
+    return m
+
+
 def noninferiority(diffs: Sequence[float], margin: Optional[float], clusters: Optional[Sequence[str]] = None,
                    alpha: float = 0.05, n: int = 10000, seed: int = 7) -> Optional[Dict[str, Any]]:
     """Non-inferiority of a against b on a measure where higher is better, diffs = a - b.
 
     One-sided test at alpha/2 (the lower limit of the two-sided 1 - alpha percentile interval): a is non-inferior
-    when that lower limit lies above -margin. margin None = not decided: the interval is returned without a verdict."""
-    ci = bootstrap_ci(diffs, n, seed, clusters, level=1.0 - alpha)
+    when that lower limit lies above -margin. margin None = not decided: the test is not evaluated (status
+    "not_evaluated" with the reason); a margin is never assumed."""
+    margin = check_margin(margin)
+    if margin is None:
+        return {"diff": _r(mean(diffs)) if diffs else None, "ci": None, "lower": None, "margin": None, "noninferior": None,
+                "status": "not_evaluated", "reason": MARGIN_UNSET, "test": "not evaluated"}
+    reason = not_estimable_reason(clusters, min_clusters())
+    ci = None if reason else bootstrap_ci(diffs, n, seed, clusters, level=1.0 - alpha, min_clusters=min_clusters())
+    if reason:
+        return {"diff": _r(mean(diffs)), "ci": None, "lower": None, "margin": margin, "noninferior": None,
+                "status": "not_estimable", "reason": reason, "test": "not estimable"}
     if ci is None:
         return None
-    verdict = None if margin is None else ci[0] > -abs(float(margin))
-    return {"diff": _r(mean(diffs)), "ci": ci, "lower": ci[0], "margin": margin, "noninferior": verdict,
+    verdict = ci[0] > -margin
+    return {"diff": _r(mean(diffs)), "ci": ci, "lower": ci[0], "margin": margin, "noninferior": verdict, "status": "ok",
             "test": "one-sided, alpha/2 = %.3f, percentile bootstrap" % (alpha / 2.0)}
 
 
 def equivalence(diffs: Sequence[float], margin: Optional[float], clusters: Optional[Sequence[str]] = None,
                 alpha: float = 0.05, n: int = 10000, seed: int = 7) -> Optional[Dict[str, Any]]:
     """Two one-sided tests (TOST) at alpha: equivalent when the 1 - 2 alpha percentile interval of the mean difference
-    lies inside (-margin, +margin). margin None = not decided: the interval is returned without a verdict."""
-    ci = bootstrap_ci(diffs, n, seed, clusters, level=1.0 - 2.0 * alpha)
+    lies inside (-margin, +margin). margin None = not decided: the test is not evaluated (status "not_evaluated" with
+    the reason); a margin is never assumed."""
+    margin = check_margin(margin)
+    if margin is None:
+        return {"diff": _r(mean(diffs)) if diffs else None, "ci": None, "margin": None, "equivalent": None,
+                "status": "not_evaluated", "reason": MARGIN_UNSET, "test": "not evaluated"}
+    reason = not_estimable_reason(clusters, min_clusters())
+    if reason:
+        return {"diff": _r(mean(diffs)), "ci": None, "margin": margin, "equivalent": None,
+                "status": "not_estimable", "reason": reason, "test": "not estimable"}
+    ci = bootstrap_ci(diffs, n, seed, clusters, level=1.0 - 2.0 * alpha, min_clusters=min_clusters())
     if ci is None:
         return None
-    m = None if margin is None else abs(float(margin))
-    verdict = None if m is None else (-m < ci[0] and ci[1] < m)
-    return {"diff": _r(mean(diffs)), "ci": ci, "margin": margin, "equivalent": verdict,
+    verdict = -margin < ci[0] and ci[1] < margin
+    return {"diff": _r(mean(diffs)), "ci": ci, "margin": margin, "equivalent": verdict, "status": "ok",
             "test": "TOST, alpha = %.3f, %d %% percentile bootstrap interval" % (alpha, round(100 * (1 - 2 * alpha)))}
 
 
@@ -333,7 +430,17 @@ def automatic(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
         out[variant].update(retrieval_measures(group))
         out[variant].update(support_measures(group))
+        label = baseline_label(group)
+        if label:
+            out[variant]["baseline_label"] = label
     return out
+
+
+def baseline_label(group: List[Dict[str, Any]]) -> Optional[str]:
+    """"template, not a baseline" when any item of a variant whose act the model chooses (V0-V3) was produced by the
+    template generator; None otherwise. Such a group is a fallback of the dev-set check, never a result of the rung."""
+    labels = sorted({(i.get("baseline") or {}).get("label") for i in group} - {None})
+    return labels[0] if labels else None
 
 
 def rated(store: Store, items: List[Dict[str, Any]], rater: str) -> Dict[str, Dict[str, Any]]:
@@ -349,9 +456,12 @@ def rated(store: Store, items: List[Dict[str, Any]], rater: str) -> Dict[str, Di
         totals = {s: mean([sum(r[c] for c in CRITERIA) for r in rs]) for s, rs in scenarios.items()}
         critical = {s: mean([1.0 if r["critical"] else 0.0 for r in rs]) for s, rs in scenarios.items()}
         k4 = {s: mean([1.0 if "K4" in r["critical"] else 0.0 for r in rs]) for s, rs in scenarios.items()}
+        k45 = {s: mean([1.0 if ("K4" in r["critical"] or "K5" in r["critical"]) else 0.0 for r in rs])
+               for s, rs in scenarios.items()}
         out[variant] = {"n_scenarios": len(scenarios), "rubric_total": round(mean(list(totals.values())), 3),
                         "critical_rate": round(mean(list(critical.values())), 3), "k4_rate": round(mean(list(k4.values())), 3),
-                        "_totals": totals, "_critical": critical, "_clusters": clusters}
+                        "k4_or_k5_rate": round(mean(list(k45.values())), 3),
+                        "_totals": totals, "_critical": critical, "_k4_or_k5": k45, "_clusters": clusters}
     return out
 
 
@@ -364,13 +474,20 @@ def paired(rated_out: Dict[str, Dict[str, Any]], a: str, b: str) -> Optional[Dic
         return None
     d_total = [rated_out[a]["_totals"][s] - rated_out[b]["_totals"][s] for s in common]
     d_crit = [rated_out[a]["_critical"][s] - rated_out[b]["_critical"][s] for s in common]
+    d_k45 = [rated_out[a]["_k4_or_k5"][s] - rated_out[b]["_k4_or_k5"][s] for s in common]
     cl = [rated_out[a]["_clusters"].get(s, s) for s in common]
     clustered = len(set(cl)) < len(cl)
+    mc = min_clusters()
+    note = not_estimable_reason(cl if clustered else None, mc)
     return {"a": a, "b": b, "n_scenarios": len(common), "n_clusters": len(set(cl)),
             "bootstrap": "cluster" if clustered else "scenario",
-            "rubric_diff": round(mean(d_total), 3), "rubric_ci95": bootstrap_ci(d_total, clusters=cl if clustered else None),
+            "ci_status": "not_estimable" if note else "ok", "ci_note": note,
+            "rubric_diff": round(mean(d_total), 3),
+            "rubric_ci95": bootstrap_ci(d_total, clusters=cl if clustered else None, min_clusters=mc),
+            "k4_or_k5_diff": round(mean(d_k45), 3),
+            "k4_or_k5_ci95": bootstrap_ci(d_k45, clusters=cl if clustered else None, min_clusters=mc),
             "critical_rate_diff": round(mean(d_crit), 3),
-            "critical_ci95": bootstrap_ci(d_crit, clusters=cl if clustered else None),
+            "critical_ci95": bootstrap_ci(d_crit, clusters=cl if clustered else None, min_clusters=mc),
             "rubric_wilcoxon": wilcoxon_signed_rank(d_total)}
 
 
@@ -405,7 +522,18 @@ def agreement(store: Store, rater_a: str, rater_b: str, items: Optional[List[Dic
 
 # ---------------------------------------------------------------- per-scenario measures for the report tables
 
-RATED_MEASURES = ("total",) + CRITERIA + ("critical", "K1", "K2", "K3", "K4", "K5")
+RATED_MEASURES = ("total",) + CRITERIA + ("critical", "K1", "K2", "K3", "K4", "K5", "k4_or_k5")
+PRIMARY_MEASURES = RATED_MEASURES + ("act_correct",)
+
+
+def primary_measure(settings: Optional[Dict[str, Any]] = None) -> str:
+    """The primary outcome of config/analysis.yaml (`primary.measure`), checked against the measures the report knows.
+    k4_or_k5: the scenario has at least one K4 or K5 error (K1 is not measurable while quantities are off)."""
+    cfg = settings if settings is not None else analysis_settings()
+    name = (cfg.get("primary") or {}).get("measure", "k4_or_k5")
+    if name not in PRIMARY_MEASURES:
+        raise ValueError("primary.measure %r is not a measure of the report (%s)" % (name, ", ".join(PRIMARY_MEASURES)))
+    return name
 
 
 def scenario_scores(store: Store, items: List[Dict[str, Any]], rater: Optional[str]) -> Dict[str, Dict[str, Dict[str, float]]]:
@@ -428,6 +556,7 @@ def scenario_scores(store: Store, items: List[Dict[str, Any]], rater: Optional[s
             cell["critical"].append(1.0 if r["critical"] else 0.0)
             for k in ("K1", "K2", "K3", "K4", "K5"):
                 cell[k].append(1.0 if k in r["critical"] else 0.0)
+            cell["k4_or_k5"].append(1.0 if ("K4" in r["critical"] or "K5" in r["critical"]) else 0.0)
     return {v: {s: {m: mean(xs) for m, xs in cell.items()} for s, cell in scen.items()} for v, scen in per.items()}
 
 
@@ -448,9 +577,12 @@ def paired_measure(scores: Dict[str, Dict[str, Dict[str, float]]], a: str, b: st
     d = [sa[s][measure] - sb[s][measure] for s in common]
     cl = [meta.get(s, {}).get("cluster", s) for s in common]
     clustered = len(set(cl)) < len(cl)
+    mc = min_clusters()
+    note = not_estimable_reason(cl if clustered else None, mc)
     return {"n": len(common), "a": _r(mean([sa[s][measure] for s in common])), "b": _r(mean([sb[s][measure] for s in common])),
-            "diff": _r(mean(d)), "ci95": bootstrap_ci(d, clusters=cl if clustered else None),
-            "bootstrap": "cluster" if clustered else "scenario",
+            "diff": _r(mean(d)), "ci95": bootstrap_ci(d, clusters=cl if clustered else None, min_clusters=mc),
+            "bootstrap": "cluster" if clustered else "scenario", "n_clusters": len(set(cl)),
+            "ci_status": "not_estimable" if note else "ok", "ci_note": note,
             "wins": sum(1 for x in d if x > 0), "ties": sum(1 for x in d if x == 0), "losses": sum(1 for x in d if x < 0)}
 
 
@@ -463,6 +595,7 @@ def select(items: List[Dict[str, Any]], set_name: Optional[str] = None,
     sets = sorted({str(i.get("set")) for i in out})
     if len(sets) > 1:
         raise ValueError("the items span several scenario sets (%s); choose one with --set" % ", ".join(sets))
+    lock.single_lock(out)                       # never items of different protocol locks (ValueError)
     return out
 
 
@@ -480,3 +613,28 @@ def variant_mean(scores: Dict[str, Dict[str, Dict[str, float]]], variant: str, m
                  scenarios: Optional[Sequence[str]] = None) -> Optional[float]:
     xs = [m[measure] for s, m in scores.get(variant, {}).items() if measure in m and (scenarios is None or s in scenarios)]
     return _r(mean(xs))
+
+
+def holm_family(scores: Dict[str, Dict[str, Dict[str, float]]], meta: Dict[str, Dict[str, Any]],
+                settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The Holm family of the first lock (config/analysis.yaml `holm.family`): per member the paired difference, the
+    Wilcoxon signed-rank p-value (supplementary; it assumes independent scenarios) and the Holm-adjusted p. Members
+    without variation (no p) are listed but not counted. The primary outcome (E1) is tested at the full alpha and is
+    not part of the family."""
+    cfg = settings if settings is not None else analysis_settings()
+    members = (cfg.get("holm") or {}).get("family") or []
+    pvals: Dict[str, Optional[float]] = {}
+    rows = []
+    for m in members:
+        a, b = m["comparison"][:2]
+        sa, sb = scores.get(a, {}), scores.get(b, {})
+        common = sorted(s for s in set(sa) & set(sb) if m["measure"] in sa[s] and m["measure"] in sb[s])
+        d = [sa[s][m["measure"]] - sb[s][m["measure"]] for s in common]
+        w = wilcoxon_signed_rank(d)
+        pvals[m["name"]] = None if w is None else w["p_two_sided"]
+        rows.append({"name": m["name"], "comparison": [a, b], "measure": m["measure"], "n": len(common),
+                     "diff": _r(mean(d)) if d else None, "p": pvals[m["name"]]})
+    adjusted = holm(pvals)
+    for r in rows:
+        r["p_holm"] = adjusted[r["name"]]
+    return rows

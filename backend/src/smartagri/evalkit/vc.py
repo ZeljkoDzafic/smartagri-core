@@ -9,7 +9,8 @@ variants.yaml does not list it, so the core cannot branch on it.
 The user is simulated from the scenario: when an answer ends with a question to the user and the
 scenario has a reply (`user_replies`) for an input the question is about (matched by the input's
 label and keywords), the reply text is sent as the next message, for at most MAX_TURNS answers.
-Otherwise the conversation stops.
+A question with no such reply is answered "Ne znam." (the same wording and the same turn cap as every other variant,
+evalkit.runner) and the conversation goes on; it stops when the model asks nothing more or at the cap.
 
 Items have the shape the rating queue and the report expect, with `answer_format: "text"`; the
 report branches on that field, never on the variant name."""
@@ -25,13 +26,12 @@ from ..pipeline import ai_chat
 from ..retrieval import load_corpus, make_retriever
 from ..retrieval.search import fold
 from ..store import Store, new_id, now_iso
-from .runner import cluster_of, scenario_view
+from .runner import DECLINE_REPLY, MAX_TURNS, cluster_of, scenario_view
 from .scenarios import load_scenarios
 from .sources import retrieval_record
 
 EXTERNAL_VARIANTS = {"VC": "LLM sa podacima i izvorima"}
 ANSWER_FORMAT = "text"
-MAX_TURNS = 3
 RETRIES = 1
 
 # Folded (lowercase, no diacritics, đ -> dj) stems that show a question is about an input.
@@ -176,14 +176,17 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
         name = match_reply(question_text(answer), replies, used)
         matched.append(name)
         if name is None:
-            break
-        used.add(name)
-        turn["user_reply"] = str(replies[name])
+            turn["user_reply"] = DECLINE_REPLY
+            ctx.declined_free.append(question_text(answer))
+        else:
+            used.add(name)
+            turn["user_reply"] = str(replies[name])
         history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer["text"]}]
         message = turn["user_reply"]
         query = ctx.Q.text + " " + message
     first_budget = records[0]["provenance"]["passages"]
-    return {"scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
+    kept = {"retrospective": sc["retrospective"], "outcome": sc.get("outcome")} if sc.get("retrospective") else {}
+    return {**kept, "scenario": view, "turns": turns, "records": records, "stratum": sc.get("stratum"), "cluster": cluster_of(sc),
             "expect": (sc.get("expect") or {}).get(variant_name), "reference": sc.get("reference"),
             "answer_format": ANSWER_FORMAT, "first_act": None, "final_act": None, "n_turns": len(turns),
             "first_question_input": matched[0] if matched else None,
@@ -193,18 +196,20 @@ def run_scenario(sc: Dict[str, Any], provider: Provider, corpus, retriever, vari
 
 
 def run_batch(store: Store, set_name: str, variant_name: str = "VC", repeats: int = 1, folder=None,
-              provider: Optional[Provider] = None) -> Dict[str, Any]:
+              provider: Optional[Provider] = None, lock_info: Optional[Dict[str, Any]] = None,
+              decision_hour_utc: Optional[int] = None) -> Dict[str, Any]:
     """Run every scenario of a set under VC. Raises Unavailable without a configured model."""
     provider = provider or provider_or_refuse()
     corpus = load_corpus()
     retriever = make_retriever(corpus, store)
     batch_id = new_id()
     n, failed, usd, started = 0, 0, 0.0, time.time()
-    for sc in load_scenarios(set_name, folder):
+    for sc in load_scenarios(set_name, folder, decision_hour_utc):
         for repeat in range(1, repeats + 1):
             base = dict(id=new_id(), batch_id=batch_id, scenario_id=sc["id"], variant=variant_name, repeat=repeat,
-                        set=set_name, created_at=now_iso(), generator=provider.name, model=provider.model,
-                        prompt_hash=ai_chat.PROMPT_HASH)
+                        repeats=repeats, decision_hour_utc=decision_hour_utc, set=set_name, created_at=now_iso(), generator=provider.name,
+                        model=provider.model, prompt_hash=ai_chat.PROMPT_HASH,
+                        **(lock_info or {"lock_sha256": None, "lock_combined_sha256": None, "lock_tag": None}))
             try:
                 result = run_scenario(sc, provider, corpus, retriever, variant_name)
             except LLMError as exc:

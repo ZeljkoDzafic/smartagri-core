@@ -1,4 +1,4 @@
-"""Latin to Cyrillic transliteration of the local language (spec 017), for the sr-Cyrl locale.
+"""Latin to Cyrillic transliteration of the local language, for the sr-Cyrl locale.
 
 Deterministic and lossless for local words: lj, nj and dž become љ, њ and џ (with capitals and the known
 prefix exceptions such as nadživeti, odžaliti, injekcija); every other letter maps one to one. What must stay
@@ -26,18 +26,18 @@ CYR2LAT.update({"љ": "lj", "њ": "nj", "џ": "dž", "Љ": "Lj", "Њ": "Nj", "Џ
 
 # Words that stay in Latin script: product, data-set and system names, technical abbreviations.
 # The former product name stays Latin too, so older stored texts read as they were (legacy).
-LEGACY_NAMES = ("Agrovid",)  # legacy: former product name
+LEGACY_NAMES = ()
 PROTECT = set(LEGACY_NAMES) | set("""SmartAgri Sentinel Sentinel-2 Copernicus CDSE Open-Meteo Meteo NDVI FAO BBCH EUDR GeoJSON JSON PDF
 CSV HS EORI ET0 ETc Kc AI LLM SMTP TRACES WGS84 ISO EPSG GPS URL API ID Mailpit DejaVu ReportLab reportlab TARAG
 pH N P K Excel UTF-8 BOM KAN NPK UAN MAP DAP AN Urea Claude Anthropic OpenAI sr-Latn sr-Cyrl en true false null
 Push Data Space Ecosystem Google Earth Esri EOX Nominatim Photon OpenStreetMap Apple Android Safari Firefox Chrome""".split())
-# Acronyms written in local Cyrillic in Cyrillic text (spec 053, U12): "EU" -> "ЕУ".
+# Acronyms written in local Cyrillic in Cyrillic text: "EU" -> "ЕУ".
 LOCAL_ACRONYMS = {"EU"}
 # Brand and system names whose inflected forms (Sentinelom, Copernicusa) also stay Latin, the legacy name included.
 PROTECT_PREFIXES = LEGACY_NAMES + ("Sentinel", "Copernicus", "Open-Meteo")
 # Multi-word names that always stay Latin, as a whole: the product name (since 2026-10-19). They are also left out of
-# the English-sentence check, so "Otvori Open Crop Manager" is still treated as local text.
-PROTECT_PHRASES = ("Open Crop Manager",)
+# the English-sentence check, so "Otvori SmartAgri" is still treated as local text.
+PROTECT_PHRASES = ("SmartAgri",)
 # Unit symbols kept in Latin script next to a number, a slash or a degree sign ("3,5 mm", "kg N/ha", "°C").
 UNITS = {"mm", "cm", "km", "m", "s", "h", "ha", "kg", "g", "mg", "t", "l", "ml", "N", "C", "K"}
 ROMAN = {"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"}

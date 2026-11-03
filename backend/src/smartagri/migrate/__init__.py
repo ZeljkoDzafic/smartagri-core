@@ -1,4 +1,4 @@
-"""Versioned schema migrations (spec 052, audit DATA-1/DATA-2).
+"""Versioned schema migrations.
 
 The schema is a document store (store.TABLES / store.INDEXES) whose DDL has always been idempotent. This runner adds
 what was missing around it, without changing the resulting schema:
@@ -10,8 +10,7 @@ what was missing around it, without changing the resulting schema:
 - `R:schema_sync`: a repeatable step that re-applies the idempotent DDL only when its checksum (TABLES, INDEXES and
   the backend extras) changes, so additive changes of later specs keep working as before. Anything that is not
   additive (type change, rename, NOT NULL, backfill) must be a new numbered entry in VERSIONS;
-- startup data tasks (`D:*`: orphan parcels to the demo organisation, spec 011; default farms and field crops,
-  spec 027) run after the schema under the same lock. They are idempotent and run on every `up`, exactly as they did
+- startup data tasks (`D:*`: orphan parcels to the demo organisation; default farms and field crops) run after the schema under the same lock. They are idempotent and run on every `up`, exactly as they did
   in the API lifespan, but never concurrently.
 
 CLI: `python -m smartagri.migrate up|status`.
@@ -39,27 +38,27 @@ def _baseline(store: Any) -> None:
 # (version, name, function(store)). Append only; never edit or reorder an applied entry.
 VERSIONS: List[Tuple[str, str, Callable[[Any], None]]] = [
     ("0001", "baseline: document tables, key columns, indexes (idempotent DDL of specs 001-031)", _baseline),
-    ("0002", "parcel jurisdiction back-fill: country, subdivision, time zone, climate class (spec 037)",
+    ("0002", "parcel jurisdiction back-fill: country, subdivision, time zone, climate class",
      lambda store: _jurisdiction_037(store)),
-    ("0003", "analyses, analysis events, reference datasets and their events (spec 032; additive tables only)",
+    ("0003", "analyses, analysis events, reference datasets and their events (additive tables only)",
      lambda store: store.sync_schema()),
     ("0005", "hourly weather and station observations (typed, monthly partitions on PostgreSQL), stations, risk runs "
-             "(specs 035 and 034; additive tables only)", lambda store: _weather_035(store)),
+             "(additive tables only)", lambda store: _weather_035(store)),
     ("0006", "cadastral import jobs and cache, index layer rasters, validation samples, feature layers, spatial results "
-             "(specs 048, 049, 050; additive tables only)", lambda store: store.sync_schema()),
+             "(additive tables only)", lambda store: store.sync_schema()),
     ("0007", "subscriptions, billing profiles, billing events, invoice mirror, entitlement overrides and events, usage "
-             "counters, active parcel selection, coupons (spec 058; additive tables only)", lambda store: store.sync_schema()),
-    ("0008", "custom crops of an organisation (spec 059; additive table only)", lambda store: store.sync_schema()),
-    ("0009", "tasks and task events (spec 044), inventory products, locations, lots, movements and events (spec 045; "
+             "counters, active parcel selection, coupons (additive tables only)", lambda store: store.sync_schema()),
+    ("0008", "custom crops of an organisation (additive table only)", lambda store: store.sync_schema()),
+    ("0009", "tasks and task events, inventory products, locations, lots, movements and events ("
              "additive tables only)", lambda store: store.sync_schema()),
-    ("0010", "imagery scene catalogue and true-colour images (spec 040; additive tables only)",
+    ("0010", "imagery scene catalogue and true-colour images (additive tables only)",
      lambda store: store.sync_schema()),
     ("0011", "plant-protection registry: sources, imports, products, uses, groups, import events, EU substances, merge "
-             "decisions, proposals, guidance objects and append-only guidance events (spec 051; additive tables, "
+             "decisions, proposals, guidance objects and append-only guidance events (additive tables, "
              "append-only triggers)", lambda store: _ppp_051(store)),
-    ("0012", "machinery imports, datasets and point columns (spec 043), boundary suggestions (spec 046; additive tables "
+    ("0012", "machinery imports, datasets and point columns, boundary suggestions (additive tables "
              "only)", lambda store: store.sync_schema()),
-    ("0013", "messaging channel links, link codes, delivery log, inbound deduplication and rate-limit counters (spec 060; "
+    ("0013", "messaging channel links, link codes, delivery log, inbound deduplication and rate-limit counters ("
              "additive tables only)", lambda store: store.sync_schema()),
     ("0014", "optional accounts of the research web app: users, sessions, one-time tokens, parcel owners (additive "
              "tables only)", lambda store: store.sync_schema()),
@@ -89,7 +88,7 @@ def _settings_015(store: Any) -> None:
 
 
 def _ppp_051(store: Any) -> None:
-    """Spec 051: additive tables (store.TABLES), then triggers that refuse UPDATE and DELETE on the append-only audit
+    """Additive tables (store.TABLES), then triggers that refuse UPDATE and DELETE on the append-only audit
     tables (both backends; the single application role owns the tables, so a REVOKE would not bind it)."""
     store.sync_schema()
     for table in APPEND_ONLY_051:
@@ -118,7 +117,7 @@ def _jurisdiction_037(store: Any) -> None:
         product.jurisdiction_037(store)
 
 
-# Spec 057 (open core): steps that need product packages live in `product_steps.py`, which the research repository
+# Steps that need product packages live in `product_steps.py`, which the research repository
 # does not ship. It is found by name, never imported statically, so the research core never depends on the product.
 PRODUCT_STEPS = "smartagri.migrate.product_steps"
 

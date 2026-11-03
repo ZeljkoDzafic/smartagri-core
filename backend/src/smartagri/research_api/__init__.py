@@ -1,4 +1,4 @@
-"""Minimal research API and client of the research prototype (spec 057, open core). RESEARCH-PUBLIC.
+"""Minimal research API and client of the research prototype. RESEARCH-PUBLIC.
 
 It exposes the core path only: maize parcels, the input profile (weather, Sentinel-2) with the quality layer q,
 the advisory conversation through `pipeline.run.advise` under a chosen variant (V0-V5), the provenance of every run,

@@ -11,7 +11,7 @@ from ..i18n import L
 from ..core.types import AdviceType, Context, SatelliteSummary, VariantConfig, WeatherSummary
 from ..retrieval.corpus import Corpus
 from ..retrieval.search import Retriever
-from .generate import prompt_hash
+from .generate import is_free_act, prompt_hash
 from .intent import operation_in, parse_reply
 
 
@@ -54,7 +54,10 @@ def advise(ctx: Context, corpus: Corpus, retriever: Retriever, variant: VariantC
     ctx.Q.stated_conditions = stated_conditions(ctx.Q.text)
     passages = retriever.search(ctx.Q.text, t) if t != AdviceType.OUT_OF_SCOPE else []
     d = decide(ctx, passages, variant)
-    answer, grounding, usage = generator.generate(ctx, d, corpus, grounding_check=variant.grounding)
+    # A variant without the sufficiency layer (V0-V3) leaves the act to the language model, which then receives no
+    # conclusion of the decision core (pipeline.generate.fact_sheet); the flag comes from the variant, never its name.
+    act_free = not getattr(variant, "sufficiency", True)
+    answer, grounding, usage = generator.generate(ctx, d, corpus, grounding_check=variant.grounding, act_free=act_free)
 
     decisions = d.to_dict()
     for key in ("variant", "advice_type", "tools", "config_hashes"):
@@ -76,7 +79,7 @@ def advise(ctx: Context, corpus: Corpus, retriever: Retriever, variant: VariantC
         "advice_type": t.value, "advice_type_label": L().ADVICE_TYPES[t.value],
         "answer": answer, "decisions": decisions,
         "provenance": {"as_of": ctx.as_of.isoformat() if ctx.as_of else None, "config_hashes": d.config_hashes,
-                       "corpus_hash": corpus.hash, "model": generator.model, "prompt_hash": prompt_hash(),
+                       "corpus_hash": corpus.hash, "model": generator.model, "prompt_hash": prompt_hash(free=is_free_act(d, act_free)),
                        "judge_prompt_hash": getattr(generator, "judge_prompt_hash", None),
                        "scene_dates": scene_dates, "forecast_issued_at": ctx.W.forecast_issued_at,
                        "context_used": {"weather": getattr(variant, "dynamic_context", True)

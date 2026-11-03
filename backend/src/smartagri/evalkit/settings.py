@@ -26,6 +26,18 @@ def load() -> Dict[str, Any]:
     return {"llm": llm, "judge": judge}
 
 
+RATER_VIEWS = ("raw", "graded")
+
+
+def rater_view() -> str:
+    """What the blind rater sees of the inputs (config/evaluation.yaml `rater_view`): `raw` = the facts (value, origin,
+    age, coverage) without the grades of the q layer (default), `graded` = the quality table with reliability grades."""
+    view = (config.load("evaluation") or {}).get("rater_view", "raw")
+    if view not in RATER_VIEWS:
+        raise SettingsError("config/evaluation.yaml: rater_view %r must be one of %s" % (view, ", ".join(RATER_VIEWS)))
+    return view
+
+
 def is_exact_model_id(model: Optional[str]) -> bool:
     """False for an empty name, an alias (`sonnet`) or a floating tag (`...-latest`, `...:latest`)."""
     if not model or not str(model).strip():

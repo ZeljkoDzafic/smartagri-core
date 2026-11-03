@@ -14,16 +14,12 @@ import yaml
 
 CONFIG_FILES = ("thresholds", "requirements", "variants", "asking", "kc_maize", "rules", "parcel_features")
 
-# Environment variables are named SMARTAGRI_<NAME>. Deployments of the earlier product still set the former prefix,
-# which is read as a fallback so they keep working.
-LEGACY_ENV_PREFIX = "AGROVID_"  # legacy prefix, read only as a fallback
+# Environment variables are named SMARTAGRI_<NAME>.
 
 
 def env(name: str, default: str = "") -> str:
-    """SMARTAGRI_<name>, else the legacy-prefixed variable, else default."""
+    """SMARTAGRI_<name>, else default."""
     value = os.environ.get("SMARTAGRI_" + name)
-    if value is None or value == "":
-        value = os.environ.get(LEGACY_ENV_PREFIX + name)
     return default if value is None or value == "" else value
 
 

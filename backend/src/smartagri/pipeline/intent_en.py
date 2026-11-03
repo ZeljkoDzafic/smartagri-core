@@ -1,4 +1,4 @@
-"""English questions and replies (spec 017): deterministic keyword rules like pipeline/intent.py.
+"""English questions and replies: deterministic keyword rules like pipeline/intent.py.
 
 Used only when the request locale is `en` and the local rules do not recognise the text, so the local
 classification (and every evaluation run) is unchanged. The corpus stays in the local language: an English

@@ -1,4 +1,4 @@
-"""Storage of hourly weather rows and raw station observations (spec 035 FR-002, FR-006; storage decision).
+"""Storage of hourly weather rows and raw station observations.
 
 Two typed tables outside the generic document store, because they are time series:
   - `weather_hourly`: Open-Meteo hourly rows per grid point, model, hour and issue key (one row per forecast as
