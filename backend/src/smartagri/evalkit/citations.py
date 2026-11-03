@@ -1,4 +1,4 @@
-"""Manual-check sample of cited answer sentences (spec 007 T025).
+"""Manual-check sample of cited answer sentences.
 
 Population: every sentence of the summary and rationale of an advice-giving turn (recommend or
 conditional) that cites at least one source, plus every sentence the support check dropped (as

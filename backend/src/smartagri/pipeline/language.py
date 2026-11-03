@@ -1,4 +1,4 @@
-"""Language of a chat message (spec 017, section "Jezik razgovora / chat language").
+"""Language of a chat message.
 
 The AI chat answers in the language of the user's message, independently of the interface locale. This module is
 the cheap deterministic first step: it never calls a model. It looks at the script of the letters and, inside a
@@ -33,7 +33,7 @@ NAMES = {
     "mk": "Macedonian", "ar": "Arabic", "fa": "Persian", "ur": "Urdu", "el": "Greek", "he": "Hebrew", "hy": "Armenian",
     "ka": "Georgian", "hi": "Hindi", "bn": "Bengali", "th": "Thai", "ko": "Korean", "ja": "Japanese", "zh": "Chinese",
 }
-# Neutral names for the local language (no national name in anything a user may see; spec 017 US4).
+# Neutral names for the local language (no national name in anything a user may see).
 LOCAL_NAMES = {"Latn": "Lokalni (latinica)", "Cyrl": "Локални (ћирилица)"}
 
 
@@ -142,7 +142,7 @@ FOREIGN: Dict[str, Tuple[str, str]] = {
     "nl": ("", """het een en wanneer hoe moet ik niet irrigeren van morgen vandaag regen mest"""),
     "tr": ("ğışİçöü", """ve bir ne zaman nasıl mısır sulama mı mi bu için yarın bugün yağmur gübre"""),
 }
-# Spec 036 FR-016 (additive): more function and farm words for the languages of the new interface locales.
+# More function and farm words for the languages of the new interface locales.
 # Written by the developer, not by native speakers; accuracy is not measured yet (T021, SC-007).
 FOREIGN_EXTRA = {
     "hu": "nekem milyen mennyi szeretném tudni lehet kellene földem táblám permetezni trágyázni vetés aratás",
@@ -184,7 +184,7 @@ CYR_FOREIGN_WORDS = {
               почва благодаря моля""".split()),
     "be": set("""што як калі гэта трэба мне мой мая поле кукуруза паліваць дождж""".split()),
 }
-# Spec 036 FR-016 (additive): Bulgarian has no letters that tell it from Russian beyond ъ in some positions, so
+# Bulgarian has no letters that tell it from Russian beyond ъ in some positions, so
 # function words decide; Macedonian and Ukrainian get more words too.
 CYR_FOREIGN_WORDS["bg"] |= set("""кога трябва ли колко нивата нивата ми поливане торене пръскане сеитба жътва ще съм е""".split())
 CYR_FOREIGN_WORDS["mk"] |= set("""колку кога треба нивата ѓубрење прскање сеидба жетва ли да""".split()) - {"да", "ли"}
@@ -223,7 +223,7 @@ def _detect_cyrillic(text: str, words: List[str]) -> Detection:
         if low & set("ыэёЫЭЁ"):
             return _foreign("ru", "Cyrl", "markers", True)
         if low & set("іІ"):
-            # spec 036: і is Ukrainian or Belarusian; Ukrainian words make it confident
+            # і is Ukrainian or Belarusian; Ukrainian words make it confident
             uk_words = sum(1 for w in words if w in CYR_FOREIGN_WORDS["uk"])
             return _foreign("uk", "Cyrl", "markers", uk_words >= 2)
         scores = {k: sum(1 for w in words if w in v) for k, v in CYR_FOREIGN_WORDS.items() if k in ("ru", "bg", "uk")}
@@ -284,7 +284,7 @@ def detect(text: str) -> Detection:
 
 
 # ---------------------------------------------------------------- numbers, units, doses (language-agnostic gate)
-# Spec 036 FR-016: bidi control characters (LRM, RLM, LRE..RLO, LRI..PDI, ALM) carry no meaning for the gate and are
+# Bidi control characters (LRM, RLM, LRE..RLO, LRI..PDI, ALM) carry no meaning for the gate and are
 # removed before numbers and units are compared, so an isolated value in a right-to-left text still matches.
 BIDI_CONTROLS = re.compile("[\u200e\u200f\u202a-\u202e\u2066-\u2069\u061c]")
 
@@ -366,7 +366,7 @@ UNIT_ALIASES = {
     "ha": ["ha", "га", "ха", "هكتار", "hektar", "hektara", "hektare", "hectare", "hectares", "hektár", "hektárov",
            "hectárea", "hectáreas", "ettaro", "ettari", "гектар", "гектара", "хектар", "хектара"],
     "%": ["%", "٪"], "°C": ["°c", "° c", "°с", "° с"],
-    # Spec 036 FR-016: local and imperial units, so a value converted by a translation fails closed (units_changed)
+    # Local and imperial units, so a value converted by a translation fails closed (units_changed)
     "°F": ["°f", "° f", "℉"],
     "daa": ["daa", "dka", "дка", "dekar", "dekara", "dekár", "декар", "декара", "декари", "στρέμμα", "στρέμματα",
             "στρ.", "στρ", "dönüm", "donum", "dunum", "dynym", "dylym"],
@@ -375,7 +375,7 @@ UNIT_ALIASES = {
     "in": ["inch", "inches", "″"],
     "gal": ["gal", "gallon", "gallons"],
 }
-UNIT_ALIASES["kg"] = UNIT_ALIASES["kg"] + ["κιλά", "κιλό", "κγ"]          # spec 036 (Greek spellings)
+UNIT_ALIASES["kg"] = UNIT_ALIASES["kg"] + ["κιλά", "κιλό", "κγ"]          # (Greek spellings)
 UNIT_ALIASES["ha"] = UNIT_ALIASES["ha"] + ["εκτάριο", "εκτάρια", "hektár"]
 _ALIAS = {}
 for _canon, _spellings in UNIT_ALIASES.items():
@@ -385,7 +385,7 @@ _PER_AREA = ["/ha", "/ га", "/га", "/ха", "/هكتار", "/hektar", "/hect
              "je ha", "je hektar", "po ha", "po hektaru", "na ha", "на га", "на гектар", "par ha", "par hectare",
              "à l'hectare", "al ettaro", "por hectárea", "por ha", "hektáronként", "na hektar", "لكل هكتار",
              "/ ha"]
-# Spec 036 FR-016: per-decare/stremma and per-acre forms (canonical "/daa" and "/ac"); a dose added in a local area
+# Per-decare/stremma and per-acre forms (canonical "/daa" and "/ac"); a dose added in a local area
 # unit is a dose (fails closed).
 _PER_LOCAL = ["/дка", "/dka", "/da", "/daa", "/dekar", "/декар", "на дка", "na dekar", "dekar başına", "/στρ.", "/στρ",
               "ανά στρέμμα", "/dönüm", "dönüm başına"]
@@ -404,7 +404,7 @@ _INCH_RE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*in(?=\s*(?:$|[^\w\s]|\(|\
 
 
 def units(text: str) -> List[Tuple[str, str]]:
-    """(number as written, canonical unit) pairs, e.g. ("45", "kg/ha"); per-area units end in /ha (spec 036: /daa
+    """(number as written, canonical unit) pairs, e.g. ("45", "kg/ha"); per-area units end in /ha (/daa
     for decare/stremma forms, /ac for per-acre forms)."""
     out = []
     plain = ascii_digits(text)

@@ -1,4 +1,4 @@
-"""Spec 003 US1: corpus hash (T005) and vocabulary validation at load time (T007)."""
+"""Corpus hash (T005) and vocabulary validation at load time (T007)."""
 import shutil
 from pathlib import Path
 

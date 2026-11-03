@@ -18,6 +18,30 @@ any result produced with this version; results should be read together with it.
   `make_retriever`). The value `retrieval: hybrid` in `config/variants.yaml` names the intended mode; the effective
   mode depends on that setting.
 
+## Input checks
+
+- **Plausible ranges are development values.** `rules.input_limits` only catches values that cannot be right (a percentage
+  for a fraction, metres for mm/m, a negative rain); it does not judge unusual values. The AWC range (20-300 mm/m) spans
+  FAO-56 Table 19 (50-200 mm/m by texture); the other ranges are engineering choices awaiting agronomist review.
+- **Heavy rain.** The 25 mm threshold that postpones field work and top-dressing is a development value; it applies to the
+  3-day (else 7-day) forecast total and does not distinguish intensity or soil.
+- **Ages of time-stamped inputs are in hours (audit D8).** A forecast issue time with a clock time is aged in hours
+  against the decision moment (`rules.staleness.use_clock_time`; `max_age_hours` in `thresholds.yaml`); a date without a
+  clock time, and a stamp whose time zone cannot be compared with the decision moment, stay calendar days. A live
+  forecast is fetched again every `rules.weather.forecast_cache_slot_hours` (6 h). The values are development values.
+- **Satellite availability (D9).** A scene counts only after the end of its sensing day plus
+  `rules.satellite.publication_lag_hours`, by one rule in the provider and in the NDVI summary. The lag is 0: the real
+  Sentinel-2 L2A publication delay is not verified, so the retrospective set may still see a scene earlier than a live
+  user would. The masked SCL classes are `rules.satellite.scl_excluded`; classes 2 (dark area) and 7 (unclassified) are
+  kept by default and their effect on NDVI has not been measured.
+- **Grounding (D14)** matches a figure with a unit only against a value of the same kind, a dose, depth or volume to
+  rounding, and reads "1,200" strictly (both readings must be supported); a sentence that negates what its closest source
+  sentence affirms (or the reverse) is unsupported (`rules.grounding`). Still lexical: a paraphrase with the same words
+  and a different meaning that is not a plain negation, and a figure without a unit, are not caught. Each switch can
+  restore the earlier behaviour.
+- **Reply parsing** is rule-based Serbian; English replies use a separate, simpler parser (`pipeline/intent_en.py`) that
+  has not had these fixes. The research API confirms every free-text value before writing it.
+
 ## Agronomic parameters
 
 - **Development defaults, not reviewed.** `config/rules.yaml` begins with "PLACEHOLDER VALUES for development";
@@ -124,6 +148,11 @@ any result produced with this version; results should be read together with it.
   decision layers; they say nothing about the wording, errors or variability of a language model. With a language
   model, γ checks numbers and sentence support (`core/grounding.py`), but the sentence check is lexical unless the
   optional judge is configured (`pipeline/judge.py`), and repeated runs can differ.
+- **The template is not a baseline for V0–V3.** The act of V0–V3 belongs to the language model. The template has no
+  model: for these variants it always recommends and shows the decision core's action, so it says nothing about what a
+  language model with that rung's data would do. Its answers carry the label "template, not a baseline" (run record,
+  `evalkit report`, web evaluation view); an experiment run uses a language model for every variant, and a template run
+  of V0–V3 on the development set only checks that the pipeline works.
 - **CI covers only the template path.** All tests and the CI example run with `LLM_PROVIDER=template`
   (`.github/workflows/ci.yml`); language-model providers are tested with fakes.
 
@@ -137,6 +166,9 @@ any result produced with this version; results should be read together with it.
   (weighted Cohen's κ, `evalkit/report.py`) is therefore between two people, one of whom built the system. The
   rater guide (`../docs/RATER_GUIDE.md`) is in Serbian and is a draft until it has been calibrated and locked.
   The design of the rating is fixed in [protocol.md](protocol.md).
+- **E1 changes two things at once.** V4 vs V3 differs by the package (q, σ, α) and by who chooses the act (the rules
+  instead of the language model); the result is not attributed to either alone. A V3 with the core's act would be a
+  separate, additional rung that this version does not define.
 - **Limits of blinding.** Answers differ in form between variants: the free-text baseline VC is shown as text
   (`evalkit/rating.py`, `blind_answer`), V0 has no sources, and variants without α do not ask a structured
   question. A rater may recognise the family of a variant from the form of the answer.

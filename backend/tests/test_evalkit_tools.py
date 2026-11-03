@@ -249,8 +249,8 @@ def test_markdown_report_without_data_is_all_dashes():
     md = tables.render(SqliteStore(":memory:"), [])
     for heading in ("## 7.1", "## 7.2", "## 7.3", "## 7.5", "## 7.6", "## 7.7"):
         assert heading in md
-    for caption in ("Tabela 7.1.", "Tabela 7.2.", "Tabela 7.3.", "Tabela 7.4.", "Tabela 7.6.", "Tabela 7.7.", "Tabela 7.8.",
-                    "Tabela 7.10."):
+    for caption in ("Tabela 7.1.", "Tabela 7.2.", "Tabela 7.3.", "Tabela 7.4.", "Tabela 7.4a.", "Tabela 7.6.", "Tabela 7.7.",
+                    "Tabela 7.8."):
         assert caption in md
     rows, body = [], False
     for line in md.splitlines():
@@ -261,7 +261,7 @@ def test_markdown_report_without_data_is_all_dashes():
         else:
             body = False
     cells = [c.strip() for row in rows for c in row.strip("|").split("|")[1:]]
-    assert cells and set(cells) <= {"—", "E1", "E2", "E3"}
+    assert cells and set(cells) <= {"—", "E1", "E2", "E3", "V4 − V3", "total", "K1", "K2", "K3", "act_correct"}
 
 
 def _rate(store, item_id, total_r5, critical):

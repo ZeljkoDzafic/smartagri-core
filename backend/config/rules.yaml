@@ -22,12 +22,32 @@ field_ops:
   spraying_max_wind_ms: 5.0
   rain_block_mm_3d: 2.0
   frost_tmin_c: 0.0
-  # DEVELOPMENT VALUES (spec 010, 72 h field-operations window card). Not used by the decision cores.
+  # DEVELOPMENT VALUE, awaiting agronomist review: forecast rain within the window (3 days, else 7) at or above which
+  # fertilising and every other field operation is postponed (leaching and run-off of nitrogen, a saturated soil).
+  heavy_rain_postpone_mm: 25.0
+  # DEVELOPMENT VALUES (72 h field-operations window card). Not used by the decision cores.
   # The agronomist reviews them before the protocol is locked.
   window:
     caution_wind_share: 0.7        # spraying: wind above 70 % of spraying_max_wind_ms -> "oprez" (drift)
     caution_frost_margin_c: 3.0    # sowing: tmin within 3 °C above frost_tmin_c -> "oprez"
     heavy_rain_factor: 5           # day rain above 5 x rain_block_mm_3d -> "ne" (same factor as the cultivation core)
+# DEVELOPMENT VALUES (audit D8, D9, D14), awaiting agronomist review. No external source is claimed for any of them.
+staleness:
+  use_clock_time: true             # age of a time-stamped input (a forecast issue time) in hours; false = calendar days
+weather:
+  forecast_cache_slot_hours: 6     # a live forecast is fetched again every N hours; 0 = once a day (old behaviour)
+satellite:
+  publication_lag_hours: 0         # hours after the end of the sensing day before a scene may enter a decision; 0 = the
+                                   # next day (no lag is assumed; the real Sentinel-2 L2A delay is not verified)
+  scl_excluded: [0, 1, 3, 8, 9, 10, 11]   # scene classification classes masked out (0 no data, 1 saturated, 3 shadow,
+                                          # 8-9 cloud, 10 cirrus, 11 snow); 2 (dark area) and 7 (unclassified) are kept
+grounding:
+  number_tolerance_rel: 0.05       # a figure in an answer matches a computed one within this share ...
+  number_tolerance_floor: 1.0      # ... of max(floor, |computed|)
+  quantity_tolerance_rel: 0.005    # a quantity with a unit of volume, depth or dose must match to rounding
+  number_roles: true               # a figure with a unit is supported only by a value of the same kind (mm, kg/ha, ...)
+  ambiguous_group: strict          # "1,200": decimal | thousands | strict (both readings must be supported)
+  check_negation: true             # a sentence that negates what its best source affirms (or the reverse) is unsupported
 scouting:
   contrast_priority: 0.25        # p90 - p10
   trend_priority: -0.05          # 14-day NDVI change
@@ -54,11 +74,24 @@ phenology:
     - {days_max: 115, bbch: 75}
     - {days_max: 140, bbch: 85}
     - {days_max: 9999, bbch: 89}
+# DEVELOPMENT VALUES (plausibility of inputs, core/plausibility.py). A value outside its range is not used: q grades it
+# "low" (basis "implausible value") and the decision cores and the tools see the input as unknown. The ranges only catch
+# values that cannot be right (a percentage for a fraction, metres for mm/m, a negative rain), not unusual ones. Reviewed
+# by the agronomist with the other values; the AWC range spans Table 19 of the FAO-56 text (50-200 mm/m by texture).
+input_limits:
+  soil_moisture_vwc: [0.0, 1.0]      # m3/m3, volumetric water content of the sensor
+  soil_awc_mm_m: [20, 300]           # mm of available water per metre of soil
+  irrigation_efficiency: [0.0, 1.0]  # share; greater than 0 and at most 1
+  root_depth_m: [0.05, 3.0]          # m, effective root depth of the balance
+  precipitation_mm: [0.0, 1000.0]    # mm in the 3- or 7-day window
+  et0_mm: [0.0, 100.0]               # mm of reference evapotranspiration over 7 days
+  yield_target_t_ha: [0.0, 40.0]     # t/ha
+  fertilizer_rate_kg_ha: [0.0, 2000.0]   # kg of product (or of N) per hectare in one record
 soil:
   awc_by_texture_mm_m: {sand: 80, sandy_loam: 120, loam: 160, clay_loam: 180, clay: 200}
   efficiency_by_system: {sprinkler: 0.75, drip: 0.90, furrow: 0.60}
 
-# ---------------------------------------------------------------- optional inputs (spec 009)
+# ---------------------------------------------------------------- optional inputs
 # Development values; review with the agronomist before locking.
 optional_inputs:
   recent_irrigation_days: 3          # an irrigation this recent ...

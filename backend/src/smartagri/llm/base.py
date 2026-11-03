@@ -31,7 +31,7 @@ class LLMResponse:
 
 @dataclass
 class Image:
-    """An image for `complete_with_images` (spec 023): the bytes and their MIME type (always image/jpeg there)."""
+    """An image for `complete_with_images`: the bytes and their MIME type (always image/jpeg there)."""
     data: bytes
     media_type: str = "image/jpeg"
 
@@ -48,7 +48,7 @@ class Provider:
                  max_tokens: int = 4000) -> LLMResponse:
         raise NotImplementedError
 
-    # Spec 023: image input. Providers that can send images override both; every other provider (template,
+    # Image input. Providers that can send images override both; every other provider (template,
     # claude-cli, bridge, OpenAI-compatible models not listed as vision models) degrades gracefully.
     supports_images = False
 

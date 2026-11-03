@@ -5,10 +5,25 @@ alpha: 0.05                 # two-sided; 95 % intervals. Proposed default, to be
 bootstrap: {samples: 10000, seed: 7}
 kappa_bootstrap: {samples: 2000, seed: 7}
 min_n_for_ci: 10            # no interval for a subset of fewer scenarios (strata are descriptive)
+min_clusters: 5             # a cluster bootstrap over fewer clusters (parcels) is "not estimable": no interval is printed.
+                            # Proposed default; the protocol owner confirms it before the lock (docs/protocol.md section 6).
+scope:                      # what the first lock covers (analysis plan, section 4.4): V3, V4 and VC on the 40 scenarios
+  variants: [V3, V4, VC]    # (plus the retrospective set). V0-V2 and V5 stay in the design and the code, not in the lock.
+  include_e5: false         # E5 (V5 against VC, non-inferiority) is not in the first lock: no table, no verdict, no margin needed.
+                            # Switch to true only for a later lock; the margin below must then be decided first.
 primary:                    # E1: one primary outcome (docs/protocol.md section 2)
   comparison: [V4, V3]
-  measure: critical         # critical-error rate (any class K1-K5, K4 included), per scenario, repeats averaged
-noninferiority:             # E5: rubric total of V5 not worse than VC by more than the margin
+  measure: k4_or_k5         # share of scenarios with at least one K4 or K5 error, per scenario, repeats averaged
+  classes: [K4, K5]         # K1 cannot occur while rules.irrigation.quantity_validated is false; K2 and K3 do not depend on the layer
+holm:                       # multiple comparisons: Holm over this family, after E1 (E1 is tested at the full alpha, outside it).
+  test: wilcoxon_signed_rank  # supplementary p-value per member; intervals stay unadjusted and are described as such
+  family:                   # key secondary outcomes of E1 (analysis plan, section 4.5.8, item 2). V4 - VC is not in the family: its status is open.
+    - {name: E1-rubrika, comparison: [V4, V3], measure: total}
+    - {name: E1-K1, comparison: [V4, V3], measure: K1}
+    - {name: E1-K2, comparison: [V4, V3], measure: K2}
+    - {name: E1-K3, comparison: [V4, V3], measure: K3}
+    - {name: E1-prvi-cin, comparison: [V4, V3], measure: act_correct}
+noninferiority:             # E5 (outside the first lock, see scope): rubric total of V5 not worse than VC by more than the margin
   comparison: [V5, VC]
   measure: total
   margin: null              # rubric points (0-10 scale). TO BE DECIDED BY THE PROTOCOL OWNER before the lock.
@@ -16,4 +31,14 @@ equivalence:                # negative control: V4 vs V3 on the stratum with com
   comparison: [V4, V3]
   measure: total
   strata: [complete]
-  margin: null              # rubric points. TO BE DECIDED BY THE PROTOCOL OWNER before the lock.
+  margin: 1.0               # rubric points (0-10 scale). Working value decided by the protocol owner on 2026-11-03 (10 % of the
+                            # scale; with about 16 scenarios a narrower margin could not be confirmed). The agronomist who
+                            # reviews the configuration confirms or changes it before the lock; after the lock it is fixed.
+key_secondary_vc:           # V4 - VC: key secondary comparison, labelled E1-VC in the report; outside the Holm family, not co-primary
+  name: E1-VC               # (decided by the protocol owner on 2026-11-03). VC sees the same data, grades and sources but has no decision model.
+  comparison: [V4, VC]
+  measures: [k4_or_k5, total]
+agreement:                  # inter-rater agreement (docs/protocol.md section 9)
+  min_kappa: 0.60           # working value decided on 2026-11-03; the report states whether each kappa reaches it. The action when it is not
+                            # reached on the development scenarios (clarify the rater guide, rate again) is a procedure, not code; on the test
+                            # scenarios kappa is reported as it is.

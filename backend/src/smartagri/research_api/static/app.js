@@ -423,7 +423,7 @@ function answerCard(run) {
   return `<article class="answer act-${esc(a.act)}">
     <span class="grabber" aria-hidden="true"></span>
     <header><span class="act-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${ACT_ICON[a.act] || ACT_ICON.abstain}"/></svg></span>
-      <span class="act-head"><span class="act-badge">${esc(tr(ACTS, a.act, a.act_label))}</span><span class="meta">${esc(run.variant)} · ${esc(tr(ADVICE, run.advice_type, t("advice type not yet known")))} · ${esc(t("{name} generator", {name: a.generator}))}</span></span></header>
+      <span class="act-head"><span class="act-badge">${esc(tr(ACTS, a.act, a.act_label))}</span><span class="meta">${esc(run.variant)} · ${esc(tr(ADVICE, run.advice_type, t("advice type not yet known")))} · ${esc(t("{name} generator", {name: a.generator}))}${a.baseline_label ? ` · ${esc(t("template, not a baseline"))}` : ""}</span></span></header>
     ${customSettingsNotice((run.provenance || {}).settings, false)}
     <p class="summary" ${L}>${esc(a.summary)}</p>
     ${kv}
@@ -661,7 +661,8 @@ function evalSet(s) {
   const auto = s.ladder.concat(s.variants.filter((v) => !s.ladder.includes(v))).map((v) => {
     const a = s.automatic[v];
     if (!a) return [esc(v), "–", "–", "–", "–", "–", "–", "–", "–", "–"];
-    return [esc(v), esc(a.n), `${pct(a.act_accuracy)} <span class="hint">n=${esc(a.act_accuracy_n)}</span>`, pct(a.question_target_accuracy),
+    const tag = a.baseline_label ? ` <span class="pill set-dev">${esc(t("template, not a baseline"))}</span>` : "";
+    return [esc(v) + tag, esc(a.n), `${pct(a.act_accuracy)} <span class="hint">n=${esc(a.act_accuracy_n)}</span>`, pct(a.question_target_accuracy),
             pct(a.coverage), pct(a.first_ask_share), pct(a.recall_at_k), pct(a.citation_coverage), pct(a.support_rate), esc(a.failed)];
   });
   const steps = s.steps.map((st) => {
@@ -695,6 +696,7 @@ function evalSet(s) {
     <p class="hint">${esc(t("{n} answers in {runs} runs; {rated} rated.", {n: s.n_items, runs: s.batches.length, rated: s.n_rated_items}))}</p>
     <h3 class="ctx-sub">${esc(t("Runs"))}</h3>${table(["Run", "Variant", "Created", "Answers"], runs)}
     <h3 class="ctx-sub">${esc(t("Ladder V0–V5"))} <span class="hint-inline">${esc(t("automatic measures"))}</span></h3>
+    ${(s.template_variants || []).length ? `<p class="dev-note" role="note">${esc(t("Variants {list} were produced by the template generator, which always recommends. They are a fallback for checking the development set, not a baseline result of those rungs.", {list: s.template_variants.join(", ")}))}</p>` : ""}
     ${table(["Variant", "n", "Act accuracy", "Question target", "Coverage", "First ask share", "Recall@k", "Citation coverage", "Support rate", "Failed"], auto)}
     <h3 class="ctx-sub">${esc(t("Steps of the ladder"))} <span class="hint-inline">${esc(t("act correctness, paired by scenario"))}</span></h3>
     ${table(["Step", "Comparison", "n", "Lower rung", "Upper rung", "Difference", "95% CI (bootstrap)", "Wins / ties / losses"], steps)}

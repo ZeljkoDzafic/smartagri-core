@@ -4,6 +4,7 @@ import math
 from typing import Optional
 
 from ... import config
+from ..plausibility import check_number
 from ..types import ToolResult
 
 SOURCE = "Allen et al. (1998), FAO-56, ch. 8 (simplified root-zone balance)"
@@ -29,6 +30,10 @@ def net_irrigation_need(soil_water_status: Optional[str], awc_mm_m: Optional[flo
         return ToolResult("net_irrigation_need", inputs, None, formula, SOURCE, "missing: " + ", ".join(missing))
     if soil_water_status not in DEPLETION_BY_STATUS:
         return ToolResult("net_irrigation_need", inputs, None, formula, SOURCE, "unknown soil_water_status")
+    for key, value, positive in (("awc_mm_m", awc_mm_m, True), ("root_depth_m", root_depth_m, True), ("rain_next_mm", rain_next_mm, False)):
+        reason = check_number(value, 0.0, None, lower_exclusive=positive)
+        if reason:
+            return ToolResult("net_irrigation_need", inputs, None, formula, SOURCE, "invalid %s: %s" % (key, reason))
     cap = float(config.load("rules")["irrigation"]["max_single_net_mm"])
     taw = awc_mm_m * root_depth_m
     depletion = DEPLETION_BY_STATUS[soil_water_status] * taw

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from ..core.tools.ndvi_stats import scene_available
 from ..store import Store
 from .base import ProviderUnavailable, cached, http_json
 
@@ -15,18 +16,32 @@ LOOKBACK_DAYS = 90
 
 # NDVI with a per-pixel validity mask from the scene classification layer.
 # Excluded SCL classes: 0 no data, 1 saturated, 3 cloud shadow, 8 and 9 cloud, 10 cirrus, 11 snow.
-EVALSCRIPT = """//VERSION=3
+EVALSCRIPT_TEMPLATE = """//VERSION=3
 function setup() {
   return {input: [{bands: ["B04", "B08", "SCL", "dataMask"]}],
           output: [{id: "ndvi", bands: 1, sampleType: "FLOAT32"}, {id: "dataMask", bands: 1}]};
 }
 function evaluatePixel(s) {
-  var bad = [0, 1, 3, 8, 9, 10, 11].indexOf(s.SCL) >= 0;
+  var bad = %s.indexOf(s.SCL) >= 0;
   var den = s.B08 + s.B04;
   var ok = s.dataMask == 1 && !bad && den > 0;
   return {ndvi: [ok ? (s.B08 - s.B04) / den : 0], dataMask: [ok ? 1 : 0]};
 }
 """
+
+
+DEFAULT_SCL_EXCLUDED = [0, 1, 3, 8, 9, 10, 11]
+
+
+def evalscript() -> str:
+    """The evalscript with the masked SCL classes of rules.satellite.scl_excluded (audit D9; integers only)."""
+    from .. import config
+    classes = (config.load("rules").get("satellite") or {}).get("scl_excluded", DEFAULT_SCL_EXCLUDED)
+    classes = sorted({int(c) for c in classes if isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= 11})
+    return EVALSCRIPT_TEMPLATE % str(classes)
+
+
+EVALSCRIPT = EVALSCRIPT_TEMPLATE % str(DEFAULT_SCL_EXCLUDED)
 
 
 def configured() -> bool:
@@ -50,7 +65,7 @@ def build_request(geometry: Dict[str, Any], as_of: datetime) -> Dict[str, Any]:
         "input": {"bounds": {"geometry": geometry, "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}},
                   "data": [{"type": "sentinel-2-l2a", "dataFilter": {"mosaickingOrder": "leastCC"}}]},
         "aggregation": {"timeRange": {"from": start, "to": end}, "aggregationInterval": {"of": "P1D"},
-                        "evalscript": EVALSCRIPT, "resx": 10, "resy": 10},
+                        "evalscript": evalscript(), "resx": 10, "resy": 10},
         "calculations": {"ndvi": {"statistics": {"default": {"percentiles": {"k": [10, 50, 90]}}}}},
     }
 
@@ -68,12 +83,12 @@ def fetch(store: Store, geometry: Dict[str, Any], as_of: datetime, refresh: bool
     return {"raw": raw, "fetched_at": fetched_at, "request_hash": h}
 
 
-def parse_series(raw: Dict[str, Any], as_of: Optional[date] = None) -> List[Dict[str, Any]]:
+def parse_series(raw: Dict[str, Any], as_of: Optional[Any] = None) -> List[Dict[str, Any]]:
     """Turn a Statistical API response into NDVI observations with the share of usable pixels.
 
     usable_share = 1 - noDataCount / sampleCount, where no-data includes pixels masked as cloud,
     shadow or snow by the evalscript. Days with no usable pixel are dropped. With as_of, observations
-    dated on or after the as_of day are dropped as well (FR-013), whatever the cached response holds.
+    not yet available at as_of (the day of as_of or later, plus rules.satellite.publication_lag_hours) are dropped as well (FR-013), whatever the cached response holds.
     """
     series = []
     for item in raw.get("data", []):
@@ -85,7 +100,7 @@ def parse_series(raw: Dict[str, Any], as_of: Optional[date] = None) -> List[Dict
         usable = samples - (stats.get("noDataCount") or 0)
         if samples <= 0 or usable <= 0:
             continue
-        if as_of is not None and item["interval"]["from"][:10] >= as_of.isoformat():
+        if as_of is not None and not scene_available(item["interval"]["from"][:10], as_of):
             continue
         pct = stats.get("percentiles", {})
         series.append({"obs_date": item["interval"]["from"][:10], "median": round(float(pct["50.0"]), 3),

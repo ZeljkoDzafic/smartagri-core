@@ -142,6 +142,7 @@ def test_signup_signin_wrong_password_and_meta(env, monkeypatch):
 
 def test_secure_cookie_on_https(env, monkeypatch):
     app, _ = _app(env, monkeypatch)
+    monkeypatch.setenv("SMARTAGRI_ALLOWED_HOSTS", "app.example.org")     # a host other than loopback must be declared (S7)
     c = TestClient(app, base_url="https://app.example.org")
     r = c.get("/api/auth/me")
     for part in r.headers.get_list("set-cookie"):
@@ -480,3 +481,33 @@ def test_claimed_parcels_are_saved_and_never_purged(env, monkeypatch):
     assert ids(c) == [p["id"]] and not env.get("core_owners", p["id"]).get("touched_at")
     clock.t += 1000 * 3600
     assert auth.Accounts(env, mailer=False, clock=clock).purge_anonymous() == 0 and env.get_parcel(p["id"])
+
+
+# ------------------------------------------------------------------------------------------------ S9: password cost
+def test_password_cost_default_is_2_17_and_an_old_hash_is_made_again_at_sign_in(env, monkeypatch):
+    monkeypatch.delenv("SMARTAGRI_SCRYPT_LOG_N", raising=False)
+    assert auth.scrypt_n() == 2 ** 17
+    monkeypatch.setenv("SMARTAGRI_SCRYPT_LOG_N", "14")
+    old = auth.hash_password(PW)
+    assert old.split("$")[1] == "16384" and not auth.needs_rehash(old)
+    monkeypatch.setenv("SMARTAGRI_SCRYPT_LOG_N", "15")
+    assert auth.needs_rehash(old) and auth.verify_password(PW, old)               # still verifies
+    app, _ = _app(env, monkeypatch)
+    c = browser(app)
+    post(c, "/api/auth/signup", {"email": "old@example.org", "password": PW})
+    row = env.find("core_users", email="old@example.org")[0]
+    row["password_hash"] = old
+    env.put("core_users", row)
+    assert post(browser(app), "/api/auth/signin", {"email": "old@example.org", "password": PW}).status_code == 200
+    assert env.find("core_users", email="old@example.org")[0]["password_hash"].split("$")[1] == "32768"
+
+
+def test_signout_everywhere_ends_every_session_of_the_user(env, monkeypatch):
+    app, _ = _app(env, monkeypatch)
+    a, b = browser(app), browser(app)
+    post(a, "/api/auth/signup", {"email": "multi@example.org", "password": PW})
+    assert post(b, "/api/auth/signin", {"email": "multi@example.org", "password": PW}).status_code == 200
+    assert b.get("/api/auth/me").json()["user"] is not None
+    assert post(a, "/api/auth/signout-all", {}).status_code == 200
+    assert a.get("/api/auth/me").json()["user"] is None and b.get("/api/auth/me").json()["user"] is None
+    assert post(browser(app), "/api/auth/signout-all", {}).status_code == 401

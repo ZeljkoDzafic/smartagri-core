@@ -15,7 +15,7 @@ backend/.cache/
 *.sqlite
 web/node_modules/
 
-# spec 016: production secrets and local backups
+# production secrets and local backups
 .env.production
 backups/
 backups-local/

@@ -38,7 +38,7 @@ class OpenAICompatProvider(Provider):
         if key_var and not self.api_key and name not in ("ollama", "lmstudio"):
             raise LLMError("%s: missing API key (%s)" % (name, key_var))
         self._client = httpx.Client(timeout=timeout, transport=transport)
-        # Spec 023: image input only for models listed in product_config/photo.yaml `vision_models` (never guessed).
+        # Image input only for models listed in product_config/photo.yaml `vision_models` (never guessed).
         self.supports_images = self.model in vision_models()
 
     def complete(self, system, messages, json_schema=None, max_tokens=4000) -> LLMResponse:
@@ -69,7 +69,7 @@ class OpenAICompatProvider(Provider):
         return LLMResponse(text, self.name, data.get("model", self.model), usage.get("prompt_tokens", 0),
                            usage.get("completion_tokens", 0), None, "end_turn", request_id=data.get("id"))
 
-    # ------------------------------------------------------------ spec 023: image input
+    # ------------------------------------------------------------ image input
     def complete_with_images(self, system, messages, images, json_schema=None, max_tokens=1500) -> LLMResponse:
         """`image_url` parts with base64 data URLs before the text of the last user message (chat-completions
         vision input). Only for a model listed in `vision_models`; otherwise LLMError (graceful degradation)."""

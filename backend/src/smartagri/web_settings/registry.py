@@ -118,6 +118,7 @@ GRADE_COLS = (
     RELIAB,
     c("origins", "list", choices=ORIGINS, optional=True, en="Origins", sr="Poreklo"),
     c("max_age_days", "int", 0, 36500, optional=True, en="Max age (days)", sr="Najveća starost (dani)"),
+    c("max_age_hours", "int", 0, 876000, optional=True, en="Max age (hours)", sr="Najveća starost (sati)"),
     c("min_coverage", "float", 0, 1, optional=True, en="Min coverage", sr="Najmanja pokrivenost"),
     c("min_count", "int", 1, 1000, optional=True, en="Min count", sr="Najmanji broj"),
 )
@@ -128,12 +129,17 @@ GRADE_COLS = (
 G_IRR, G_FERT, G_OPS, G_SCOUT, G_PHEN, G_SOIL, G_KC = ("irrigation", "fertilization", "field_ops", "scouting", "phenology",
                                                        "soil", "crop_coefficients")
 G_OPT, G_ASK, G_REQ, G_Q, G_PF = "optional_inputs", "asking", "sufficiency", "quality", "parcel_features"
+G_IN = "input_limits"
+G_FRESH, G_GROUND = "data_freshness", "grounding"
 
 GROUPS = [
     (G_IRR, "Irrigation", "Navodnjavanje"), (G_FERT, "Fertilization", "Đubrenje"),
     (G_OPS, "Field operations", "Radovi u polju"), (G_SCOUT, "Scouting (NDVI)", "Obilazak (NDVI)"),
     (G_PHEN, "Phenology", "Fenologija"), (G_SOIL, "Soil", "Zemljište"),
     (G_KC, "Crop coefficients", "Koeficijenti kulture"), (G_OPT, "Optional inputs", "Opcioni ulazi"),
+    (G_IN, "Plausible ranges of inputs", "Verodostojni opsezi ulaza"),
+    (G_FRESH, "Data freshness and availability", "Svežina i dostupnost podataka"),
+    (G_GROUND, "Grounding check of answers", "Provera utemeljenosti odgovora"),
     (G_ASK, "Asking and sufficiency", "Pitanja i dovoljnost"), (G_REQ, "Required inputs per advice type", "Neophodni ulazi po tipu saveta"),
     (G_Q, "Input quality thresholds", "Pragovi kvaliteta ulaza"), (G_PF, "Parcel features", "Pokazatelji parcele"),
 ]
@@ -149,6 +155,11 @@ def _no(en_note="", sr_note=""):
 
 def _dev(en_note="", sr_note=""):
     return dict(status="development", note_en=en_note or DEV_EN, note_sr=sr_note or DEV_SR)
+
+
+def _limit(key, en, sr, unit, lo, hi, recommended, note_en, note_sr, source="", status="development"):
+    return Spec("rules.input_limits." + key, "pair", G_IN, en, sr, unit=unit, lo=lo, hi=hi, user=False, recommended=recommended,
+                basis="development", source=source, status=status, note_en=note_en, note_sr=note_sr)
 
 
 SPECS: List[Spec] = [
@@ -194,6 +205,10 @@ SPECS: List[Spec] = [
             **_no("No external source; the usual limit depends on the product label and local rules. Development value, awaiting agronomist review.",
                   "Nema spoljnog izvora; uobičajena granica zavisi od deklaracije sredstva i propisa. Razvojna vrednost, čeka pregled agronoma.")),
     _scalar("rules.field_ops.rain_block_mm_3d", "float", G_OPS, "Rain that blocks field work (3 days)", "Kiša koja blokira rad u polju (3 dana)", "mm", 0, 200, **_no()),
+    _scalar("rules.field_ops.heavy_rain_postpone_mm", "float", G_OPS, "Forecast rain at or above which fertilising and field work are postponed", "Prognozirana kiša od koje se prihrana i radovi u polju odlažu", "mm", 0, 500,
+            recommended=(10, 50), basis="development",
+            **_dev("Development value (25 mm within the forecast window), awaiting agronomist review. No external source is claimed.",
+                   "Razvojna vrednost (25 mm u prozoru prognoze), čeka pregled agronoma. Spoljni izvor se ne tvrdi.")),
     _scalar("rules.field_ops.frost_tmin_c", "float", G_OPS, "Frost limit for sowing (minimum temperature)", "Granica mraza za setvu (minimalna temperatura)", "°C", -30, 30,
             **_no("No external source. The corpus asks for about 10 °C soil temperature at sowing, which the code does not check (needs a code change). Development value, awaiting agronomist review.",
                   "Nema spoljnog izvora. Korpus traži oko 10 °C temperature zemljišta pri setvi, što kod ne proverava (potrebna izmena koda). Razvojna vrednost, čeka pregled agronoma.")),
@@ -234,6 +249,36 @@ SPECS: List[Spec] = [
          source="fao4_t8", status="verified",
          note_en="Sprinkler 0.75, drip 0.90, surface (furrow) 0.60 match Annex I, Table 8. Scheme efficiency (conveyance x application) is not modelled.",
          note_sr="Kišenje 0,75, kap po kap 0,90, površinsko (brazde) 0,60 odgovaraju Prilogu I, Tabela 8. Efikasnost šeme (provodljivost x primena) nije modelovana."),
+    # ---------------------------------------------------------------- rules.yaml: plausible ranges of inputs
+    # Development values: a value outside is not used (graded low, "implausible value"). Only the administrator changes them.
+    _limit("soil_moisture_vwc", "Soil sensor reading: plausible range (volumetric water content)", "Očitavanje senzora vlage: verodostojan opseg (zapreminski sadržaj vode)",
+           "m3/m3", 0, 1, {"0": (0, 0.05), "1": (0.6, 1.0)},
+           "A sensor reading above 1 is a percentage written as a fraction (25 for 0.25). Development range, awaiting agronomist review.",
+           "Očitavanje iznad 1 je procenat upisan kao razlomak (25 umesto 0,25). Razvojni opseg, čeka pregled agronoma."),
+    _limit("soil_awc_mm_m", "Available water capacity: plausible range", "Pristupačna voda: verodostojan opseg", "mm/m", 1, 1000,
+           {"0": (10, 50), "1": (200, 400)},
+           "Table 19 gives 50-200 mm/m by texture; the range is wider on purpose and only catches wrong units (1.6 for metres). Development range, awaiting agronomist review.",
+           "Tabela 19 daje 50-200 mm/m po teksturi; opseg je namerno širi i hvata samo pogrešne jedinice (1,6 za metre). Razvojni opseg, čeka pregled agronoma.",
+           source="fao56_t19", status="partly"),
+    _limit("irrigation_efficiency", "Application efficiency: plausible range (greater than the lower end, at most the upper)", "Efikasnost primene: verodostojan opseg (veća od donje granice, najviše gornja)", "share", 0, 1,
+           {"0": (0, 0.1), "1": (0.95, 1.0)},
+           "An efficiency of 0 is never plausible (the lower end itself is excluded) and one above 1 is a percentage. Development range, awaiting agronomist review.",
+           "Efikasnost 0 nikad nije verodostojna (sama donja granica je isključena), a iznad 1 je procenat. Razvojni opseg, čeka pregled agronoma."),
+    _limit("root_depth_m", "Effective root depth: plausible range", "Efektivna dubina korena: verodostojan opseg", "m", 0.01, 5,
+           {"0": (0.05, 0.3), "1": (1.7, 3.0)},
+           "Table 22 gives 1.0-1.7 m for maize at full development. Development range, awaiting agronomist review.",
+           "Tabela 22 daje 1,0-1,7 m za kukuruz u punom razvoju. Razvojni opseg, čeka pregled agronoma.",
+           source="fao56_t22", status="partly"),
+    _limit("precipitation_mm", "Rain in the 3- or 7-day window: plausible range", "Kiša u prozoru od 3 ili 7 dana: verodostojan opseg", "mm", 0, 5000,
+           {"0": (0, 0), "1": (300, 1000)},
+           "A negative rain is never plausible (it would enlarge the dose). Development range, awaiting agronomist review.",
+           "Negativna kiša nikad nije verodostojna (povećala bi dozu). Razvojni opseg, čeka pregled agronoma."),
+    _limit("et0_mm", "Reference evapotranspiration over 7 days: plausible range", "Referentna evapotranspiracija za 7 dana: verodostojan opseg", "mm", 0, 500,
+           {"0": (0, 0), "1": (70, 150)}, "Development range, awaiting agronomist review.", "Razvojni opseg, čeka pregled agronoma."),
+    _limit("yield_target_t_ha", "Target yield: plausible range", "Ciljni prinos: verodostojan opseg", "t/ha", 0, 100,
+           {"0": (0, 0), "1": (20, 60)}, "Development range, awaiting agronomist review.", "Razvojni opseg, čeka pregled agronoma."),
+    _limit("fertilizer_rate_kg_ha", "Fertiliser rate in one record: plausible range", "Doza đubriva u jednom zapisu: verodostojan opseg", "kg/ha", 0, 10000,
+           {"0": (0, 0), "1": (1000, 3000)}, "Development range, awaiting agronomist review.", "Razvojni opseg, čeka pregled agronoma."),
     # ---------------------------------------------------------------- rules.yaml: optional inputs
     _scalar("rules.optional_inputs.recent_irrigation_days", "int", G_OPT, "Irrigation this recent implies a moist root zone", "Navodnjavanje ovako skoro znači vlažnu zonu korena", "days", 0, 30, **_no()),
     _scalar("rules.optional_inputs.recent_irrigation_min_mm", "float", G_OPT, "... and at least this deep", "... i bar ovolike dubine", "mm", 0, 200, **_no()),
@@ -261,6 +306,19 @@ SPECS: List[Spec] = [
          checks=("kc_ranges",), min_items=2, max_items=10, source="fao56_t12", status="partly", recommended={"kc": (0.30, 1.20)},
          note_en="Kc ini 0.30 (cereals value; footnote 1: higher under frequent wetting) and Kc mid 1.20 match Table 12. Kc end 0.60 is inside the source range 0.60-0.35, but the source interpolates through the late stage and the stepwise value understates ETc early in it. The development value 0.75 is the midpoint of the interpolation, not a table value. The BBCH limits are an assumption. The climate correction (eq. 62) is not applied. Ranges must be contiguous from BBCH 0. The recommended range 0.30-1.20 spans the maize values of Table 12 (ini 0.30, mid 1.20, end 0.60-0.35); the limit is that range widened by a quarter of its width.",
          note_sr="Kc ini 0,30 (vrednost grupe žitarica; fusnota 1: raste kod čestog kvašenja) i Kc mid 1,20 odgovaraju Tabeli 12. Kc end 0,60 je u opsegu izvora 0,60-0,35, ali izvor interpoliše kroz kasnu fazu pa stepenasta vrednost potcenjuje ETc na početku te faze. Razvojna vrednost 0,75 je sredina interpolacije, a ne vrednost iz tabele. Granice BBCH su pretpostavka. Korekcija klime (jedn. 62) nije primenjena. Opsezi moraju biti susedni od BBCH 0. Preporučeni opseg 0,30-1,20 obuhvata vrednosti Tabele 12 za kukuruz (ini 0,30, mid 1,20, end 0,60-0,35); granica je taj opseg proširen za četvrtinu širine."),
+    # ---------------------------------------------------------------- rules.yaml: freshness (D8, D9) and grounding (D14)
+    _scalar("rules.staleness.use_clock_time", "bool", G_FRESH, "Age of a time-stamped input (forecast issue time) in hours, not calendar days", "Starost ulaza sa vremenom (izdavanje prognoze) u satima, ne u kalendarskim danima", user=False, **_dev()),
+    _scalar("rules.weather.forecast_cache_slot_hours", "int", G_FRESH, "Live forecast is fetched again every (hours; 0 = once a day)", "Prognoza uživo se ponovo preuzima na svakih (sati; 0 = jednom dnevno)", "h", 0, 23, user=False, **_dev()),
+    _scalar("rules.satellite.publication_lag_hours", "int", G_FRESH, "Delay before a scene may be used, after the end of its sensing day", "Kašnjenje pre upotrebe snimka, posle kraja dana snimanja", "h", 0, 720, user=False,
+            status="no_source", note_en="No lag is assumed (0). The real Sentinel-2 L2A publication delay was not verified; set it from the Copernicus documentation before locking the protocol.",
+            note_sr="Kašnjenje se ne pretpostavlja (0). Stvarno kašnjenje objave Sentinel-2 L2A nije provereno; postaviti prema dokumentaciji Copernicus pre zaključavanja protokola."),
+    _scalar("rules.satellite.scl_excluded", "list", G_FRESH, "Scene classification classes masked out of the NDVI (0-11)", "Klase klasifikacije scene isključene iz NDVI (0-11)", item_kind="scalar", max_items=12, user=False, **_dev()),
+    _scalar("rules.grounding.number_tolerance_rel", "float", G_GROUND, "A figure in an answer matches a computed one within this share", "Broj u odgovoru se poklapa sa izračunatim u ovom udelu", "", 0, 1, user=False, **_dev()),
+    _scalar("rules.grounding.number_tolerance_floor", "float", G_GROUND, "Smallest value the tolerance is taken from", "Najmanja vrednost od koje se računa tolerancija", "", 0.01, 100, user=False, **_dev()),
+    _scalar("rules.grounding.quantity_tolerance_rel", "float", G_GROUND, "Tolerance for a depth, dose or volume (rounding only)", "Tolerancija za dubinu, dozu ili zapreminu (samo zaokruživanje)", "", 0, 1, user=False, **_dev()),
+    _scalar("rules.grounding.number_roles", "bool", G_GROUND, "A figure with a unit is supported only by a value of the same kind", "Broj sa jedinicom podržava samo vrednost iste vrste", user=False, **_dev()),
+    _scalar("rules.grounding.ambiguous_group", "enum", G_GROUND, "Reading of a figure like 1,200", "Čitanje broja poput 1,200", choices=("decimal", "thousands", "strict"), user=False, **_dev()),
+    _scalar("rules.grounding.check_negation", "bool", G_GROUND, "A sentence that negates what its source affirms is unsupported", "Rečenica koja negira ono što izvor tvrdi nije utemeljena", user=False, **_dev()),
     # ---------------------------------------------------------------- thresholds.yaml (q): ndvi and soil analysis have their own status
     Spec("thresholds.inputs.ndvi_latest.grades", "table", G_Q, "Reliability grades: {name}", "Stepeni pouzdanosti: {name}", cols=GRADE_COLS, max_items=8, user=False, source="sentiwiki", status="partly",
          note_en="The 5-day limit matches the Sentinel-2 revisit period at the equator; the other ages and coverages are engineering choices. Grades are tried top to bottom; the first that holds wins.",

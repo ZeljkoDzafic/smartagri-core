@@ -83,6 +83,6 @@ def describe() -> Dict[str, Any]:
         return {"available": False, "provider": "none", "model": "",
                 "message": "AI razgovor nije podešen. Podesite LLM_PROVIDER (claude-cli, anthropic, openai, deepseek, "
                            "kimi, mistral, ollama, lmstudio ili openai-compatible).", "images": False}
-    # Spec 023: whether the provider accepts image input (photo descriptions); additive key.
+    # Whether the provider accepts image input (photo descriptions); additive key.
     return {"available": True, "provider": p.name, "model": p.model, "message": "",
             "images": bool(getattr(p, "supports_images", False))}

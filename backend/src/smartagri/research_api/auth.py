@@ -148,8 +148,19 @@ def _admin_addresses() -> frozenset:
 
 
 # ---------------------------------------------------------------------------------------------------- passwords
-SCRYPT_N, SCRYPT_R, SCRYPT_P, DKLEN = 2 ** 14, 8, 1, 32
+# scrypt at N = 2^17, r = 8, p = 1 (128 MiB), the minimum OWASP's Password Storage Cheat Sheet gives for scrypt when Argon2id is
+# not used. SMARTAGRI_SCRYPT_LOG_N (14-20) lowers or raises it; a hash made with other parameters still verifies and is made again
+# with the current ones at the next sign-in.
+SCRYPT_R, SCRYPT_P, DKLEN = 8, 1, 32
 PBKDF2_ITERATIONS = 600_000
+
+
+def scrypt_n() -> int:
+    try:
+        log_n = int(os.environ.get("SMARTAGRI_SCRYPT_LOG_N") or 17)
+    except ValueError:
+        log_n = 17
+    return 2 ** min(20, max(14, log_n))
 
 
 def _b64(raw: bytes) -> str:
@@ -173,9 +184,10 @@ def _scrypt(password: str, salt: bytes, n: int, r: int, p: int) -> Optional[byte
 def hash_password(password: str) -> str:
     """scrypt$<n>$<r>$<p>$<salt>$<hash>, or pbkdf2_sha256$<iterations>$<salt>$<hash> where scrypt is unavailable."""
     salt = os.urandom(16)
-    digest = _scrypt(password, salt, SCRYPT_N, SCRYPT_R, SCRYPT_P)
+    n = scrypt_n()
+    digest = _scrypt(password, salt, n, SCRYPT_R, SCRYPT_P)
     if digest is not None:
-        return "$".join(["scrypt", str(SCRYPT_N), str(SCRYPT_R), str(SCRYPT_P), _b64(salt), _b64(digest)])
+        return "$".join(["scrypt", str(n), str(SCRYPT_R), str(SCRYPT_P), _b64(salt), _b64(digest)])
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS, DKLEN)
     return "$".join(["pbkdf2_sha256", str(PBKDF2_ITERATIONS), _b64(salt), _b64(digest)])
 
@@ -198,6 +210,17 @@ def verify_password(password: Any, stored: Optional[str]) -> bool:
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(got, _unb64(digest))
+
+
+def needs_rehash(stored: Optional[str]) -> bool:
+    """Is a stored hash weaker than what hash_password makes now (a lower scrypt N, or PBKDF2 where scrypt works)?"""
+    try:
+        parts = (stored or "").split("$")
+        if parts[0] == "scrypt":
+            return int(parts[1]) < scrypt_n()
+        return parts[0] == "pbkdf2_sha256" and _scrypt("x", b"0" * 16, 2 ** 14, 8, 1) is not None
+    except (ValueError, IndexError):
+        return False
 
 
 def password_problem(password: Any, email: str = "") -> Optional[str]:
@@ -318,6 +341,10 @@ class Accounts:
         if token:
             self.store.delete("core_sessions", id=_sha(token))
 
+    def signout_everywhere(self, user: Dict[str, Any]) -> None:
+        """End every session of the user, this one included (audit S9: a lost or shared device)."""
+        self.store.delete("core_sessions", user_id=user["id"])
+
     def _new_token(self, user: Dict[str, Any], purpose: str, hours: int) -> str:
         token = secrets.token_urlsafe(32)
         self.store.put("core_tokens", {"id": _sha(token), "created_at": now_iso(), "user_id": user["id"],
@@ -416,6 +443,9 @@ class Accounts:
             raise AuthError(401, INVALID_LOGIN)
         if not verify_password(password, user.get("password_hash")):
             raise AuthError(401, INVALID_LOGIN)
+        if needs_rehash(user.get("password_hash")):            # a hash from before the current cost: make it again now
+            user["password_hash"] = hash_password(password)
+            self.store.put("core_users", user)
         if self.email_enabled and not user.get("verified"):
             self._mail(user, "verify")
             raise AuthError(403, "Confirm your email address first. We have sent you a new link.")

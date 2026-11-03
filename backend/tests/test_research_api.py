@@ -1,4 +1,4 @@
-"""Spec 057: the minimal research API of the open-core research repository (core path only, no accounts)."""
+"""The minimal research API of the open-core research repository (core path only, no accounts)."""
 from datetime import datetime, timedelta
 
 import pytest

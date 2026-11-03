@@ -452,3 +452,88 @@ def test_s10_the_client_loads_nothing_that_the_policy_forbids():
         text = (static / name).read_text(encoding="utf-8")
         assert not re.search(r"""\s(style|on[a-z]+)=["'$]""", text), name          # no markup built with style or handler attributes
         assert "javascript:" not in text, name
+
+
+# ================================================================ S7, S8, S12: host, evaluation routes, LLM bridge
+def test_a_foreign_host_header_is_refused_and_loopback_and_the_public_host_are_served(monkeypatch):
+    from fastapi.testclient import TestClient
+    from smartagri.research_api.app import create_app
+    from smartagri.research_api.service import ResearchService
+    from smartagri.store import SqliteStore
+    monkeypatch.delenv("SMARTAGRI_ALLOWED_HOSTS", raising=False)
+    monkeypatch.setenv("SMARTAGRI_PUBLIC_URL", "https://app.example.org")
+    c = TestClient(create_app(ResearchService(SqliteStore(":memory:"))))
+    assert c.get("/api/meta", headers={"Host": "attacker.example"}).status_code == 400
+    assert c.get("/api/meta", headers={"Host": "localhost:8000"}).status_code == 200
+    assert c.get("/api/meta", headers={"Host": "APP.example.org"}).status_code == 200
+    monkeypatch.setenv("SMARTAGRI_ALLOWED_HOSTS", "*")                         # the opt-out for a private network
+    assert c.get("/api/meta", headers={"Host": "attacker.example"}).status_code == 200
+
+
+def test_evaluation_routes_are_off_on_a_public_installation_unless_switched_on(monkeypatch):
+    from smartagri.research_api import guards
+    for name in ("SMARTAGRI_PUBLIC_URL", "SMARTAGRI_ACCOUNTS", "SMARTAGRI_EVAL_API"):
+        monkeypatch.delenv(name, raising=False)
+    assert guards.eval_api_enabled() is True                                   # a private installation: as before
+    monkeypatch.setenv("SMARTAGRI_ACCOUNTS", "optional")
+    assert guards.eval_api_enabled() is True                                   # accounts alone do not switch it off
+    monkeypatch.setenv("SMARTAGRI_PUBLIC_URL", "https://app.example.org")
+    assert guards.eval_api_enabled() is False
+    monkeypatch.setenv("SMARTAGRI_EVAL_API", "1")
+    assert guards.eval_api_enabled() is True
+    monkeypatch.setenv("SMARTAGRI_EVAL_API", "0")
+    monkeypatch.delenv("SMARTAGRI_PUBLIC_URL")
+    assert guards.eval_api_enabled() is False
+
+
+def test_a_public_installation_answers_404_on_the_rating_routes(monkeypatch):
+    from fastapi.testclient import TestClient
+    from smartagri.research_api.app import create_app
+    from smartagri.research_api.service import ResearchService
+    from smartagri.store import SqliteStore
+    monkeypatch.setenv("SMARTAGRI_PUBLIC_URL", "https://app.example.org")
+    monkeypatch.delenv("SMARTAGRI_EVAL_API", raising=False)
+    c = TestClient(create_app(ResearchService(SqliteStore(":memory:"))))
+    assert c.get("/api/eval/rubric").status_code == 404
+    monkeypatch.setenv("SMARTAGRI_EVAL_API", "1")
+    assert c.get("/api/eval/rubric").status_code == 200
+
+
+def test_bridge_listens_on_loopback_by_default_compares_the_token_in_constant_time_and_bounds_the_body():
+    import inspect
+    from smartagri.llm import bridge
+    source = inspect.getsource(bridge)
+    assert 'LLM_BRIDGE_HOST", "127.0.0.1"' in source
+    assert "hmac.compare_digest" in source and "MAX_BODY_BYTES" in source and bridge.MAX_BODY_BYTES == 1024 * 1024
+
+
+# ================================================================ S5: quotas of the calls that spend something
+def test_quota_stops_a_script_and_leaves_a_person_alone(monkeypatch):
+    from fastapi import HTTPException
+    from smartagri.research_api import quota
+    from smartagri.store import SqliteStore
+    store = SqliteStore(":memory:")
+    monkeypatch.setenv("SMARTAGRI_QUOTA_AI_CHAT_PER_DAY", "3")
+    for _ in range(3):
+        quota.charge(store, "ai_chat_day", "owner-1", clock=lambda: 1000.0)
+    with pytest.raises(HTTPException) as over:
+        quota.charge(store, "ai_chat_day", "owner-1", clock=lambda: 1000.0)
+    assert over.value.status_code == 429 and int(over.value.headers["Retry-After"]) > 0
+    quota.charge(store, "ai_chat_day", "owner-2", clock=lambda: 1000.0)            # another owner is not affected
+    quota.charge(store, "ai_chat_day", "owner-1", clock=lambda: 1000.0 + 86400)    # the next window starts again
+    monkeypatch.setenv("SMARTAGRI_QUOTA_AI_CHAT_PER_DAY", "0")                     # 0 switches the quota off
+    for _ in range(10):
+        quota.charge(store, "ai_chat_day", "owner-1", clock=lambda: 5000.0)
+
+
+def test_refreshes_of_one_parcel_are_spaced(monkeypatch):
+    from fastapi import HTTPException
+    from smartagri.research_api import quota
+    from smartagri.store import SqliteStore
+    store = SqliteStore(":memory:")
+    monkeypatch.setenv("SMARTAGRI_QUOTA_REFRESH_MIN_SECONDS", "10")
+    quota.charge(store, "refresh_gap", "o", "p1", clock=lambda: 100.0)
+    with pytest.raises(HTTPException):
+        quota.charge(store, "refresh_gap", "o", "p1", clock=lambda: 101.0)
+    quota.charge(store, "refresh_gap", "o", "p2", clock=lambda: 101.0)             # another parcel
+    quota.charge(store, "refresh_gap", "o", "p1", clock=lambda: 111.0)             # after the spacing

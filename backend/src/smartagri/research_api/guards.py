@@ -109,6 +109,66 @@ class RequestGuardMiddleware:
         await self.app(scope, replay, send)
 
 
+# ------------------------------------------------------------------------------------------------ host and evaluation guards
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
+TEST_HOSTS = ("testserver",)                     # the host name of Starlette's test client
+
+
+def _host_name(value: str) -> str:
+    """The host of a Host header without its port: `Example.org:8080` -> `example.org`, `[::1]:8000` -> `[::1]`."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value.split("]")[0] + "]"
+    return value.split(":")[0]
+
+
+def allowed_hosts() -> Optional[List[str]]:
+    """Host names the app answers to (SMARTAGRI_ALLOWED_HOSTS, comma-separated, plus the host of SMARTAGRI_PUBLIC_URL and
+    the loopback names), or None when `*` is listed: any host (for a private network or a proxy that sets its own).
+    A request with another Host header is refused, so a page on an attacker's name that resolves to this machine
+    (DNS rebinding) cannot read it (audit S7)."""
+    listed = [_host_name(h) for h in (os.environ.get("SMARTAGRI_ALLOWED_HOSTS") or "").split(",") if h.strip()]
+    if "*" in listed:
+        return None
+    public = urlsplit(os.environ.get("SMARTAGRI_PUBLIC_URL") or "").hostname
+    return list(LOOPBACK_HOSTS) + list(TEST_HOSTS) + listed + ([public.lower()] if public else [])
+
+
+def eval_api_enabled() -> bool:
+    """Are the blind-rating routes (/api/eval/...) served? SMARTAGRI_EVAL_API=1 / 0 decides; unset, they are served on a
+    private installation (no SMARTAGRI_PUBLIC_URL) and off on a public one (audit S8): the rating screen does not use
+    accounts, so it must not face the internet by default. Accounts alone do not switch it off: the rating routes are
+    independent of them by design."""
+    flag = (os.environ.get("SMARTAGRI_EVAL_API") or "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    if flag in ("0", "false", "no", "off"):
+        return False
+    return not (os.environ.get("SMARTAGRI_PUBLIC_URL") or "").strip()
+
+
+class HostGuardMiddleware:
+    """Refuses (400) a request whose Host header is not an allowed host, and (404) the /api/eval/ routes when they are off."""
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        hosts = allowed_hosts()
+        if hosts is not None:
+            host = _host_name(dict(scope.get("headers") or []).get(b"host", b"").decode("latin-1"))
+            if host not in hosts:
+                await _reply(send, 400, "Invalid host header.")
+                return
+        if scope.get("path", "").startswith("/api/eval/") and not eval_api_enabled():
+            await _reply(send, 404, "Not found.")
+            return
+        await self.app(scope, receive, send)
+
+
 # ------------------------------------------------------------------------------------------------ response headers
 def tile_sources(url: str) -> List[str]:
     """The CSP image sources for a tile URL template ({s} subdomain, {z}/{x}/{y}); empty for none or an unusable URL."""

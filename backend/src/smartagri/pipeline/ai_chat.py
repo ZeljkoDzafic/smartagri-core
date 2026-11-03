@@ -83,7 +83,7 @@ PROMPT_HASH = hashlib.sha256((SYSTEM_PROMPT + json.dumps(SCHEMA, sort_keys=True)
 APP_PROMPT_HASH = hashlib.sha256((APP_SYSTEM_PROMPT + json.dumps(SCHEMA, sort_keys=True)).encode("utf-8")).hexdigest()
 
 
-# Spec 056 (OQ-054-5, product only): appended to the app prompt for a parcel whose crop has an active crop pack; the
+# Appended to the app prompt for a parcel whose crop has an active crop pack; the
 # conclusion and calculations then come from the crop model (passed in by the service layer as `system_view_fn`, so
 # this module never imports it). The VC baseline and the maize app prompt (APP_PROMPT_HASH) are unchanged.
 CROP_PACK_NOTE = """Napomena o kulturi: ova parcela nije pod kukuruzom. Kultura je navedena u polju "kultura" i za nju savetuješ.
@@ -96,13 +96,13 @@ CROP_APP_PROMPT_HASH = hashlib.sha256((APP_SYSTEM_PROMPT + "\n\n" + CROP_PACK_NO
 
 
 def app_prompt(scope_note: Optional[str] = None, crop_note: Optional[str] = None) -> str:
-    """The app prompt with the optional spec 038 scope note and spec 056 crop note appended (in this order)."""
+    """The app prompt with the optional scope note and crop note appended (in this order)."""
     return APP_SYSTEM_PROMPT + "".join("\n\n" + n for n in (scope_note, crop_note) if n)
 
 
 def app_prompt_hash(scope_note: Optional[str] = None, crop_note: Optional[str] = None) -> str:
-    """APP_PROMPT_HASH, or the hash of the app prompt with the spec 038 scope note (and the spec 056 crop note)
-    appended. Without the crop note the value is exactly the one recorded before spec 056."""
+    """APP_PROMPT_HASH, or the hash of the app prompt with the scope note (and the crop note)
+    appended. Without the crop note the value is exactly the one recorded before the crop note existed."""
     if not scope_note and not crop_note:
         return APP_PROMPT_HASH
     return hashlib.sha256((app_prompt(scope_note, crop_note) + json.dumps(SCHEMA, sort_keys=True)).encode("utf-8")).hexdigest()
@@ -183,10 +183,10 @@ def answer(provider: Provider, ctx: Context, message: str, history: List[Dict[st
            crop: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """mode="app": the app's advisor, which sees the decision model run under `variant` (the full model);
     mode="baseline": the VC baseline of the experiment, which does not.
-    Spec 038 (app mode only): `scope_note` is appended to the app prompt for parcels outside the home tier (the prompt
+    `scope_note` is appended to the app prompt for parcels outside the home tier (the prompt
     hash recorded is then app_prompt_hash(scope_note)); `retrieve=False` gives the model no corpus passages (outside
     tier: the core pack's scope excludes the parcel). The baseline ignores both.
-    Spec 056 (app mode only): `system_view_fn(ctx, message, advice_type, query)` replaces the maize system view (a crop
+    `system_view_fn(ctx, message, advice_type, query)` replaces the maize system view (a crop
     with an active crop pack: the crop model's conclusion), `crop` ({naziv, paket}) is added to the payload and the crop
     note to the prompt (hash app_prompt_hash(scope_note, CROP_PACK_NOTE)). The checks below are unchanged."""
     started = time.time()
@@ -284,7 +284,7 @@ def answer(provider: Provider, ctx: Context, message: str, history: List[Dict[st
     }
 
 
-# ------------------------------------------------------------------ spec 017: English answers in the app
+# ------------------------------------------------------------------ English answers in the app
 # The model writes and every check above runs in the local language, exactly as in the default locale (the
 # VC baseline of the experiment never comes here). The checked text is then translated by a second call, and
 # the translation must keep every number of the checked text (same multiset) and must not prescribe a dose
@@ -372,7 +372,7 @@ def to_english(provider: Provider, out: Dict[str, Any], ctx: Context) -> Dict[st
                 citations=citations, referral=referral, translation=translation, _cost=cost)
 
 
-# ------------------------------------------------------------------ spec 017: chat language (any language)
+# ------------------------------------------------------------------ chat language (any language)
 # The chat answers in the language of the user's message, independently of the interface locale. A message that is
 # not in the local language is pivoted: one call names its language and translates it into the local language
 # (Latin script); intent, retrieval, the V5 system view and every check above run on that local text exactly as for a
