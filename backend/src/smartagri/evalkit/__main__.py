@@ -44,6 +44,10 @@ def _parser() -> argparse.ArgumentParser:
     e.add_argument("--citation-sample", type=int, metavar="N",
                    help="instead: a fixed-seed sample of N cited sentences for the manual support check")
     e.add_argument("--seed", type=int, default=7)
+    o = sub.add_parser("origin", help="check that every scenario records the origin of its weather and satellite inputs "
+                                      "(input_origin); exit 1 when any record is missing or inconsistent")
+    o.add_argument("--set", default="test")
+    o.add_argument("--scenarios-dir", help="read scenarios from this folder instead of eval/scenarios/<set>")
     g = sub.add_parser("guard", help="n-gram leakage check between scenario texts and the corpus (never runs the system)")
     g.add_argument("--set", default="test")
     g.add_argument("--scenarios-dir", help="read scenarios from this folder instead of eval/scenarios/<set>")
@@ -252,6 +256,19 @@ def check_run_allowed(args) -> int:
     return 0
 
 
+def cmd_origin(args) -> int:
+    """Run before the lock: the origin of W and S is recorded per scenario (docs/protocol.md, origin of the inputs)."""
+    from .scenarios import input_origin_issues, load_scenarios
+    scenarios = load_scenarios(args.set, Path(args.scenarios_dir) if args.scenarios_dir else None)
+    if not scenarios:
+        print("origin: no scenarios in set %r" % args.set, file=sys.stderr)
+        return 2
+    problems = [p for sc in scenarios for p in input_origin_issues(sc)]
+    print(json.dumps({"set": args.set, "n_scenarios": len(scenarios), "problems": problems}, ensure_ascii=False, indent=2))
+    print("origin: %d scenario(s), %d problem(s)" % (len(scenarios), len(problems)), file=sys.stderr)
+    return 1 if problems else 0
+
+
 def cmd_guard(args) -> int:
     from ..retrieval.corpus import corpus_dir
     from . import guard
@@ -307,6 +324,8 @@ def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     if args.cmd == "guard":
         return cmd_guard(args)
+    if args.cmd == "origin":
+        return cmd_origin(args)
     if args.cmd == "sweep":
         return cmd_sweep(args)
     if args.cmd == "lock":

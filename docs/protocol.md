@@ -223,5 +223,5 @@ values. Each scenario file records this in `input_origin: {weather: previous_run
 satellite: real | degraded | constructed | none, degradation: "<what was done>"}`; `degradation` is required when a
 weather input is constructed or a satellite input is degraded or constructed (`scenarios.input_origin_issues`). The run item
 carries the record and the report lists the counts and the degradations (Table 7.1a); a scenario without a record is listed as
-such. The record is part of the scenario file, so the lock fixes it.
+such. The record is part of the scenario file, so the lock fixes it. `python -m smartagri.evalkit origin --set test` lists the scenarios whose record is missing or inconsistent and exits 1 until none is; it is run before the lock.
 
